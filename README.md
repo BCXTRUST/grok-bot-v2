@@ -9,10 +9,7 @@ Each bot has one thread, one computer, memory, routines, and history. This repos
 ## Screenshots
 
 <p align="center">
-  <img src="docs/screenshots/www-product.png" alt="Desktop: bots, thread, computer, and routines" width="880" />
-</p>
-<p align="center">
-  <img src="docs/screenshots/web-computer.png" alt="Desktop: computer preview beside the thread" width="880" />
+  <img src="docs/screenshots/web-computer.png" alt="Desktop: thread and computer" width="880" />
 </p>
 
 ## Requirements
