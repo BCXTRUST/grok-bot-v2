@@ -10,6 +10,20 @@ Each bot has one thread, one computer, memory, routines, and history. This repos
 
 https://github.com/user-attachments/assets/dccdeddb-2134-4a56-8eed-b2e591736b1c
 
+## Stack
+
+- TypeScript
+- React 19, Vite, Tailwind
+- Electron
+- Expo
+- Hono, oRPC
+- Postgres, Prisma
+- Better Auth
+- Graphile Worker
+- Pi
+- Any sandbox provider (tested with Docker and E2B)
+- Composio
+
 ## Requirements
 
 - Node.js 22+
