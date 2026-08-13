@@ -50,7 +50,7 @@ export const appContract = {
           auth: z.enum(["api-key", "oauth", "both"]).optional(),
           oauthLabel: z.string().optional(),
           subscription: z.boolean().optional(),
-          signIn: z.enum(["chatgpt-device"]).optional(),
+          signIn: z.enum(["device-code"]).optional(),
         }),
       ),
     ),

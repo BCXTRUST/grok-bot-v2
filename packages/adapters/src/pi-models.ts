@@ -1,8 +1,12 @@
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
-import { CHATGPT_OAUTH_PROVIDER, CHATGPT_SIGN_IN } from "./pi-oauth.js";
+import {
+  DEVICE_CODE_PROVIDERS,
+  DEVICE_CODE_SIGN_IN,
+  isDeviceCodeProvider,
+} from "./pi-oauth.js";
 
 export type PiCatalogAuth = "api-key" | "oauth" | "both";
-export type PiCatalogSignIn = typeof CHATGPT_SIGN_IN;
+export type PiCatalogSignIn = typeof DEVICE_CODE_SIGN_IN;
 
 export type PiCatalogEntry = {
   provider: string;
@@ -30,9 +34,11 @@ function buildPiCatalog(): PiCatalogEntry[] {
     const apiKey = Boolean(provider.auth.apiKey);
     const oauth = Boolean(provider.auth.oauth);
     const auth: PiCatalogAuth = apiKey && oauth ? "both" : oauth ? "oauth" : "api-key";
-    const oauthLabel = provider.auth.oauth?.loginLabel ?? provider.auth.oauth?.name;
+    const device = DEVICE_CODE_PROVIDERS[provider.id];
+    const oauthLabel =
+      device?.loginLabel ?? provider.auth.oauth?.loginLabel ?? provider.auth.oauth?.name;
     const subscription = Boolean(provider.auth.oauth?.isSubscription);
-    const signIn = provider.id === CHATGPT_OAUTH_PROVIDER ? CHATGPT_SIGN_IN : undefined;
+    const signIn = isDeviceCodeProvider(provider.id) ? DEVICE_CODE_SIGN_IN : undefined;
     const billing = catalogBilling(provider.id, provider.name, {
       apiKey,
       oauth,
@@ -59,9 +65,8 @@ function catalogBilling(
   name: string,
   opts: { apiKey: boolean; oauth: boolean },
 ) {
-  if (providerId === CHATGPT_OAUTH_PROVIDER) {
-    return "Sign in with ChatGPT Plus or Pro. Uses your OpenAI subscription. Rakazo does not pay.";
-  }
+  const device = DEVICE_CODE_PROVIDERS[providerId];
+  if (device) return device.billing;
   if (opts.oauth && !opts.apiKey) {
     return `${name} subscription login is not in the Rakazo UI yet. Skip if this deployment already has credentials.`;
   }

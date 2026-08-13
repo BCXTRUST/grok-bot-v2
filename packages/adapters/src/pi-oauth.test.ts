@@ -2,7 +2,9 @@ import type { Credential, OAuthCredential } from "@earendil-works/pi-ai";
 import { describe, expect, it } from "vitest";
 import {
   CHATGPT_OAUTH_PROVIDER,
+  COPILOT_OAUTH_PROVIDER,
   PiOAuthLogins,
+  XAI_OAUTH_PROVIDER,
   parseModelSecret,
   resolveModelApiKey,
   secretValuesToRedact,
@@ -49,11 +51,11 @@ describe("model secrets", () => {
 });
 
 describe("PiOAuthLogins", () => {
-  it("rejects providers other than ChatGPT Plus/Pro", async () => {
+  it("rejects providers without a device-code flow", async () => {
     const logins = new PiOAuthLogins();
     await expect(
       logins.begin({ userId: "u", workspaceId: "w", provider: "anthropic" }),
-    ).rejects.toThrow(/ChatGPT Plus\/Pro/);
+    ).rejects.toThrow(/ChatGPT Plus\/Pro, GitHub Copilot, and SuperGrok/);
   });
 
   it("returns a device code after selecting device_code login", async () => {
@@ -126,5 +128,57 @@ describe("PiOAuthLogins", () => {
     logins.consume(started.loginId);
     const gone = await logins.complete(started.loginId, { userId: "u", workspaceId: "w" });
     expect(gone.status).toBe("error");
+  });
+
+  it("answers Copilot's enterprise prompt with github.com and returns a device code", async () => {
+    const logins = new PiOAuthLogins(async (provider, _type, interaction) => {
+      expect(provider).toBe(COPILOT_OAUTH_PROVIDER);
+      const host = await interaction.prompt({
+        type: "text",
+        message: "GitHub Enterprise URL/domain (blank for github.com)",
+      });
+      expect(host).toBe("");
+      interaction.notify({
+        type: "device_code",
+        userCode: "GH-CODE",
+        verificationUri: "https://github.com/login/device",
+        expiresInSeconds: 900,
+      });
+      await new Promise<never>((_, reject) => {
+        interaction.signal?.addEventListener("abort", () => reject(new Error("aborted")));
+      });
+      throw new Error("unreachable");
+    });
+    const started = await logins.begin({
+      userId: "u",
+      workspaceId: "w",
+      provider: COPILOT_OAUTH_PROVIDER,
+    });
+    expect(started.userCode).toBe("GH-CODE");
+    expect(started.verificationUri).toContain("github.com");
+    logins.abortAll();
+  });
+
+  it("returns an xAI device code with no login prompts", async () => {
+    const logins = new PiOAuthLogins(async (provider, _type, interaction) => {
+      expect(provider).toBe(XAI_OAUTH_PROVIDER);
+      interaction.notify({
+        type: "device_code",
+        userCode: "XAI-CODE",
+        verificationUri: "https://auth.x.ai/device",
+        expiresInSeconds: 600,
+      });
+      await new Promise<never>((_, reject) => {
+        interaction.signal?.addEventListener("abort", () => reject(new Error("aborted")));
+      });
+      throw new Error("unreachable");
+    });
+    const started = await logins.begin({
+      userId: "u",
+      workspaceId: "w",
+      provider: XAI_OAUTH_PROVIDER,
+    });
+    expect(started.userCode).toBe("XAI-CODE");
+    logins.abortAll();
   });
 });

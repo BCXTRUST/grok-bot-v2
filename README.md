@@ -4,7 +4,7 @@ Open-source Grok Bot alternative, built with Cursor and Grok 4.6.
 
 Web, desktop, and mobile. Bring your own AI and sandbox. The product is still early (beta).
 
-Each bot has one thread, one computer, memory, routines, and history. This repository is the complete core product — it runs without a Rakazo-operated control plane.
+Each bot has one thread, one computer, memory, routines, and history. A bot can also spawn more bots — each a regular peer with its own thread and computer — or run short-lived subagents inside the current turn. This repository is the complete core product — it runs without a Rakazo-operated control plane.
 
 ## Demo
 
@@ -42,7 +42,7 @@ Edit `.env`:
 
 - Set `BETTER_AUTH_SECRET` and `ENCRYPTION_KEY` to long random strings before any network exposure. Placeholder values only work in local `development` / `test` runs.
 - Put your OpenRouter key in `OPENROUTER_API_KEY` (or skip the key and paste one during onboarding).
-- ChatGPT Plus or Pro: you can skip that key and sign in on the **Connect a model** screen. Pick **OpenAI Codex**, then **Sign in with ChatGPT Plus/Pro**, and enter the device code at [auth.openai.com/codex/device](https://auth.openai.com/codex/device). That uses your ChatGPT subscription (same Codex-for-OSS path as Pi). Claude Pro, Copilot, and other Pi subscription logins are not in the Rakazo UI yet.
+- ChatGPT Plus or Pro, GitHub Copilot, or SuperGrok / X Premium: skip the key and sign in on the **Connect a model** screen. Pick **OpenAI Codex**, **GitHub Copilot**, or **xAI**, then sign in with the device code Pi shows. Claude Pro is not in the Rakazo UI yet — Pi's Claude login opens a localhost callback, which does not work from the web app.
 - Optional: `COMPOSIO_API_KEY` if you want Plugins to talk to live apps.
 
 Then:
@@ -58,7 +58,7 @@ pnpm dev
 
 `pnpm dev` starts the API (`:3100`), Graphile Worker, Vite web app (`:5173`), and sandbox supervisor (`:7091`).
 
-Open [http://127.0.0.1:5173](http://127.0.0.1:5173). Sign up, pick a model from the Pi catalog (paste an API key, sign in with ChatGPT Plus/Pro, or Skip if the deployment key is set), create a bot, send a message. The computer pane is a live Linux desktop with a browser. Take control to sign in; the bot keeps that session after you release.
+Open [http://127.0.0.1:5173](http://127.0.0.1:5173). Sign up, pick a model from the Pi catalog (paste an API key, sign in with ChatGPT / Copilot / SuperGrok, or Skip if the deployment key is set), create a bot, send a message. The computer pane is a live Linux desktop with a browser. Take control to sign in; the bot keeps that session after you release. Ask a bot to spawn another bot, or to run a subagent for work that should stay inside this turn.
 
 Confirm the product path:
 

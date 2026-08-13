@@ -14,8 +14,12 @@ describe("Pi model catalog", () => {
       ),
     ).toBe(true);
     const chatgpt = catalog.find((entry) => entry.provider === "openai-codex");
-    expect(chatgpt?.signIn).toBe("chatgpt-device");
+    expect(chatgpt?.signIn).toBe("device-code");
     expect(chatgpt?.billing).toMatch(/ChatGPT Plus or Pro/);
+    const copilot = catalog.find((entry) => entry.provider === "github-copilot");
+    expect(copilot?.signIn).toBe("device-code");
+    const grok = catalog.find((entry) => entry.provider === "xai");
+    expect(grok?.signIn).toBe("device-code");
     expect(scriptedCatalogEntry.provider).toBe("scripted");
   });
 });

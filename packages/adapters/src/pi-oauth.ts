@@ -8,7 +8,37 @@ import type {
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 
 export const CHATGPT_OAUTH_PROVIDER = "openai-codex";
-export const CHATGPT_SIGN_IN = "chatgpt-device" as const;
+export const COPILOT_OAUTH_PROVIDER = "github-copilot";
+export const XAI_OAUTH_PROVIDER = "xai";
+export const DEVICE_CODE_SIGN_IN = "device-code" as const;
+
+export const DEVICE_CODE_PROVIDERS: Record<
+  string,
+  { loginLabel: string; hint: string; billing: string }
+> = {
+  [CHATGPT_OAUTH_PROVIDER]: {
+    loginLabel: "Sign in with ChatGPT Plus/Pro",
+    hint: "ChatGPT Plus/Pro",
+    billing:
+      "Sign in with ChatGPT Plus or Pro. Uses your OpenAI subscription. Rakazo does not pay.",
+  },
+  [COPILOT_OAUTH_PROVIDER]: {
+    loginLabel: "Sign in with GitHub Copilot",
+    hint: "Copilot",
+    billing:
+      "Sign in with GitHub Copilot. Uses your Copilot subscription. Rakazo does not pay.",
+  },
+  [XAI_OAUTH_PROVIDER]: {
+    loginLabel: "Sign in with SuperGrok or X Premium",
+    hint: "SuperGrok / key",
+    billing:
+      "Sign in with SuperGrok or X Premium, or paste an xAI API key. Rakazo does not pay.",
+  },
+};
+
+export function isDeviceCodeProvider(providerId: string): boolean {
+  return providerId in DEVICE_CODE_PROVIDERS;
+}
 
 const MIN_OAUTH_VALIDITY_MS = 5 * 60 * 1000;
 const DEVICE_CODE_WAIT_MS = 30_000;
@@ -115,7 +145,7 @@ export async function resolveModelApiKey(
   }
   const auth = await oauth.toAuth(credential);
   if (!auth.apiKey) {
-    throw new Error("ChatGPT sign-in did not produce a usable token. Sign in again.");
+    throw new Error("Subscription sign-in did not produce a usable token. Sign in again.");
   }
   return auth.apiKey;
 }
@@ -132,9 +162,9 @@ export class PiOAuthLogins {
     modelId?: string;
     label?: string;
   }): Promise<PiOAuthBegin> {
-    if (input.provider !== CHATGPT_OAUTH_PROVIDER) {
+    if (!isDeviceCodeProvider(input.provider)) {
       throw new Error(
-        "In-app subscription sign-in is only available for ChatGPT Plus/Pro (OpenAI Codex).",
+        "In-app subscription sign-in is only available for ChatGPT Plus/Pro, GitHub Copilot, and SuperGrok.",
       );
     }
     this.abortForUserProvider(input.userId, input.provider);
@@ -163,11 +193,13 @@ export class PiOAuthLogins {
         if (prompt.type === "select") {
           const option = prompt.options.find((entry) => entry.id === "device_code");
           if (!option) {
-            throw new Error("ChatGPT device-code sign-in is not available from this Pi version.");
+            throw new Error("Device-code sign-in is not available for this provider.");
           }
           return option.id;
         }
-        throw new Error("Unexpected ChatGPT login prompt.");
+        // Copilot asks for a GitHub Enterprise host first. Blank is github.com.
+        if (prompt.type === "text") return "";
+        throw new Error("Unexpected subscription login prompt.");
       },
       notify(event) {
         if (event.type === "device_code") {
@@ -181,13 +213,13 @@ export class PiOAuthLogins {
     })
       .then((credential) => {
         if (!isOAuthCredential(credential)) {
-          throw new Error("ChatGPT sign-in did not return an OAuth credential.");
+          throw new Error("Subscription sign-in did not return an OAuth credential.");
         }
         session.credential = credential;
         return credential;
       })
       .catch((error) => {
-        session.error = error instanceof Error ? error.message : "ChatGPT sign-in failed.";
+        session.error = error instanceof Error ? error.message : "Subscription sign-in failed.";
         device.reject(error instanceof Error ? error : new Error(session.error));
         throw error;
       });
@@ -199,7 +231,7 @@ export class PiOAuthLogins {
       const started = await Promise.race([
         device.promise,
         sleep(DEVICE_CODE_WAIT_MS).then(() => {
-          throw new Error("ChatGPT sign-in did not start. Try again.");
+          throw new Error("Subscription sign-in did not start. Try again.");
         }),
       ]);
       return {
@@ -222,7 +254,7 @@ export class PiOAuthLogins {
   ): Promise<PiOAuthComplete> {
     const session = this.pending.get(loginId);
     if (!session || session.userId !== actor.userId || session.workspaceId !== actor.workspaceId) {
-      return { status: "error", error: "Sign-in session not found. Start ChatGPT sign-in again." };
+      return { status: "error", error: "Sign-in session not found. Start sign-in again." };
     }
     if (session.error) {
       this.pending.delete(loginId);
