@@ -5,8 +5,8 @@ import { rpc } from "../lib/rpc";
 
 let cachedCatalog: ConnectionCatalogItem[] = [];
 
-function markConnected(items: ConnectionCatalogItem[], slug: string) {
-  return items.map((entry) => (entry.slug === slug ? { ...entry, connected: true } : entry));
+function markConnected(items: ConnectionCatalogItem[], slug: string, connected: boolean) {
+  return items.map((entry) => (entry.slug === slug ? { ...entry, connected } : entry));
 }
 
 export function PluginsOverlay({ onClose }: { onClose: () => void }) {
@@ -40,9 +40,9 @@ export function PluginsOverlay({ onClose }: { onClose: () => void }) {
     );
   }, [catalog, query]);
 
-  function setItemConnected(slug: string) {
-    cachedCatalog = markConnected(cachedCatalog, slug);
-    setCatalog((prev) => markConnected(prev, slug));
+  function setItemConnected(slug: string, connected: boolean) {
+    cachedCatalog = markConnected(cachedCatalog, slug, connected);
+    setCatalog((prev) => markConnected(prev, slug, connected));
   }
 
   async function connect(item: ConnectionCatalogItem) {
@@ -53,7 +53,7 @@ export function PluginsOverlay({ onClose }: { onClose: () => void }) {
       if (started.authorizationUrl)
         window.open(started.authorizationUrl, "_blank", "noopener,noreferrer");
       if (item.noAuth && !started.authorizationUrl) {
-        setItemConnected(item.slug);
+        setItemConnected(item.slug, true);
         return;
       }
       for (let i = 0; i < 45; i += 1) {
@@ -61,13 +61,34 @@ export function PluginsOverlay({ onClose }: { onClose: () => void }) {
           .complete({ connectionId: started.connectionId })
           .catch(() => undefined);
         if (row?.status === "connected") {
-          setItemConnected(item.slug);
+          setItemConnected(item.slug, true);
           return;
         }
         await new Promise((resolve) => setTimeout(resolve, 2000));
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not connect");
+    } finally {
+      setPending(null);
+    }
+  }
+
+  async function revoke(item: ConnectionCatalogItem) {
+    setError(null);
+    setPending(item.slug);
+    try {
+      const rows = await rpc.connections.list();
+      const row = rows.find(
+        (entry) => entry.provider === item.slug && entry.status === "connected",
+      );
+      if (!row) {
+        setError(`No connection record found for ${item.name}.`);
+        return;
+      }
+      await rpc.connections.revoke({ connectionId: row.id });
+      setItemConnected(item.slug, false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not revoke connection");
     } finally {
       setPending(null);
     }
@@ -126,7 +147,15 @@ export function PluginsOverlay({ onClose }: { onClose: () => void }) {
                 </div>
               </div>
               {item.connected ? (
-                <span className="text-[13px] text-[#8F8]">Connected</span>
+                <Button
+                  type="button"
+                  variant="pill"
+                  size="sm"
+                  disabled={pending === item.slug}
+                  onClick={() => void revoke(item)}
+                >
+                  {pending === item.slug ? "Revoking…" : "Revoke"}
+                </Button>
               ) : (
                 <Button
                   type="button"
