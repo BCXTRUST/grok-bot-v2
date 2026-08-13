@@ -4,7 +4,7 @@ import {
   type ComposioConnector,
   createConnectorStack,
   createRunExecutor,
-  createSandboxProvider,
+  createRunSandbox,
   type DestinationEmulator,
   EncryptedSecretStore,
   ExpoPushProvider,
@@ -72,11 +72,12 @@ export async function createApp(
     wakeupKind === "memory"
       ? new InMemoryWakeupDriver()
       : new GraphileWakeupDriver(env.databaseUrl);
-  const sandbox: SandboxProvider = createSandboxProvider(env.sandboxProvider, {
+  const sandbox: SandboxProvider = createRunSandbox(env.sandboxProvider, {
     supervisorUrl: env.sandboxSupervisorUrl,
     supervisorToken: env.sandboxSupervisorToken,
     e2bApiKey: env.e2bApiKey,
     dataDir: env.dataDir,
+    prisma,
   });
   const secrets = new EncryptedSecretStore(env.encryptionKey);
   const oauthLogins = new PiOAuthLogins();
@@ -136,6 +137,7 @@ export async function createApp(
       openRouterKey: env.openRouterKey,
       webOrigin: env.webOrigin,
       screenProxySecret: env.authSecret,
+      sandboxProvider: env.sandboxProvider,
     },
   });
   const rpc = new RPCHandler(router);

@@ -200,7 +200,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
         }
         if (name === "shell") {
           const command = String(args.command ?? args.cmd ?? "");
-          const cwd = String(args.cwd ?? "/home/rakazo");
+          const cwd = String(args.cwd ?? (computer.kind === "desktop" ? "." : "/home/rakazo"));
           return runSandboxCommand(deps.sandbox, computer, ["bash", "-lc", command], cwd, context);
         }
         if (name === "remember") {

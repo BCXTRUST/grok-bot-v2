@@ -24,7 +24,7 @@ interface DesktopBox {
 export class DesktopSandboxProvider implements SandboxProvider {
   readonly boxes = new Map<string, DesktopBox>();
 
-  constructor(private readonly opts: { root?: string } = {}) {}
+  constructor(private readonly opts: { root?: string; hostRoots?: string[] } = {}) {}
 
   describe() {
     return {
@@ -67,14 +67,14 @@ export class DesktopSandboxProvider implements SandboxProvider {
     request: CommandRequest,
     _context: AdapterContext,
   ): AsyncIterable<ProcessEvent> {
-    const box = this.boxes.get(computer.id);
+    const box = this.boxFor(computer);
     if (!box) {
       yield { type: "stderr", data: "computer not found" };
       yield { type: "exit", code: 1 };
       return;
     }
-    const cwd = request.cwd ? path.resolve(box.home, request.cwd) : box.home;
-    if (!allowedPath(cwd, box.home)) {
+    const cwd = resolveExecuteCwd(request.cwd, box.home);
+    if (!allowedPath(cwd, this.allowedRoots(box.home))) {
       yield { type: "stderr", data: "path is outside this computer's home" };
       yield { type: "exit", code: 1 };
       return;
@@ -105,7 +105,7 @@ export class DesktopSandboxProvider implements SandboxProvider {
     _lease: ControlLeaseRef,
     _context: AdapterContext,
   ): Promise<void> {
-    const box = this.boxes.get(computer.id);
+    const box = this.boxFor(computer);
     if (box && input.kind === "clipboard") box.screen = input.text;
   }
 
@@ -114,12 +114,13 @@ export class DesktopSandboxProvider implements SandboxProvider {
   }
 
   async stop(computer: ComputerRef, _context: AdapterContext): Promise<void> {
-    const box = this.boxes.get(computer.id);
+    const box = this.boxFor(computer);
     if (box) box.running = false;
   }
 
   async destroy(computer: ComputerRef, _context: AdapterContext): Promise<void> {
-    const box = this.boxes.get(computer.id);
+    const box = this.boxFor(computer);
+    if (box) this.boxes.delete(box.ref.id);
     this.boxes.delete(computer.id);
     if (box && this.opts.root) {
       await writeFile(path.join(box.home, ".stopped"), new Date().toISOString(), "utf8").catch(
@@ -130,12 +131,40 @@ export class DesktopSandboxProvider implements SandboxProvider {
       await rm(box.home, { recursive: true, force: true }).catch(() => undefined);
     }
   }
+
+  private boxFor(computer: ComputerRef): DesktopBox | undefined {
+    const existing = this.boxes.get(computer.id);
+    if (existing) return existing;
+    for (const box of this.boxes.values()) {
+      if (box.ref.botId === computer.botId || box.home === computer.providerRef) return box;
+    }
+    if (!computer.providerRef) return undefined;
+    const box: DesktopBox = {
+      ref: computer,
+      home: path.resolve(computer.providerRef),
+      running: true,
+      screen: "ready",
+    };
+    this.boxes.set(computer.id, box);
+    return box;
+  }
+
+  private allowedRoots(home: string) {
+    return [home, ...(this.opts.hostRoots ?? [])];
+  }
 }
 
-function allowedPath(target: string, home: string) {
+function resolveExecuteCwd(requestCwd: string | undefined, home: string) {
+  if (!requestCwd || requestCwd === "/home/rakazo" || requestCwd === "/home/user") return home;
+  return path.resolve(home, requestCwd);
+}
+
+function allowedPath(target: string, roots: string[]) {
   const resolved = path.resolve(target);
-  const root = path.resolve(home);
-  return resolved === root || resolved.startsWith(root + path.sep);
+  return roots.some((root) => {
+    const base = path.resolve(root);
+    return resolved === base || resolved.startsWith(base + path.sep);
+  });
 }
 
 function runCommand(

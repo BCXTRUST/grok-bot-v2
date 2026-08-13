@@ -46,11 +46,11 @@ Do not commit `.env`. Never put `COMPOSIO_API_KEY`, OpenRouter keys, or provider
 
 ## Choosing a computer provider
 
-The Electron desktop app is only a client and works with either Docker or E2B. `SANDBOX_PROVIDER=desktop` is a separate, explicit provider that runs commands on the service host.
+The Electron desktop app is a client of the same API. Docker and E2B still apply. On first launch, Electron asks the deployment owner whether bots should keep using Docker or run on this Mac as you. `SANDBOX_PROVIDER=desktop` is a separate, explicit provider that always runs commands on the service host.
 
 - **Docker** is the default for local use and the quickest self-hosted setup. Each bot gets a container and persistent home. Keep the supervisor private, as the included Compose file does. A public single-machine Docker deployment still shares one Docker host between its bot containers.
 - **E2B** runs bot computers away from the Rakazo host and is the recommended choice for public or multi-user production deployments.
-- **Desktop provider** runs commands on the API/worker host, limited to each bot's home directory. It has less isolation: model shell commands execute with the process's OS permissions. Do not enable it on a public or shared service.
+- **Desktop provider** / **This Mac** runs commands on the API/worker host. Docker stays the default. The Electron app asks once; if you choose This Mac, bots can use working directories under your home folder. Do not enable it on a public or shared service. macOS does not show its own permission dialog for this.
 - **Fake** is only an emulator for verification.
 
 ## Backup

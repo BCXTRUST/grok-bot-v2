@@ -24,7 +24,7 @@ loadRootEnv();
 import {
   createConnectorStack,
   createRunExecutor,
-  createSandboxProvider,
+  createRunSandbox,
   EncryptedSecretStore,
   ExpoPushProvider,
   GraphileWakeupDriver,
@@ -46,10 +46,11 @@ async function main() {
   const runtime =
     process.env.AGENT_RUNTIME === "scripted" ? new ScriptedAgentRuntime() : new PiAgentRuntime();
   const dataDir = process.env.DATA_DIR ?? "./data";
-  const sandbox = createSandboxProvider(process.env.SANDBOX_PROVIDER ?? "docker", {
+  const sandbox = createRunSandbox(process.env.SANDBOX_PROVIDER ?? "docker", {
     supervisorUrl: process.env.SANDBOX_SUPERVISOR_URL ?? "http://127.0.0.1:7091",
     e2bApiKey: process.env.E2B_API_KEY,
     dataDir,
+    prisma,
   });
   const stack = createConnectorStack(isComposioEnabled(process.env.COMPOSIO_API_KEY));
   const connector = stack.destination;

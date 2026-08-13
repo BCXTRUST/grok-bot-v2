@@ -60,6 +60,7 @@ export interface RouterDeps {
     openRouterKey?: string;
     webOrigin: string;
     screenProxySecret: string;
+    sandboxProvider: string;
   };
 }
 
@@ -96,15 +97,23 @@ export function createRouter(deps: RouterDeps) {
         defaultProvider:
           cred?.provider ?? settings?.defaultModelProvider ?? deps.env.defaultProvider,
         defaultModel: cred?.defaultModel ?? settings?.defaultModelId ?? deps.env.defaultModel,
+        computerHost: computerHostFor(settings?.computerHost, deps.env.sandboxProvider),
+        canChooseHostComputer: actor.isDeploymentOwner && deps.env.sandboxProvider === "docker",
       };
     }),
     deployment: {
       get: authed.deployment.get.handler(async ({ context }) => {
         if (!context.actor.isDeploymentOwner) throw new ORPCError("FORBIDDEN");
-        return deploymentDto(deps.prisma);
+        return deploymentDto(deps.prisma, deps.env.sandboxProvider);
       }),
       update: authed.deployment.update.handler(async ({ context, input }) => {
         if (!context.actor.isDeploymentOwner) throw new ORPCError("FORBIDDEN");
+        if (input.computerHost === "this-mac" && deps.env.sandboxProvider !== "docker") {
+          throw new ORPCError("BAD_REQUEST", {
+            message:
+              "This Mac mode is only available when SANDBOX_PROVIDER=docker on a personal local app.",
+          });
+        }
         await deps.prisma.deploymentSettings.upsert({
           where: { id: "default" },
           create: {
@@ -112,13 +121,15 @@ export function createRouter(deps: RouterDeps) {
             ownerUserId: context.actor.userId,
             signupsEnabled: input.signupsEnabled ?? true,
             signupAllowlist: (input.signupAllowlist ?? []).join(","),
+            computerHost: input.computerHost ?? undefined,
           },
           update: {
             ...(input.signupsEnabled === undefined ? {} : { signupsEnabled: input.signupsEnabled }),
             ...(input.signupAllowlist ? { signupAllowlist: input.signupAllowlist.join(",") } : {}),
+            ...(input.computerHost === undefined ? {} : { computerHost: input.computerHost }),
           },
         });
-        return deploymentDto(deps.prisma);
+        return deploymentDto(deps.prisma, deps.env.sandboxProvider);
       }),
     },
     models: {
@@ -1119,7 +1130,7 @@ async function computerStatus(
   };
 }
 
-async function deploymentDto(prisma: PrismaClient) {
+async function deploymentDto(prisma: PrismaClient, sandboxProvider: string) {
   const settings = await prisma.deploymentSettings.findUnique({ where: { id: "default" } });
   return {
     ownerUserId: settings?.ownerUserId ?? null,
@@ -1130,7 +1141,19 @@ async function deploymentDto(prisma: PrismaClient) {
     hasDeploymentModelCredential: Boolean(settings?.deploymentModelCredentialCipher),
     defaultProvider: settings?.defaultModelProvider ?? null,
     defaultModel: settings?.defaultModelId ?? null,
+    computerHost: computerHostFor(settings?.computerHost, sandboxProvider),
+    canChooseHostComputer: sandboxProvider === "docker",
   };
+}
+
+function computerHostFor(
+  stored: string | null | undefined,
+  sandboxProvider: string,
+): "docker" | "this-mac" | null {
+  if (sandboxProvider === "desktop") return "this-mac";
+  if (sandboxProvider !== "docker") return null;
+  if (stored === "this-mac" || stored === "docker") return stored;
+  return null;
 }
 
 async function persistModelCredential(

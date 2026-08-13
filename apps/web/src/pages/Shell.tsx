@@ -19,6 +19,7 @@ import { type Dispatch, type SetStateAction, useEffect, useMemo, useRef, useStat
 import { useNavigate, useParams } from "react-router-dom";
 import { authClient } from "../lib/auth";
 import { rpc } from "../lib/rpc";
+import { HostComputerPrompt } from "./HostComputerPrompt";
 import { PluginsOverlay } from "./PluginsOverlay";
 import { RoutineSchedule } from "./RoutineSchedule";
 import { WindowChrome } from "./WindowChrome";
@@ -252,6 +253,7 @@ export function ShellPage() {
 
   return (
     <div className="relative flex h-full min-w-0 overflow-hidden bg-[#050506] text-[#DFDFE2]">
+      <HostComputerPrompt />
       <aside className="flex w-[316px] shrink-0 flex-col border-r border-[#171719] bg-[#0B0B0C]">
         <div className="app-drag flex items-center justify-between px-[18px] pb-3 pt-4">
           <WindowChrome />
@@ -485,6 +487,11 @@ export function ShellPage() {
                   {computerOpen ? (
                     <div className="grid h-full place-items-center text-sm text-[#6C6C70]">
                       Open in full window
+                    </div>
+                  ) : computer?.kind === "desktop" ? (
+                    <div className="grid h-full place-items-center px-6 text-center text-sm text-[#6C6C70]">
+                      This bot runs on this computer, not a Linux desktop. Shell and files use your
+                      home folder.
                     </div>
                   ) : computer?.state === "running" && embeddedScreenUrl ? (
                     <iframe
@@ -746,7 +753,12 @@ export function ShellPage() {
             </div>
           </div>
           <div className="min-h-0 flex-1 bg-[#0E0E10]">
-            {computer?.state === "running" && embeddedScreenUrl ? (
+            {computer?.kind === "desktop" ? (
+              <div className="grid h-full place-items-center px-8 text-center text-sm text-[#6C6C70]">
+                This bot runs on this computer. There is no separate Linux desktop. Ask it to use
+                the shell; working directories under your home folder are allowed.
+              </div>
+            ) : computer?.state === "running" && embeddedScreenUrl ? (
               <iframe
                 title="Bot screen"
                 src={embeddedScreenUrl}

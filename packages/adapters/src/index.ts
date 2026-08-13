@@ -13,6 +13,7 @@ export * from "./executor.js";
 export * from "./expo-push.js";
 export * from "./fake-sandbox.js";
 export * from "./home.js";
+export * from "./host-aware-sandbox.js";
 export * from "./mcp-emulator.js";
 export * from "./pi-models.js";
 export * from "./pi-oauth.js";

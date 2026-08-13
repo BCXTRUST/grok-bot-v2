@@ -34,6 +34,7 @@ export const appContract = {
         z.object({
           signupsEnabled: z.boolean().optional(),
           signupAllowlist: z.array(z.string()).optional(),
+          computerHost: z.enum(["docker", "this-mac"]).nullable().optional(),
         }),
       )
       .output(DeploymentSettingsSchema),

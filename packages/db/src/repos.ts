@@ -109,6 +109,10 @@ export function createRepos(prisma: PrismaClient) {
         });
         if (!parent) throw new IsolationError();
       }
+      const settings = await prisma.deploymentSettings.findUnique({ where: { id: "default" } });
+      const envKind = process.env.SANDBOX_PROVIDER ?? "docker";
+      const kind =
+        envKind === "docker" && settings?.computerHost === "this-mac" ? "desktop" : envKind;
       const bot = await prisma.$transaction(async (tx) => {
         const created = await tx.bot.create({
           data: {
@@ -135,7 +139,7 @@ export function createRepos(prisma: PrismaClient) {
             workspaceId: actor.workspaceId,
             botId: created.id,
             userId: actor.userId,
-            kind: process.env.SANDBOX_PROVIDER ?? "docker",
+            kind,
             state: "stopped",
           },
         });

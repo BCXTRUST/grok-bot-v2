@@ -2,7 +2,7 @@
 
 Open-source Grok Bot alternative, built with Cursor and Grok 4.6.
 
-Web, desktop, and mobile. Bring your own AI and sandbox. The product is still early (beta).
+Web, desktop, and mobile. Bring your own AI and sandbox. The product is still early (beta). Notable product changes are in [`CHANGELOG.md`](./CHANGELOG.md).
 
 Each bot has one thread, one computer, memory, routines, and history. A bot can also spawn more bots — each a regular peer with its own thread and computer — or run short-lived subagents inside the current turn. This repository is the complete core product — it runs without a Rakazo-operated control plane.
 
@@ -72,13 +72,13 @@ Product defaults are Pi + Docker + Graphile. `pnpm verify:fast` pins the emulato
 
 ### Computer and app modes
 
-The app you open and the computer provider are separate choices. The web, Electron, and mobile apps are clients of the same API; using Electron does not make agent commands run directly on your Mac or PC.
+The app you open and the computer provider are separate choices. Web, Electron, and mobile are clients of the same API. Docker stays the default. In the Electron app the deployment owner is asked once whether bots should keep using Docker or run on this Mac as you.
 
 | `SANDBOX_PROVIDER` | Where agent commands run | Best fit | Isolation notes |
 | --- | --- | --- | --- |
-| `docker` (default) | A per-bot Docker container on your machine | Quick local setup and trusted single-machine self-hosting | Good local isolation and persistent bot homes. The supervisor controls the local Docker daemon, so keep its port private; Rakazo does this by default. |
-| `e2b` | A remote E2B sandbox | Public or multi-user deployments | Stronger separation from the Rakazo application host. Requires `E2B_API_KEY`. |
-| `desktop` | Directly on the API/worker host, limited to each bot's home directory | A trusted single-user local process | Least isolated. Model-initiated shell commands run with the Rakazo process's OS permissions. Do not use it on a public or shared server. This is different from merely running the Electron client. |
+| `docker` (default) | A per-bot Docker container on your machine. The Electron app can switch this to This Mac without changing the env var. | Quick local setup and trusted single-machine self-hosting | Good local isolation and persistent bot homes. The supervisor controls the local Docker daemon, so keep its port private; Rakazo does this by default. |
+| `e2b` | A remote E2B sandbox | Public or multi-user deployments | Stronger separation from the Rakazo application host. Requires `E2B_API_KEY`. This Mac is not available. |
+| `desktop` | Directly on the API/worker host. Working directories under the process user's home folder are allowed. | A trusted single-user local process | Least isolated. Model-initiated shell commands run with the Rakazo process's OS permissions. Do not use it on a public or shared server. The Electron first-run "This Mac" choice uses this provider while leaving `SANDBOX_PROVIDER=docker`. |
 | `fake` | An in-process emulator | Tests only | Does not run a real computer. |
 
 Docker remains the recommended quick start for someone running Rakazo on their own machine. E2B is the safer boundary when untrusted users or public traffic share a deployment.
@@ -97,7 +97,7 @@ The Electron shell loads the same web UI. Leave `pnpm dev` running, then:
 pnpm --filter @rakazo/desktop dev
 ```
 
-Native red / yellow / green buttons close, minimize, and zoom that window. They do nothing in the browser tab. The desktop app is a client of the same API; bot computers still run in Docker or E2B.
+Native red / yellow / green buttons close, minimize, and zoom that window. They do nothing in the browser tab. On first launch the desktop app asks whether bots should keep using Docker or run on this Mac as you. Docker stays the default. macOS will not show a permission prompt for that choice — the consent is Rakazo's.
 
 Point Electron at a different origin with `RAKAZO_WEB_URL` (default `http://127.0.0.1:5173`).
 

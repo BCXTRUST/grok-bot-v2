@@ -178,6 +178,8 @@ export const DeploymentSettingsSchema = z.object({
   hasDeploymentModelCredential: z.boolean(),
   defaultProvider: z.string().nullable(),
   defaultModel: z.string().nullable(),
+  computerHost: z.enum(["docker", "this-mac"]).nullable(),
+  canChooseHostComputer: z.boolean(),
 });
 
 export const MeSchema = z.object({
@@ -189,6 +191,8 @@ export const MeSchema = z.object({
   needsModel: z.boolean(),
   defaultProvider: z.string().nullable(),
   defaultModel: z.string().nullable(),
+  computerHost: z.enum(["docker", "this-mac"]).nullable(),
+  canChooseHostComputer: z.boolean(),
 });
 export type Me = z.infer<typeof MeSchema>;
 
