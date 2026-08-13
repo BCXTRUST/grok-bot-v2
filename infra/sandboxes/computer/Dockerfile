@@ -1,7 +1,22 @@
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    xvfb x11vnc fluxbox xterm python3 ca-certificates \
+    xvfb \
+    x11vnc \
+    fluxbox \
+    xterm \
+    xdotool \
+    x11-utils \
+    novnc \
+    websockify \
+    python3 \
+    ca-certificates \
+    procps \
+    bash \
   && rm -rf /var/lib/apt/lists/*
 ENV DISPLAY=:1
+ENV HOME=/home/rakazo
 WORKDIR /home/rakazo
-CMD ["bash", "-lc", "Xvfb :1 -screen 0 1280x800x24 & sleep 0.5 && fluxbox & x11vnc -display :1 -forever -shared -nopw -listen 0.0.0.0 -rfbport 5900"]
+COPY start.sh /usr/local/bin/rakazo-computer
+RUN chmod +x /usr/local/bin/rakazo-computer
+EXPOSE 6080
+CMD ["/usr/local/bin/rakazo-computer"]

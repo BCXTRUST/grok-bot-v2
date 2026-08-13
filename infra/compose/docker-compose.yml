@@ -22,11 +22,22 @@ services:
     environment:
       SUPERVISOR_PORT: "7091"
       DOCKER_SOCKET: /var/run/docker.sock
+      RAKAZO_COMPUTER_IMAGE: rakazo/computer:local
     ports:
       - "7091:7091"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ../../data:/data
+    depends_on:
+      computer:
+        condition: service_completed_successfully
+
+  computer:
+    image: rakazo/computer:local
+    build:
+      context: ../sandboxes/computer
+    command: ["true"]
+    restart: "no"
 
   api:
     build:
@@ -40,7 +51,7 @@ services:
       SANDBOX_SUPERVISOR_URL: http://supervisor:7091
       WAKEUP_DRIVER: graphile
       SANDBOX_PROVIDER: docker
-      AGENT_RUNTIME: scripted
+      AGENT_RUNTIME: pi
     ports:
       - "3100:3100"
     depends_on:
@@ -59,7 +70,7 @@ services:
       SANDBOX_SUPERVISOR_URL: http://supervisor:7091
       WAKEUP_DRIVER: graphile
       SANDBOX_PROVIDER: docker
-      AGENT_RUNTIME: scripted
+      AGENT_RUNTIME: pi
     depends_on:
       postgres:
         condition: service_healthy

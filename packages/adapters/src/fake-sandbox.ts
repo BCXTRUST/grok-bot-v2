@@ -36,8 +36,14 @@ export class FakeSandboxProvider implements SandboxProvider {
   }
 
   async provision(request: { botId: string; homePath: string }, _context: AdapterContext): Promise<ComputerRef> {
+    const id = `fake-${request.botId}`;
+    const existing = this.boxes.get(id);
+    if (existing) {
+      existing.running = true;
+      return existing.ref;
+    }
     const ref: ComputerRef = {
-      id: `fake-${request.botId}`,
+      id,
       botId: request.botId,
       kind: "fake",
       providerRef: request.homePath,

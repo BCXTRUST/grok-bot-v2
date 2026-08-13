@@ -9,7 +9,8 @@ import {
 import { nextCronDate, projectMessages } from "@rakazo/core";
 import { appendEvent, createRepos, eventsAfter, IsolationError, requireMembership, type PrismaClient } from "@rakazo/db";
 import type { AgentHomeStore, MemoryStore, SandboxProvider, WakeupDriver } from "@rakazo/adapter-kit";
-import { EncryptedSecretStore } from "@rakazo/adapters";
+import { EncryptedSecretStore, resolveAgentHomePath } from "@rakazo/adapters";
+import { mkdir } from "node:fs/promises";
 import type { Auth } from "@rakazo/auth";
 
 export interface RouterDeps {
@@ -367,11 +368,19 @@ export function createRouter(deps: RouterDeps) {
           botId: bot.id,
           signal: new AbortController().signal,
         };
-        const ref = await deps.sandbox.provision({ botId: bot.id, homePath: `${bot.id}` }, ctx);
-        await deps.prisma.computer.update({
-          where: { botId: bot.id },
-          data: { state: "running", providerRef: ref.providerRef, kind: ref.kind },
-        });
+        const homePath = resolveAgentHomePath(deps.home, bot.id, process.env.DATA_DIR ?? "./data");
+        await mkdir(homePath, { recursive: true });
+        await deps.prisma.computer.update({ where: { botId: bot.id }, data: { state: "booting" } });
+        try {
+          const ref = await deps.sandbox.provision({ botId: bot.id, homePath }, ctx);
+          await deps.prisma.computer.update({
+            where: { botId: bot.id },
+            data: { state: "running", providerRef: ref.providerRef, kind: ref.kind },
+          });
+        } catch (error) {
+          await deps.prisma.computer.update({ where: { botId: bot.id }, data: { state: "error" } });
+          throw error;
+        }
         return computerStatus(deps, context.actor, input.botId);
       }),
       stop: authed.computer.stop.handler(async ({ context, input }) => {
@@ -485,7 +494,9 @@ export function createRouter(deps: RouterDeps) {
       }),
       screenUrl: authed.computer.screenUrl.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);
-        if (!bot.computer?.providerRef || bot.computer.state !== "running") return { url: null };
+        if (!bot.computer?.providerRef || (bot.computer.state !== "running" && bot.computer.state !== "booting")) {
+          return { url: null };
+        }
         const session = await deps.sandbox.connectScreen(
           {
             id: bot.computer.providerRef,
@@ -502,7 +513,8 @@ export function createRouter(deps: RouterDeps) {
             signal: new AbortController().signal,
           },
         );
-        return { url: session.url };
+        if (!session.url) return { url: null };
+        return { url: withViewOnly(session.url, bot.computer.controlHolder !== "user") };
       }),
     },
     memory: {
@@ -918,7 +930,7 @@ async function computerStatus(deps: RouterDeps, actor: Actor, botId: string): Pr
     kind: (computer?.kind ?? "fake") as ComputerStatus["kind"],
     state: (computer?.state ?? "stopped") as ComputerStatus["state"],
     controlHolder: (computer?.controlHolder ?? "none") as ComputerStatus["controlHolder"],
-    screenAvailable: computer?.state === "running",
+    screenAvailable: computer?.state === "running" || computer?.state === "booting",
     homeRevision: home?.revision ?? null,
   };
 }
@@ -961,6 +973,17 @@ function mapRoutine(row: {
     nextRunAt: row.nextRunAt?.toISOString() ?? null,
     createdAt: row.createdAt.toISOString(),
   };
+}
+
+function withViewOnly(url: string, viewOnly: boolean) {
+  try {
+    const parsed = new URL(url);
+    parsed.searchParams.set("view_only", viewOnly ? "true" : "false");
+    return parsed.toString();
+  } catch {
+    const join = url.includes("?") ? "&" : "?";
+    return `${url}${join}view_only=${viewOnly ? "true" : "false"}`;
+  }
 }
 
 function delay(ms: number) {

@@ -43,7 +43,7 @@ export class PiAgentRuntime implements AgentRuntime {
 
         const apiKey = request.model.apiKey ?? process.env.OPENROUTER_API_KEY;
         const toolDefs = request.tools.length ? request.tools : builtinAgentTools;
-        const tools = toolDefs.map((tool) => toAgentTool(tool, queue, request.runId));
+        const tools = toolDefs.map((tool) => toAgentTool(tool, queue, request));
         const history = toHistory(request.history, request.prompt);
 
         const agent = new Agent({
@@ -52,7 +52,7 @@ export class PiAgentRuntime implements AgentRuntime {
           initialState: {
             systemPrompt:
               request.instructions ||
-              "You are a Rakazo bot. Prefer tools for files, memory, and destination writes. Be concise.",
+              "You are a Rakazo bot with a real computer. Use write_file, shell, remember, and request_takeover when they are the right tools. Be concise.",
             model,
             thinkingLevel: "off",
             tools,
@@ -130,17 +130,18 @@ export class PiAgentRuntime implements AgentRuntime {
 }
 
 function toHistory(history: AgentRunRequest["history"], prompt: string) {
-  const users = history.filter((m) => m.role === "user");
-  const last = users.at(-1);
-  const prior = last?.content === prompt ? users.slice(0, -1) : users;
-  return prior.map((m) => ({
-    role: "user" as const,
-    content: m.content,
-    timestamp: Date.now(),
-  }));
+  const last = history.at(-1);
+  const prior = last?.role === "user" && last.content === prompt ? history.slice(0, -1) : history;
+  return prior
+    .filter((m) => m.role === "user" || m.role === "assistant")
+    .map((m) =>
+      m.role === "assistant"
+        ? { role: "user" as const, content: `Assistant: ${m.content}`, timestamp: Date.now() }
+        : { role: "user" as const, content: m.content, timestamp: Date.now() },
+    );
 }
 
-function toAgentTool(tool: ConnectorTool, queue: EventQueue, runId: string): AgentTool {
+function toAgentTool(tool: ConnectorTool, queue: EventQueue, request: AgentRunRequest): AgentTool {
   return {
     name: tool.name,
     label: tool.name,
@@ -164,11 +165,15 @@ function toAgentTool(tool: ConnectorTool, queue: EventQueue, runId: string): Age
       if (tool.name === "write_file") {
         return { path: String(raw.path ?? "notes/result.txt"), content: String(raw.content ?? "") };
       }
+      if (tool.name === "shell") {
+        return { command: String(raw.command ?? ""), cwd: raw.cwd ? String(raw.cwd) : "/home/rakazo" };
+      }
       return raw as never;
     },
     execute: async (toolCallId, params) => {
       const args = (params ?? {}) as Record<string, unknown>;
-      queue.push({ type: "tool", name: tool.name, args, executionId: toolCallId || `${runId}:${tool.name}` });
+      const executionId = toolCallId || `${request.runId}:${tool.name}`;
+      queue.push({ type: "tool", name: tool.name, args, executionId });
       if (tool.name === "request_takeover") {
         queue.push({ type: "takeover", reason: String(args.reason ?? "I need you on the screen.") });
         return {
@@ -177,9 +182,16 @@ function toAgentTool(tool: ConnectorTool, queue: EventQueue, runId: string): Age
           terminate: true,
         };
       }
+      if (request.executeTool) {
+        const result = await request.executeTool(tool.name, args, executionId);
+        return {
+          content: [{ type: "text", text: summarizeToolResult(result) }],
+          details: result,
+        };
+      }
       return {
-        content: [{ type: "text", text: `${tool.name} completed.` }],
-        details: args,
+        content: [{ type: "text", text: `${tool.name} is unavailable without an executor.` }],
+        details: { error: "no executor" },
       };
     },
   };
@@ -202,7 +214,43 @@ function parametersFor(tool: ConnectorTool) {
   if (tool.name === "remember") {
     return Type.Object({ content: Type.String(), path: Type.String() });
   }
-  return Type.Object({});
+  if (tool.name === "shell") {
+    return Type.Object({
+      command: Type.String(),
+      cwd: Type.String(),
+    });
+  }
+  return jsonSchemaParameters(tool.inputSchema);
+}
+
+function jsonSchemaParameters(schema: Record<string, unknown>) {
+  const properties = (schema.properties ?? {}) as Record<string, unknown>;
+  const required = new Set(Array.isArray(schema.required) ? schema.required.map(String) : []);
+  const fields: Record<string, ReturnType<typeof Type.Optional>> = {};
+  for (const [key, spec] of Object.entries(properties)) {
+    const field = jsonField(spec);
+    fields[key] = required.has(key) ? field : Type.Optional(field);
+  }
+  return Type.Object(fields);
+}
+
+function jsonField(spec: unknown): ReturnType<typeof Type.String> {
+  const type = spec && typeof spec === "object" && "type" in spec ? String((spec as { type?: unknown }).type) : "string";
+  if (type === "number" || type === "integer") return Type.Number() as never;
+  if (type === "boolean") return Type.Boolean() as never;
+  if (type === "array") return Type.Array(Type.Unknown()) as never;
+  if (type === "object") return Type.Record(Type.String(), Type.Unknown()) as never;
+  return Type.String();
+}
+
+function summarizeToolResult(result: unknown) {
+  try {
+    const text = JSON.stringify(result);
+    if (!text) return "ok";
+    return text.length > 12_000 ? `${text.slice(0, 12_000)}…` : text;
+  } catch {
+    return "ok";
+  }
 }
 
 function assistantText(message: unknown): string {
@@ -216,7 +264,11 @@ function assistantText(message: unknown): string {
 }
 
 function sanitizeError(message: string) {
-  return message.replace(/sk-[a-zA-Z0-9-]+/g, "[redacted]").replace(/Bearer\s+\S+/gi, "Bearer [redacted]");
+  return message
+    .replace(/sk-or-v1-[a-zA-Z0-9]+/g, "[redacted]")
+    .replace(/sk-[a-zA-Z0-9-]+/g, "[redacted]")
+    .replace(/Bearer\s+\S+/gi, "Bearer [redacted]")
+    .replace(/COMPOSIO_API_KEY[=:]?\s*\S+/gi, "COMPOSIO_API_KEY=[redacted]");
 }
 
 interface EventQueue {

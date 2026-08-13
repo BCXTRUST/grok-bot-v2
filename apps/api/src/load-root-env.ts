@@ -8,6 +8,9 @@ export function loadRootEnv() {
     const candidate = path.join(dir, ".env");
     if (existsSync(candidate)) {
       config({ path: candidate, override: false });
+      if (process.env.DATA_DIR && !path.isAbsolute(process.env.DATA_DIR)) {
+        process.env.DATA_DIR = path.resolve(dir, process.env.DATA_DIR);
+      }
       return;
     }
     const parent = path.dirname(dir);

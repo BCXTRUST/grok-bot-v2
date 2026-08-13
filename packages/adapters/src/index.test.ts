@@ -36,6 +36,15 @@ describe("scripted runtime", () => {
   });
 });
 
+describe("builtin tools", () => {
+  it("exposes the tools the executor actually applies", async () => {
+    const { builtinAgentTools } = await import("./builtin-tools.js");
+    expect(builtinAgentTools.map((t) => t.name)).toEqual(
+      expect.arrayContaining(["write_file", "shell", "remember", "request_takeover"]),
+    );
+  });
+});
+
 describe("fake sandbox", () => {
   it("provisions isolated computers", async () => {
     const sandbox = new FakeSandboxProvider();

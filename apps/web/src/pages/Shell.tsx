@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { BotAvatar, Button } from "@rakazo/ui-web";
 import type { Bot, CapabilityInstall, ComputerStatus, Routine, ThreadMessage, ThreadSnapshot } from "@rakazo/contracts";
@@ -27,6 +27,7 @@ export function ShellPage() {
   const [routineDraft, setRoutineDraft] = useState({ name: "", prompt: "", cron: "0 9 * * 1" });
   const [screenUrl, setScreenUrl] = useState<string | null>(null);
   const [usage, setUsage] = useState<{ inputTokens: number; outputTokens: number; runs: number } | null>(null);
+  const autoBooted = useRef<string | null>(null);
 
   const active = bots.find((b) => b.id === botId) ?? bots[0];
 
@@ -94,17 +95,25 @@ export function ShellPage() {
     setPanel("settings");
   }
 
-  async function boot() {
+  async function bootComputer({ takeControl, overlay }: { takeControl: boolean; overlay: boolean }) {
     if (!active) return;
-    setBooting(true);
+    if (overlay) setBooting(true);
     try {
       await rpc.computer.boot({ botId: active.id });
-      await rpc.computer.takeover({ botId: active.id });
+      if (takeControl) await rpc.computer.takeover({ botId: active.id });
       await refreshThread(active.id);
     } finally {
-      setBooting(false);
+      if (overlay) setBooting(false);
     }
   }
+
+  useEffect(() => {
+    if (panel !== "computer" || !active) return;
+    if (computer?.state === "running" || computer?.state === "booting") return;
+    if (autoBooted.current === active.id) return;
+    autoBooted.current = active.id;
+    void bootComputer({ takeControl: false, overlay: false });
+  }, [panel, active?.id, computer?.state]);
 
   const userName = session.data?.user.name ?? "You";
   const initials = userName
@@ -284,16 +293,35 @@ export function ShellPage() {
             <div>
               <div className="relative h-[216px] overflow-hidden rounded-[14px] bg-[#0E0E10]">
                 {screenUrl && /^https?:/i.test(screenUrl) ? (
-                  <iframe title="Bot screen" src={screenUrl} className="h-full w-full border-0" />
+                  <iframe
+                    title="Bot screen"
+                    src={screenUrl}
+                    className="h-full w-full border-0 bg-black"
+                    allow="clipboard-read; clipboard-write; fullscreen"
+                    style={{ pointerEvents: computer?.controlHolder === "user" ? "auto" : "none" }}
+                  />
                 ) : (
                   <div className="grid h-full place-items-center text-sm text-[#6C6C70]">
-                    {computer?.state === "running" ? `${active.name}’s screen` : "Computer is stopped"}
+                    {computer?.state === "booting" || booting
+                      ? "Booting live desktop…"
+                      : computer?.state === "running"
+                        ? `${active.name}’s screen`
+                        : computer?.state === "error"
+                          ? "Computer failed to boot"
+                          : "Computer is stopped"}
                   </div>
                 )}
               </div>
               <div className="mt-3 flex items-center justify-between">
-                <span className="text-[13.5px] text-[#85858A]">{active.name}’s screen</span>
-                <Button type="button" variant="outline" size="sm" onClick={() => void boot()}>
+                <span className="text-[13.5px] text-[#85858A]">
+                  {computer?.controlHolder === "user" ? "You have control" : `${active.name}’s screen`}
+                </span>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void bootComputer({ takeControl: true, overlay: true })}
+                >
                   Take control
                 </Button>
               </div>

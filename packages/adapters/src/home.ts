@@ -18,6 +18,10 @@ export class LocalAgentHomeStore implements AgentHomeStore {
     return path.join(this.root, "homes", botId);
   }
 
+  pathFor(botId: string) {
+    return path.resolve(this.botDir(botId));
+  }
+
   async checkout(botId: string, dest: string, _context: AdapterContext): Promise<string> {
     await mkdir(dest, { recursive: true });
     const src = this.botDir(botId);
@@ -73,6 +77,11 @@ export class LocalAgentHomeStore implements AgentHomeStore {
       }),
     );
   }
+}
+
+export function resolveAgentHomePath(home: AgentHomeStore, botId: string, dataDir = "./data") {
+  if (home instanceof LocalAgentHomeStore) return home.pathFor(botId);
+  return path.resolve(dataDir, "homes", botId);
 }
 
 function safeJoin(root: string, rel: string) {

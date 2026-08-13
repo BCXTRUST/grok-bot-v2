@@ -101,6 +101,8 @@ describeJourneys("required product journeys", () => {
       path: "notes/result.txt",
     });
     expect(chiefFile.content).toContain("isolation-ok");
+    const computer = await rpc<{ state: string }>(app, ada, "computer/status", { botId: chief.id });
+    expect(computer.state).toBe("running");
     const coderMem = await rpc<Array<{ content: string }>>(app, ada, "memory/list", { botId: coder.id });
     expect(coderMem.some((m) => m.content.toLowerCase().includes("rust"))).toBe(true);
     expect(bobBot.id).not.toBe(chief.id);

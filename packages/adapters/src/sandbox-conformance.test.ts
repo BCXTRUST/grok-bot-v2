@@ -95,6 +95,8 @@ describe("docker sandbox", () => {
     const computer = await provider.provision({ botId: `conf-${Date.now()}`, homePath: "/tmp/rakazo-docker" }, ctx);
     const out = await drain(provider, computer);
     expect(out).toContain("graphical-ok");
+    const session = await provider.connectScreen(computer, { view: "stream" }, ctx);
+    expect(session.url).toMatch(/vnc\.html/);
     await provider.destroy(computer, ctx);
   }, 60_000);
 });
@@ -109,15 +111,12 @@ function dockerAvailable() {
 }
 
 function hasAnySandboxImage() {
-  const images = ["rakazo/computer:local", "alpine/git:latest", "alpine:latest", "python:3.12-slim"];
-  return images.some((image) => {
-    try {
-      execSync(`docker image inspect ${image}`, { stdio: "ignore", timeout: 8_000 });
-      return true;
-    } catch {
-      return false;
-    }
-  });
+  try {
+    execSync("docker image inspect rakazo/computer:local", { stdio: "ignore", timeout: 8_000 });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 async function ping(url: string) {

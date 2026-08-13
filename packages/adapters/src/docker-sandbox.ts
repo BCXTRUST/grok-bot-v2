@@ -55,7 +55,7 @@ export class DockerSandboxProvider implements SandboxProvider {
     const res = await fetch(this.url(`/computers/${computer.id}/exec`), {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(request),
+      body: JSON.stringify({ ...request, cwd: request.cwd ?? "/home/rakazo" }),
       signal: context.signal,
     });
     if (!res.ok) {
@@ -72,10 +72,15 @@ export class DockerSandboxProvider implements SandboxProvider {
   async connectScreen(
     computer: ComputerRef,
     _request: ScreenRequest,
-    _context: AdapterContext,
+    context: AdapterContext,
   ): Promise<ScreenSession> {
+    const res = await fetch(this.url(`/computers/${computer.id}`), { signal: context.signal });
+    if (!res.ok) {
+      return { url: null, mimeType: "text/html", close: async () => undefined };
+    }
+    const body = (await res.json()) as { screenUrl?: string };
     return {
-      url: this.url(`/computers/${computer.id}/screen`),
+      url: body.screenUrl ?? this.url(`/computers/${computer.id}/screen`),
       mimeType: "text/html",
       close: async () => undefined,
     };
@@ -87,12 +92,16 @@ export class DockerSandboxProvider implements SandboxProvider {
     lease: ControlLeaseRef,
     context: AdapterContext,
   ): Promise<void> {
-    await fetch(this.url(`/computers/${computer.id}/input`), {
+    const res = await fetch(this.url(`/computers/${computer.id}/input`), {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ input, leaseId: lease.leaseId }),
       signal: context.signal,
     });
+    if (!res.ok) {
+      const detail = await res.text().catch(() => "");
+      throw new Error(`sandbox input failed: ${res.status} ${detail}`.trim());
+    }
   }
 
   async snapshot(computer: ComputerRef, _context: AdapterContext) {

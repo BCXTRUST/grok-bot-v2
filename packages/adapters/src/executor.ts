@@ -1,8 +1,17 @@
-import type { AgentHomeStore, AgentRuntime, ConnectorProvider, MemoryStore, SandboxProvider } from "@rakazo/adapter-kit";
+import { mkdir } from "node:fs/promises";
+import type {
+  AgentHomeStore,
+  AgentRuntime,
+  ComputerRef,
+  ConnectorProvider,
+  MemoryStore,
+  SandboxProvider,
+} from "@rakazo/adapter-kit";
 import type { Actor, MessageBlock, RunStatus } from "@rakazo/contracts";
 import { assertTransition, containsSecret, nextCronDate, redactSecrets } from "@rakazo/core";
 import { appendEvent, type PrismaClient } from "@rakazo/db";
 import { builtinAgentTools } from "./builtin-tools.js";
+import { resolveAgentHomePath } from "./home.js";
 import { inferScript } from "./scripted-runtime.js";
 import type { EncryptedSecretStore } from "./secrets.js";
 
@@ -16,6 +25,7 @@ export interface ExecutorDeps {
   secrets: string[];
   secretStore?: EncryptedSecretStore;
   deploymentModelKey?: string;
+  dataDir?: string;
 }
 
 export function createRunExecutor(deps: ExecutorDeps) {
@@ -137,10 +147,52 @@ export function createRunExecutor(deps: ExecutorDeps) {
         content: blocksToText(m.blocks as MessageBlock[]),
       }));
       const apiKey = await resolveModelKey(deps, run.userId, run.workspaceId, credential);
+      const computer = await ensureComputer(deps, bot.id, context);
 
       let assembled = "";
       const scripted = deps.runtime.describe().capabilities.scripted;
       const script = scripted ? inferScript(task.prompt, resumeFromTakeover ? "takeover" : undefined) : undefined;
+
+      const applyTool = async (name: string, args: Record<string, unknown>, executionId: string) => {
+        const applied = await recordEffect(deps, run, name, executionId, args);
+        if (applied.duplicate) return applied.effect.result ?? { duplicate: true };
+        if (name === "write_file") {
+          const filePath = String(args.path ?? "notes/result.txt");
+          const content = String(args.content ?? "");
+          await deps.home.writeFile(bot.id, filePath, content, context);
+          return { ok: true, path: filePath };
+        }
+        if (name === "shell") {
+          const command = String(args.command ?? args.cmd ?? "");
+          const cwd = String(args.cwd ?? "/home/rakazo");
+          return runSandboxCommand(deps.sandbox, computer, ["bash", "-lc", command], cwd, context);
+        }
+        if (name === "remember") {
+          await deps.memory.commit(
+            {
+              scope: "bot",
+              botId: bot.id,
+              path: String(args.path ?? "MEMORY.md"),
+              content: String(args.content ?? ""),
+              sourceRunId: runId,
+              sourceThreadId: thread.id,
+            },
+            context,
+          );
+          return { ok: true };
+        }
+        if (name === "request_takeover") return { ok: true };
+        if (deps.connector) {
+          let result: unknown = { error: `unknown tool ${name}` };
+          for await (const event of deps.connector.execute({ tool: name, args, executionId }, context)) {
+            if (event.type === "result") result = event.data;
+            if (event.type === "error") result = { error: event.message };
+          }
+          return result;
+        }
+        return { error: `unknown tool ${name}` };
+      };
+
       try {
         for await (const event of deps.runtime.run(
           {
@@ -148,7 +200,10 @@ export function createRunExecutor(deps: ExecutorDeps) {
             threadId: thread.id,
             runId,
             prompt: task.prompt,
-            instructions: bot.instructions || `${bot.name}: ${bot.title}\n${bot.description}`,
+            instructions: [
+              bot.instructions || `${bot.name}: ${bot.title}\n${bot.description}`,
+              "You have a persistent computer. Use write_file to save files into your home (they appear in Files). Use shell to run commands in that computer. Use remember for durable facts. Use request_takeover when the user must type on the screen. Use destination.write only for connected destination records. Prefer tools over claiming you already did the work.",
+            ].join("\n\n"),
             history,
             tools,
             model: {
@@ -158,6 +213,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             },
             resumeFromCheckpoint: resumeFromTakeover ? "takeover" : undefined,
             script,
+            executeTool: scripted ? undefined : applyTool,
           },
           context,
         )) {
@@ -209,42 +265,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             });
             return;
           } else if (event.type === "tool") {
-            const applied = await recordEffect(deps, run, event.name, event.executionId, event.args);
-            if (!applied.duplicate) {
-              if (event.name === "write_file") {
-                await deps.home.writeFile(
-                  bot.id,
-                  String(event.args.path ?? "notes/result.txt"),
-                  String(event.args.content ?? ""),
-                  context,
-                );
-              }
-              if (event.name === "remember") {
-                await deps.memory.commit(
-                  {
-                    scope: "bot",
-                    botId: bot.id,
-                    path: String(event.args.path ?? "MEMORY.md"),
-                    content: String(event.args.content ?? ""),
-                    sourceRunId: runId,
-                    sourceThreadId: thread.id,
-                  },
-                  context,
-                );
-              }
-              if (event.name === "destination.write" && deps.connector) {
-                for await (const _ of deps.connector.execute(
-                  {
-                    tool: event.name,
-                    args: event.args,
-                    executionId: event.executionId,
-                  },
-                  context,
-                )) {
-                  /* drain */
-                }
-              }
-            }
+            if (scripted) await applyTool(event.name, event.args, event.executionId);
           } else if (event.type === "usage") {
             await deps.prisma.usageRecord.create({
               data: {
@@ -395,6 +416,67 @@ async function recordEffect(
     data: { status: "completed", result: { ok: true } },
   });
   return { duplicate: false, effect };
+}
+
+async function ensureComputer(
+  deps: ExecutorDeps,
+  botId: string,
+  context: {
+    operationId: string;
+    traceId: string;
+    workspaceId: string;
+    userId: string;
+    botId?: string;
+    runId?: string;
+    signal: AbortSignal;
+  },
+): Promise<ComputerRef> {
+  const homePath = resolveAgentHomePath(deps.home, botId, deps.dataDir ?? "./data");
+  await mkdir(homePath, { recursive: true });
+  await deps.prisma.computer.updateMany({
+    where: { botId },
+    data: { state: "booting" },
+  });
+  try {
+    const ref = await deps.sandbox.provision({ botId, homePath }, context);
+    await deps.prisma.computer.updateMany({
+      where: { botId },
+      data: { state: "running", providerRef: ref.providerRef, kind: ref.kind, controlHolder: "bot" },
+    });
+    return ref;
+  } catch (error) {
+    await deps.prisma.computer.updateMany({
+      where: { botId },
+      data: { state: "error" },
+    });
+    throw error;
+  }
+}
+
+async function runSandboxCommand(
+  sandbox: SandboxProvider,
+  computer: ComputerRef,
+  argv: string[],
+  cwd: string,
+  context: {
+    operationId: string;
+    traceId: string;
+    workspaceId: string;
+    userId: string;
+    botId?: string;
+    runId?: string;
+    signal: AbortSignal;
+  },
+) {
+  let stdout = "";
+  let stderr = "";
+  let code = 0;
+  for await (const event of sandbox.execute(computer, { argv, cwd }, context)) {
+    if (event.type === "stdout") stdout += event.data;
+    if (event.type === "stderr") stderr += event.data;
+    if (event.type === "exit") code = event.code;
+  }
+  return { stdout, stderr, code };
 }
 
 async function resolveModelKey(

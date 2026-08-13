@@ -160,6 +160,7 @@ export interface AgentRunRequest {
   model: { provider: string; id: string; apiKey?: string };
   resumeFromCheckpoint?: string;
   script?: ScriptedTurn[];
+  executeTool?: (name: string, args: Record<string, unknown>, executionId: string) => Promise<unknown>;
 }
 
 export interface ScriptedTurn {

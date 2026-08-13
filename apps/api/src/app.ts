@@ -72,6 +72,7 @@ export async function createApp(overrides: Partial<AppEnv> & { prisma?: PrismaCl
     secrets: [env.openRouterKey ?? ""].filter(Boolean),
     secretStore: secrets,
     deploymentModelKey: env.openRouterKey,
+    dataDir: env.dataDir,
   });
 
   if (wakeupKind !== "graphile") {
@@ -121,7 +122,13 @@ export async function createApp(overrides: Partial<AppEnv> & { prisma?: PrismaCl
     if (matched) return c.newResponse(response.body, response);
     await next();
   });
-  app.get("/health", (c) => c.json({ ok: true }));
+  app.get("/health", (c) =>
+    c.json({
+      ok: true,
+      runtime: env.agentRuntime,
+      sandbox: env.sandboxProvider,
+    }),
+  );
 
   return {
     app,
