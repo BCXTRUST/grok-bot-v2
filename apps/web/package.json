@@ -17,6 +17,7 @@
     "@orpc/tanstack-query": "^1.15.0",
     "@rakazo/chat-ui": "workspace:*",
     "@rakazo/contracts": "workspace:*",
+    "@rakazo/core": "workspace:*",
     "@rakazo/ui-tokens": "workspace:*",
     "@rakazo/ui-web": "workspace:*",
     "@tanstack/react-query": "^5.85.5",

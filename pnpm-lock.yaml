@@ -170,6 +170,9 @@ importers:
       '@rakazo/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@rakazo/core':
+        specifier: workspace:*
+        version: link:../../packages/core
       '@rakazo/ui-tokens':
         specifier: workspace:*
         version: link:../../packages/ui-tokens

@@ -54,7 +54,7 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }) =>
   await page
     .locator("label:has-text('Instruction') textarea")
     .fill("write a file in your home called notes/result.txt that says routine-ok");
-  await page.getByRole("button", { name: "Save routine" }).click();
+  await page.getByRole("button", { name: "Save" }).click();
   await expect(page.getByText("Monday briefing")).toBeVisible();
 
   await page.getByText("Plugins").click();

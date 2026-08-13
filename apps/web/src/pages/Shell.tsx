@@ -7,12 +7,14 @@ import type {
   ThreadMessage,
   ThreadSnapshot,
 } from "@rakazo/contracts";
+import { cronFromPreset, defaultCronPreset, formatCron, presetFromCron } from "@rakazo/core";
 import { BotAvatar, Button } from "@rakazo/ui-web";
 import { type Dispatch, type SetStateAction, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { authClient } from "../lib/auth";
 import { rpc } from "../lib/rpc";
 import { PluginsOverlay } from "./PluginsOverlay";
+import { RoutineSchedule } from "./RoutineSchedule";
 import { WindowChrome } from "./WindowChrome";
 
 type Panel = "computer" | "settings" | "routine" | "create" | null;
@@ -31,7 +33,11 @@ export function ShellPage() {
   const [pluginsOpen, setPluginsOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [booting, setBooting] = useState(false);
-  const [routineDraft, setRoutineDraft] = useState({ name: "", prompt: "", cron: "0 9 * * 1" });
+  const [routineDraft, setRoutineDraft] = useState({
+    name: "",
+    prompt: "",
+    schedule: defaultCronPreset(),
+  });
   const [screenUrl, setScreenUrl] = useState<string | null>(null);
   const [computerOpen, setComputerOpen] = useState(false);
   const [usage, setUsage] = useState<{
@@ -517,7 +523,7 @@ export function ShellPage() {
                     setRoutineDraft({
                       name: routine.name,
                       prompt: routine.prompt,
-                      cron: routine.cron,
+                      schedule: presetFromCron(routine.cron),
                     });
                     setPanel("routine");
                   }}
@@ -527,7 +533,7 @@ export function ShellPage() {
                   <span className="flex-1 text-left text-[14.5px] text-[#ECECEE]">
                     {routine.name}
                   </span>
-                  <span className="text-[13px] text-[#6C6C70]">{routine.cron}</span>
+                  <span className="text-[13px] text-[#6C6C70]">{formatCron(routine.cron)}</span>
                 </button>
               ))}
               <button
@@ -538,6 +544,7 @@ export function ShellPage() {
                     await rpc.routines.testRun({ routineId: first.id });
                     await refreshThread(active.id);
                   } else {
+                    setRoutineDraft({ name: "", prompt: "", schedule: defaultCronPreset() });
                     setPanel("routine");
                   }
                 }}
@@ -547,7 +554,10 @@ export function ShellPage() {
               </button>
               <button
                 type="button"
-                onClick={() => setPanel("routine")}
+                onClick={() => {
+                  setRoutineDraft({ name: "", prompt: "", schedule: defaultCronPreset() });
+                  setPanel("routine");
+                }}
                 className="mt-1 flex items-center gap-2.5 px-2.5 py-2.5 text-[14.5px] text-[#7A7A80]"
               >
                 + New routine
@@ -613,24 +623,21 @@ export function ShellPage() {
                   className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
                 />
               </label>
-              <label className="mt-5 block text-[14px] text-[#85858A]">
-                Cron
-                <input
-                  value={routineDraft.cron}
-                  onChange={(e) => setRoutineDraft((s) => ({ ...s, cron: e.target.value }))}
-                  className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 font-mono text-[#ECECEE]"
+              <div className="mt-5 text-[14px] text-[#85858A]">
+                When to run
+                <RoutineSchedule
+                  value={routineDraft.schedule}
+                  onChange={(schedule) => setRoutineDraft((s) => ({ ...s, schedule }))}
                 />
-              </label>
-              <Button
+              </div>
+              <button
                 type="button"
-                variant="cream"
-                className="mt-5"
                 onClick={async () => {
                   await rpc.routines.create({
                     botId: active.id,
                     name: routineDraft.name || "Routine",
                     prompt: routineDraft.prompt || "Check in.",
-                    cron: routineDraft.cron,
+                    cron: cronFromPreset(routineDraft.schedule),
                     timezone: "UTC",
                     active: true,
                     notify: true,
@@ -638,9 +645,10 @@ export function ShellPage() {
                   await refreshThread(active.id);
                   setPanel("computer");
                 }}
+                className="mt-5 rounded-[11px] bg-[#F1F1EF] px-4 py-2 text-[#17171A]"
               >
-                Save routine
-              </Button>
+                Save
+              </button>
             </div>
           ) : null}
           </div>
