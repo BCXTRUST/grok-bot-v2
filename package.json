@@ -30,5 +30,11 @@
     "turbo": "^2.5.6",
     "typescript": "^5.9.2",
     "vitest": "^4.1.10"
+  },
+  "pnpm": {
+    "overrides": {
+      "react": "19.0.0",
+      "react-dom": "19.0.0"
+    }
   }
 }
