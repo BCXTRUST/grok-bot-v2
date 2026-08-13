@@ -171,7 +171,7 @@ export class ComposioConnector implements ConnectorProvider, ConnectionAuthProvi
 
   private async loadDirectory(): Promise<ToolkitDirectoryEntry[]> {
     const session = await this.sessionFor("__rakazo_catalog__");
-    const toolkits = await collectPages((cursor) => session.toolkits({ limit: 100, cursor }));
+    const toolkits = await collectPages((cursor) => session.toolkits({ limit: 50, cursor }));
     return toolkits.map((toolkit) => ({
       slug: toolkit.slug,
       name: toolkit.name,
@@ -183,7 +183,7 @@ export class ComposioConnector implements ConnectorProvider, ConnectionAuthProvi
   private async connectedSlugs(userId: string): Promise<string[]> {
     const session = await this.sessionFor(userId);
     const connected = await collectPages((cursor) =>
-      session.toolkits({ isConnected: true, limit: 100, cursor }),
+      session.toolkits({ isConnected: true, limit: 50, cursor }),
     );
     return connected.map((toolkit) => toolkit.slug);
   }
