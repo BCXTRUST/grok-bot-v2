@@ -1,6 +1,6 @@
 import { Link, Redirect } from "expo-router";
-import { useEffect, useState } from "react";
-import { Pressable, Text, View } from "react-native";
+import { useCallback, useEffect, useState } from "react";
+import { Pressable, RefreshControl, ScrollView, Text, View } from "react-native";
 import { loadSessionToken, type MobileBot, rpc, signOut } from "../lib/api";
 import { previewSnippet } from "../lib/preview";
 import { registerPushToken } from "../lib/push";
@@ -10,6 +10,25 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
   const [hasSession, setHasSession] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const loadBots = useCallback(async () => {
+    setError(null);
+    try {
+      setBots(await rpc<MobileBot[]>("bots/list"));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not load bots");
+    }
+  }, []);
+
+  const refreshBots = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await loadBots();
+    } finally {
+      setRefreshing(false);
+    }
+  }, [loadBots]);
 
   useEffect(() => {
     void loadSessionToken().then((token) => {
@@ -21,10 +40,8 @@ export default function Home() {
   useEffect(() => {
     if (!hasSession) return;
     void registerPushToken().catch(() => undefined);
-    void rpc<MobileBot[]>("bots/list")
-      .then(setBots)
-      .catch((err: Error) => setError(err.message));
-  }, [hasSession]);
+    void loadBots();
+  }, [hasSession, loadBots]);
 
   if (!ready) {
     return (
@@ -36,7 +53,19 @@ export default function Home() {
   if (!hasSession) return <Redirect href="/sign-in" />;
 
   return (
-    <View style={{ flex: 1, backgroundColor: "#050506", padding: 24 }}>
+    <ScrollView
+      style={{ flex: 1, backgroundColor: "#050506" }}
+      contentContainerStyle={{ flexGrow: 1, padding: 24 }}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={() => void refreshBots()}
+          tintColor="#85858A"
+          colors={["#85858A"]}
+          progressBackgroundColor="#1A1A1D"
+        />
+      }
+    >
       <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
         <Text style={{ color: "#ECECEE", fontSize: 28, fontWeight: "500" }}>Bots</Text>
         <Link href="/new" asChild>
@@ -69,6 +98,6 @@ export default function Home() {
       >
         <Text style={{ color: "#85858A" }}>Sign out</Text>
       </Pressable>
-    </View>
+    </ScrollView>
   );
 }
