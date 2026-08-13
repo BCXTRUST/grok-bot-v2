@@ -70,7 +70,7 @@ describe("docker sandbox", () => {
   });
 
   it("runs the same graphical command through the supervisor", async ({ skip }) => {
-    if (!dockerAvailable()) {
+    if (!dockerAvailable() || !hasAnySandboxImage()) {
       skip();
       return;
     }
@@ -106,6 +106,18 @@ function dockerAvailable() {
   } catch {
     return false;
   }
+}
+
+function hasAnySandboxImage() {
+  const images = ["rakazo/computer:local", "alpine/git:latest", "alpine:latest", "python:3.12-slim"];
+  return images.some((image) => {
+    try {
+      execSync(`docker image inspect ${image}`, { stdio: "ignore", timeout: 8_000 });
+      return true;
+    } catch {
+      return false;
+    }
+  });
 }
 
 async function ping(url: string) {
