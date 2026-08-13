@@ -8,5 +8,5 @@
     "module": "ESNext",
     "moduleResolution": "bundler"
   },
-  "include": ["app", "lib"]
+  "include": ["app", "lib", "components"]
 }

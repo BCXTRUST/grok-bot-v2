@@ -13,18 +13,24 @@ export default function Layout() {
   }, []);
 
   if (!ready) {
-    return <View style={{ flex: 1, backgroundColor: "#0B0B0C" }} />;
+    return <View style={{ flex: 1, backgroundColor: "#000" }} />;
   }
 
   return (
     <ThemeProvider value={DarkTheme}>
       <StatusBar style="light" />
       <Stack
-        screenOptions={{ headerStyle: { backgroundColor: "#0B0B0C" }, headerTintColor: "#ECECEE" }}
+        screenOptions={{
+          headerStyle: { backgroundColor: "#000" },
+          headerTintColor: "#ECECEE",
+          headerShadowVisible: false,
+          headerBackButtonDisplayMode: "minimal",
+          contentStyle: { backgroundColor: "#000" },
+        }}
       >
-        <Stack.Screen name="index" options={{ title: "Rakazo" }} />
+        <Stack.Screen name="index" options={{ headerShown: false, title: "Rakazo" }} />
         <Stack.Screen name="sign-in" options={{ headerShown: false }} />
-        <Stack.Screen name="new" options={{ title: "New bot" }} />
+        <Stack.Screen name="new" options={{ title: "New bot", presentation: "modal" }} />
         <Stack.Screen name="thread" options={{ title: "Thread" }} />
         <Stack.Screen name="computer" options={{ title: "Computer" }} />
       </Stack>

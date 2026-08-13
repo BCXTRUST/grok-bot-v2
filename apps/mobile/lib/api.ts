@@ -113,13 +113,32 @@ export type MobileBot = {
   name: string;
   preview: string;
   title: string;
-  color?: string;
+  color: string;
+  updatedAt: string;
+  parentBotId?: string | null;
+};
+
+export type MobileMe = {
+  name: string;
+  email: string;
 };
 
 export type MobileMessage = {
   id: string;
   role: "user" | "bot" | "system";
-  blocks: Array<{ kind: string; text?: string; state?: string }>;
+  blocks: Array<{
+    kind: string;
+    text?: string;
+    state?: string;
+    name?: string;
+    task?: string;
+    status?: string;
+    progress?: string;
+    result?: string;
+    botId?: string;
+    title?: string;
+    agentId?: string;
+  }>;
 };
 
 export type MobileSnapshot = {
@@ -133,7 +152,15 @@ export type MobileSnapshot = {
 
 export function blockText(message: MobileMessage) {
   return message.blocks
-    .map((block) => block.text ?? block.state ?? "")
+    .map((block) => {
+      if (block.kind === "subagent") {
+        return `${block.name ?? "subagent"}: ${block.result || block.progress || block.task || ""}`;
+      }
+      if (block.kind === "child_bot") {
+        return `${block.status === "deleted" ? "Deleted" : "Bot"} ${block.name ?? ""}`;
+      }
+      return block.text ?? block.state ?? "";
+    })
     .filter(Boolean)
     .join("\n");
 }
@@ -210,6 +237,33 @@ export function applyMobileThreadEvent(
       ],
     };
   }
+  if (event.type === "thread.subagent") {
+    const agentId = String(event.payload?.agentId ?? event.id ?? "live");
+    const streaming: MobileMessage = {
+      id: `subagent:${agentId}`,
+      role: "bot",
+      blocks: [
+        {
+          kind: "subagent",
+          agentId,
+          name: String(event.payload?.name ?? "subagent"),
+          task: String(event.payload?.task ?? ""),
+          status: String(event.payload?.status ?? "running"),
+          progress: event.payload?.progress ? String(event.payload.progress) : undefined,
+          result: event.payload?.result ? String(event.payload.result) : undefined,
+        },
+      ],
+    };
+    return {
+      ...prev,
+      messages: [
+        ...prev.messages.filter(
+          (message) => message.id !== streaming.id && !message.id.startsWith("progress:"),
+        ),
+        streaming,
+      ],
+    };
+  }
   if (event.type === "thread.message.created") {
     const next: MobileMessage = {
       id: String(event.payload?.messageId ?? event.id ?? `msg:${event.seq ?? 0}`),
@@ -220,7 +274,15 @@ export function applyMobileThreadEvent(
       ...prev,
       messages: [
         ...prev.messages.filter(
-          (message) => message.id !== next.id && !message.id.startsWith("progress:"),
+          (message) =>
+            message.id !== next.id &&
+            !message.id.startsWith("progress:") &&
+            !(
+              message.id.startsWith("subagent:") &&
+              next.blocks.some(
+                (block) => block.kind === "subagent" && message.id === `subagent:${block.agentId}`,
+              )
+            ),
         ),
         next,
       ],
