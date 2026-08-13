@@ -21,7 +21,7 @@ pnpm db:migrate
 pnpm dev
 ```
 
-`pnpm dev` starts the API, Graphile Worker, web app, and sandbox supervisor. Product wakeups default to Graphile Worker so a run continues if the API process restarts. `pnpm verify:fast` still forces `WAKEUP_DRIVER=memory`.
+`pnpm dev` starts the API, Graphile Worker, web app, and sandbox supervisor. Product defaults are `AGENT_RUNTIME=pi`, `SANDBOX_PROVIDER=docker`, and Graphile Worker. `pnpm verify:fast` pins `AGENT_RUNTIME=scripted`, `SANDBOX_PROVIDER=fake`, and `WAKEUP_DRIVER=memory` so default tests never call live models or Composio.
 
 If this Postgres was created with `prisma db push` before checked-in migrations existed, mark the baseline once:
 
@@ -37,7 +37,7 @@ pnpm verify         # Postgres via Testcontainers, emulators, API, Playwright
 pnpm verify:providers  # optional live OpenRouter / E2B canaries
 ```
 
-Default verification uses a scripted agent runtime and sandbox emulators. It does not need SaaS credentials.
+Default verification uses a scripted agent runtime and sandbox emulators. It does not need SaaS credentials. Product processes default to Pi and Docker unless those variables are set to the emulator values.
 
 ## Layout
 

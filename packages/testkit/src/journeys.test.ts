@@ -10,21 +10,22 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 type App = { request: (input: string, init?: RequestInit) => Promise<Response> };
 
-function loadEnvFile() {
+function loadDatabaseUrl() {
   const file = path.resolve(".env");
-  if (!existsSync(file)) return;
+  if (!existsSync(file) || process.env.DATABASE_URL) return;
   for (const line of readFileSync(file, "utf8").split("\n")) {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith("#")) continue;
     const eq = trimmed.indexOf("=");
     if (eq < 1) continue;
     const key = trimmed.slice(0, eq);
-    const value = trimmed.slice(eq + 1);
-    if (!process.env[key]) process.env[key] = value;
+    if (key !== "DATABASE_URL") continue;
+    process.env.DATABASE_URL = trimmed.slice(eq + 1);
+    return;
   }
 }
 
-loadEnvFile();
+loadDatabaseUrl();
 process.env.WAKEUP_DRIVER = "memory";
 process.env.SANDBOX_PROVIDER = "fake";
 process.env.AGENT_RUNTIME = "scripted";

@@ -121,7 +121,7 @@ export function createRepos(prisma: PrismaClient) {
             workspaceId: actor.workspaceId,
             botId: created.id,
             userId: actor.userId,
-            kind: process.env.SANDBOX_PROVIDER ?? "fake",
+            kind: process.env.SANDBOX_PROVIDER ?? "docker",
             state: "stopped",
           },
         });

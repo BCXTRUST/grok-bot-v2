@@ -84,7 +84,8 @@ export async function createApp(
   const stack = createConnectorStack(isComposioEnabled(env.composioApiKey));
   const connector = stack.destination;
   await connector.start();
-  const runtime = env.agentRuntime === "pi" ? new PiAgentRuntime() : new ScriptedAgentRuntime();
+  const runtime =
+    env.agentRuntime === "scripted" ? new ScriptedAgentRuntime() : new PiAgentRuntime();
   const notifications = new ExpoPushProvider(env.dataDir);
   const executor = createRunExecutor({
     prisma,

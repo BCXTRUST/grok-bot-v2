@@ -5,6 +5,7 @@ import {
   collectPages,
   executeSessionKey,
   filterCatalog,
+  isComposioEnabled,
   isNoAuthToolkitError,
   sanitizeComposioError,
 } from "./composio-connector.js";
@@ -84,5 +85,12 @@ describe("composio tool mapping", () => {
       { slug: "hackernews", name: "Hacker News", logo: null, connected: false, noAuth: true },
     ];
     expect(filterCatalog(items, "hacker").map((item) => item.slug)).toEqual(["hackernews"]);
+  });
+});
+
+describe("Composio during verify:fast", () => {
+  it("does not construct a live Platform client under Vitest", () => {
+    expect(process.env.VITEST).toBeTruthy();
+    expect(isComposioEnabled("ck_must_not_call_live")).toBe(false);
   });
 });

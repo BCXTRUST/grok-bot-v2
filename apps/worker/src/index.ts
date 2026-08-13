@@ -43,10 +43,10 @@ async function main() {
   if (!databaseUrl) throw new Error("DATABASE_URL is required");
   const { prisma } = createDb(databaseUrl);
   const runtime =
-    process.env.AGENT_RUNTIME === "pi" ? new PiAgentRuntime() : new ScriptedAgentRuntime();
+    process.env.AGENT_RUNTIME === "scripted" ? new ScriptedAgentRuntime() : new PiAgentRuntime();
   const dataDir = process.env.DATA_DIR ?? "./data";
   const desktopGrants = await loadAllFolderGrants(dataDir);
-  const sandbox = createSandboxProvider(process.env.SANDBOX_PROVIDER ?? "fake", {
+  const sandbox = createSandboxProvider(process.env.SANDBOX_PROVIDER ?? "docker", {
     supervisorUrl: process.env.SANDBOX_SUPERVISOR_URL ?? "http://127.0.0.1:7091",
     e2bApiKey: process.env.E2B_API_KEY,
     dataDir,

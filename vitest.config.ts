@@ -3,6 +3,7 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     environment: "node",
+    setupFiles: ["./packages/testkit/src/verify-fast-env.ts"],
     include: [
       "packages/*/src/**/*.test.ts",
       "infra/sandboxes/supervisor/src/**/*.test.ts",
