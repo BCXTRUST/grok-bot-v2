@@ -9,7 +9,7 @@ import {
 import { nextCronDate, projectMessages } from "@rakazo/core";
 import { appendEvent, createRepos, eventsAfter, IsolationError, requireMembership, type PrismaClient } from "@rakazo/db";
 import type { AgentHomeStore, MemoryStore, SandboxProvider, WakeupDriver } from "@rakazo/adapter-kit";
-import { EncryptedSecretStore, resolveAgentHomePath } from "@rakazo/adapters";
+import { EncryptedSecretStore, resolveAgentHomePath, sanitizeComposioError, type ComposioConnector } from "@rakazo/adapters";
 import { mkdir } from "node:fs/promises";
 import type { Auth } from "@rakazo/auth";
 
@@ -21,10 +21,12 @@ export interface RouterDeps {
   memory: MemoryStore;
   home: AgentHomeStore;
   secrets: EncryptedSecretStore;
+  composio?: ComposioConnector;
   env: {
     defaultProvider: string;
     defaultModel: string;
     openRouterKey?: string;
+    webOrigin: string;
   };
 }
 
@@ -723,6 +725,14 @@ export function createRouter(deps: RouterDeps) {
       }),
     },
     connections: {
+      catalog: authed.connections.catalog.handler(async ({ context, input }) => {
+        if (!deps.composio) return [];
+        try {
+          return await deps.composio.catalog(context.actor.userId, input.query);
+        } catch {
+          return [];
+        }
+      }),
       list: authed.connections.list.handler(async ({ context }) => {
         const rows = await deps.prisma.connection.findMany({
           where: { workspaceId: context.actor.workspaceId, userId: context.actor.userId },
@@ -746,24 +756,79 @@ export function createRouter(deps: RouterDeps) {
             status: "pending",
           },
         });
-        return { connectionId: row.id, authorizationUrl: `/rpc/connections/complete` };
+        if (!deps.composio) {
+          return { connectionId: row.id, authorizationUrl: null };
+        }
+        try {
+          const auth = await deps.composio.begin(
+            { provider: input.provider, redirectUrl: `${deps.env.webOrigin}/app` },
+            {
+              operationId: "connections.begin",
+              traceId: "connections.begin",
+              workspaceId: context.actor.workspaceId,
+              userId: context.actor.userId,
+              signal: new AbortController().signal,
+            },
+          );
+          await deps.prisma.connection.update({
+            where: { id: row.id },
+            data: {
+              status: auth.authorizationUrl ? "pending" : "connected",
+              providerRef: auth.state || null,
+              metadata: { state: auth.state },
+            },
+          });
+          return { connectionId: row.id, authorizationUrl: auth.authorizationUrl };
+        } catch (error) {
+          await deps.prisma.connection.update({
+            where: { id: row.id },
+            data: { status: "error" },
+          });
+          throw new ORPCError("BAD_REQUEST", { message: sanitizeComposioError(error) });
+        }
       }),
       complete: authed.connections.complete.handler(async ({ context, input }) => {
-        const row = await deps.prisma.connection.update({
-          where: { id: input.connectionId },
-          data: { status: "connected" },
+        const existing = await deps.prisma.connection.findFirst({
+          where: { id: input.connectionId, workspaceId: context.actor.workspaceId, userId: context.actor.userId },
         });
-        if (row.workspaceId !== context.actor.workspaceId) throw new IsolationError();
+        if (!existing) throw new IsolationError();
+        if (deps.composio) {
+          const ready = await deps.composio.connectionReady(context.actor.userId, existing.provider);
+          if (ready) {
+            await deps.prisma.connection.update({
+              where: { id: existing.id },
+              data: { status: "connected" },
+            });
+          }
+        } else {
+          await deps.prisma.connection.update({
+            where: { id: existing.id },
+            data: { status: "connected" },
+          });
+        }
+        const row = await deps.prisma.connection.findFirstOrThrow({ where: { id: existing.id } });
         return {
           id: row.id,
           provider: row.provider,
           displayName: row.displayName,
-          status: "connected" as const,
+          status: row.status as "pending" | "connected" | "revoked" | "error",
           capabilities: [],
           createdAt: row.createdAt.toISOString(),
         };
       }),
       revoke: authed.connections.revoke.handler(async ({ context, input }) => {
+        const row = await deps.prisma.connection.findFirst({
+          where: { id: input.connectionId, workspaceId: context.actor.workspaceId, userId: context.actor.userId },
+        });
+        if (row && deps.composio) {
+          await deps.composio.revoke(row.provider, {
+            operationId: "connections.revoke",
+            traceId: "connections.revoke",
+            workspaceId: context.actor.workspaceId,
+            userId: context.actor.userId,
+            signal: new AbortController().signal,
+          });
+        }
         await deps.prisma.connection.updateMany({
           where: { id: input.connectionId, workspaceId: context.actor.workspaceId },
           data: { status: "revoked" },

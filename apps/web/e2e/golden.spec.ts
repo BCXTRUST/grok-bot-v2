@@ -54,8 +54,7 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }) =>
   await expect(page.getByText("Monday briefing")).toBeVisible();
 
   await page.getByText("Plugins").click();
-  await page.getByRole("button", { name: "Add local MCP" }).click();
-  await expect(page.getByText("Notes MCP")).toBeVisible();
+  await expect(page.getByPlaceholder("Search apps")).toBeVisible();
   await page.getByRole("button", { name: "Close plugins" }).click();
 
   await page.getByText("Chief").first().click();

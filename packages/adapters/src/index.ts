@@ -12,6 +12,7 @@ export * from "./sandbox-factory.js";
 export * from "./wakeup.js";
 export * from "./realtime.js";
 export * from "./destination-emulator.js";
+export * from "./composio-connector.js";
 export * from "./artifacts.js";
 export * from "./mcp-emulator.js";
 export * from "./executor.js";

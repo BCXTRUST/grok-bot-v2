@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { BotAvatar, Button } from "@rakazo/ui-web";
-import type { Bot, CapabilityInstall, ComputerStatus, Routine, ThreadMessage, ThreadSnapshot } from "@rakazo/contracts";
+import type { Bot, ComputerStatus, Routine, ThreadMessage, ThreadSnapshot } from "@rakazo/contracts";
 import { authClient } from "../lib/auth";
 import { rpc } from "../lib/rpc";
+import { PluginsOverlay } from "./PluginsOverlay";
 
 type Panel = "computer" | "settings" | "routine" | null;
 
@@ -19,7 +20,6 @@ export function ShellPage() {
   const [routines, setRoutines] = useState<Routine[]>([]);
   const [computer, setComputer] = useState<ComputerStatus | null>(null);
   const [pluginsOpen, setPluginsOpen] = useState(false);
-  const [capabilities, setCapabilities] = useState<CapabilityInstall[]>([]);
   const [menuOpen, setMenuOpen] = useState(false);
   const [booting, setBooting] = useState(false);
   const [files, setFiles] = useState<Array<{ path: string; kind: string; size: number }>>([]);
@@ -59,7 +59,6 @@ export function ShellPage() {
 
   useEffect(() => {
     void refreshBots();
-    void rpc.capabilities.list().then(setCapabilities);
   }, []);
 
   useEffect(() => {
@@ -171,10 +170,7 @@ export function ShellPage() {
         </div>
         <button
           type="button"
-          onClick={() => {
-            void rpc.capabilities.list().then(setCapabilities);
-            setPluginsOpen(true);
-          }}
+          onClick={() => setPluginsOpen(true)}
           className="mx-3 mb-1 flex items-center gap-3 rounded-[11px] px-2.5 py-2 hover:bg-[#131315]"
         >
           <span className="grid h-[30px] w-[30px] place-items-center rounded-full bg-[#17171A] text-[#9A9AA0]">⌁</span>
@@ -455,47 +451,7 @@ export function ShellPage() {
         </aside>
       ) : null}
 
-      {pluginsOpen ? (
-        <div className="absolute inset-0 flex items-center justify-center bg-[rgba(4,4,5,.62)] p-10">
-          <div className="flex h-[760px] w-[1080px] max-w-full flex-col overflow-hidden rounded-[26px] border border-[#232326] bg-[#141416] shadow-[0_40px_90px_rgba(0,0,0,.55)]">
-            <div className="flex items-start justify-between px-8 pt-7">
-              <div className="text-2xl font-medium text-[#F1F1F2]">Plugins</div>
-              <button type="button" aria-label="Close plugins" onClick={() => setPluginsOpen(false)} className="text-[#85858A]">
-                ✕
-              </button>
-            </div>
-            <div className="rk-scroll flex-1 overflow-y-auto px-8 py-6">
-              <p className="mb-4 text-[13.5px] text-[#7A7A80]">Installed</p>
-              {capabilities.length === 0 ? <p className="text-[#6C6C70]">No plugins yet. Add a Git URL or MCP server.</p> : null}
-              {capabilities.map((cap) => (
-                <div key={cap.id} className="flex items-center gap-4 rounded-[13px] px-3 py-2.5">
-                  <div className="grid h-[42px] w-[42px] place-items-center rounded-xl bg-[#2C2C30] font-semibold">{cap.name[0]}</div>
-                  <div className="flex-1">
-                    <div className="text-[15.5px] font-medium text-[#ECECEE]">{cap.name}</div>
-                    <div className="text-[13.5px] text-[#7A7A80]">{cap.source}</div>
-                  </div>
-                </div>
-              ))}
-              <Button
-                type="button"
-                variant="pill"
-                className="mt-6"
-                onClick={async () => {
-                  await rpc.capabilities.install({
-                    kind: "mcp",
-                    name: "Notes MCP",
-                    source: "local://notes",
-                    config: {},
-                  });
-                  setCapabilities(await rpc.capabilities.list());
-                }}
-              >
-                Add local MCP
-              </Button>
-            </div>
-          </div>
-        </div>
-      ) : null}
+      {pluginsOpen ? <PluginsOverlay onClose={() => setPluginsOpen(false)} /> : null}
 
       {booting ? (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-[22px] bg-[rgba(4,4,5,.88)]">

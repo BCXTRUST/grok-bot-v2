@@ -13,6 +13,7 @@ export interface AppEnv {
   agentRuntime: string;
   openRouterKey: string | undefined;
   e2bApiKey: string | undefined;
+  composioApiKey: string | undefined;
   defaultProvider: string;
   defaultModel: string;
   port: number;
@@ -34,6 +35,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     agentRuntime: source.AGENT_RUNTIME ?? "scripted",
     openRouterKey: source.OPENROUTER_API_KEY,
     e2bApiKey: source.E2B_API_KEY,
+    composioApiKey: source.COMPOSIO_API_KEY,
     defaultProvider: source.PI_DEFAULT_PROVIDER ?? "openrouter",
     defaultModel: source.PI_DEFAULT_MODEL ?? "deepseek/deepseek-v4-flash-0731",
     port: Number(source.API_PORT ?? 3100),

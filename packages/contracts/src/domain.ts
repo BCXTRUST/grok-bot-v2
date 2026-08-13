@@ -85,6 +85,15 @@ export const ConnectionSchema = z.object({
 });
 export type Connection = z.infer<typeof ConnectionSchema>;
 
+export const ConnectionCatalogItemSchema = z.object({
+  slug: z.string(),
+  name: z.string(),
+  logo: z.string().nullable(),
+  connected: z.boolean(),
+  noAuth: z.boolean(),
+});
+export type ConnectionCatalogItem = z.infer<typeof ConnectionCatalogItemSchema>;
+
 export const CapabilityInstallSchema = z.object({
   id: Id,
   kind: z.enum(["skill", "plugin", "mcp", "connection"]),

@@ -22,12 +22,13 @@ function loadRootEnv() {
 loadRootEnv();
 
 import {
+  createConnectorStack,
   createRunExecutor,
   createSandboxProvider,
-  DestinationEmulator,
   EncryptedSecretStore,
   GraphileWakeupDriver,
   InMemoryWakeupDriver,
+  isComposioEnabled,
   LocalAgentHomeStore,
   PiAgentRuntime,
   ScriptedAgentRuntime,
@@ -46,7 +47,8 @@ async function main() {
     e2bApiKey: process.env.E2B_API_KEY,
     dataDir: process.env.DATA_DIR ?? "./data",
   });
-  const connector = new DestinationEmulator();
+  const stack = createConnectorStack(isComposioEnabled(process.env.COMPOSIO_API_KEY));
+  const connector = stack.destination;
   await connector.start();
   const secrets = new EncryptedSecretStore(process.env.ENCRYPTION_KEY ?? "dev-encryption-key");
   const executor = createRunExecutor({
@@ -55,8 +57,8 @@ async function main() {
     sandbox,
     memory: new MarkdownMemoryStore(prisma),
     home: new LocalAgentHomeStore(process.env.DATA_DIR ?? "./data"),
-    connector,
-    secrets: [process.env.OPENROUTER_API_KEY ?? ""].filter(Boolean),
+    connector: stack.connector,
+    secrets: [process.env.OPENROUTER_API_KEY ?? "", process.env.COMPOSIO_API_KEY ?? ""].filter(Boolean),
     secretStore: secrets,
     deploymentModelKey: process.env.OPENROUTER_API_KEY,
     dataDir: process.env.DATA_DIR ?? "./data",

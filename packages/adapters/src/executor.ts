@@ -11,6 +11,7 @@ import type { Actor, MessageBlock, RunStatus } from "@rakazo/contracts";
 import { assertTransition, containsSecret, nextCronDate, redactSecrets } from "@rakazo/core";
 import { appendEvent, type PrismaClient } from "@rakazo/db";
 import { builtinAgentTools } from "./builtin-tools.js";
+import { collectLogIds } from "./composio-connector.js";
 import { resolveAgentHomePath } from "./home.js";
 import { inferScript } from "./scripted-runtime.js";
 import type { EncryptedSecretStore } from "./secrets.js";
@@ -185,13 +186,35 @@ export function createRunExecutor(deps: ExecutorDeps) {
         if (deps.connector) {
           let result: unknown = { error: `unknown tool ${name}` };
           for await (const event of deps.connector.execute({ tool: name, args, executionId }, context)) {
-            if (event.type === "result") result = event.data;
+            if (event.type === "result") {
+              result = event.data;
+              const logIds = collectLogIds(event.data);
+              for (const logId of logIds) {
+                await appendEvent(deps.prisma, {
+                  workspaceId: run.workspaceId,
+                  threadId: thread.id,
+                  botId: bot.id,
+                  runId: run.id,
+                  type: "effect.recorded",
+                  payload: { tool: name, logId },
+                });
+              }
+            }
             if (event.type === "error") result = { error: event.message };
           }
           return result;
         }
         return { error: `unknown tool ${name}` };
       };
+
+      const connectedPlugins = await deps.prisma.connection.findMany({
+        where: { userId: run.userId, workspaceId: run.workspaceId, status: "connected" },
+        select: { provider: true, displayName: true },
+      });
+      const pluginLine =
+        connectedPlugins.length > 0
+          ? `Connected plugins: ${connectedPlugins.map((row) => `${row.displayName} (${row.provider})`).join(", ")}. Use those plugin tools when the user asks about those apps.`
+          : "No plugins are connected yet.";
 
       try {
         for await (const event of deps.runtime.run(
@@ -202,7 +225,9 @@ export function createRunExecutor(deps: ExecutorDeps) {
             prompt: task.prompt,
             instructions: [
               bot.instructions || `${bot.name}: ${bot.title}\n${bot.description}`,
-              "You have a persistent computer. Use write_file to save files into your home (they appear in Files). Use shell to run commands in that computer. Use remember for durable facts. Use request_takeover when the user must type on the screen. Use destination.write only for connected destination records. Prefer tools over claiming you already did the work.",
+              "You have a persistent computer. Use write_file to save files into your home (they appear in Files). Use shell to run commands in that computer. Use remember for durable facts. Use request_takeover when the user must type on the screen. Use destination.write only for connected destination records.",
+              pluginLine,
+              "Never print API keys, access tokens, or secret values. Prefer tools over claiming you already did the work.",
             ].join("\n\n"),
             history,
             tools,

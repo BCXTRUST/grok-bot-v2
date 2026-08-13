@@ -8,11 +8,14 @@ import {
   GraphileWakeupDriver,
   InMemoryWakeupDriver,
   LocalAgentHomeStore,
+  createConnectorStack,
   createRunExecutor,
   createSandboxProvider,
   DestinationEmulator,
+  isComposioEnabled,
   PiAgentRuntime,
   ScriptedAgentRuntime,
+  type ComposioConnector,
 } from "@rakazo/adapters";
 import { MarkdownMemoryStore } from "@rakazo/memory";
 import type { WakeupDriver, SandboxProvider } from "@rakazo/adapter-kit";
@@ -25,6 +28,7 @@ export interface AppHandles {
   wakeup: WakeupDriver;
   sandbox: SandboxProvider;
   connector: DestinationEmulator;
+  composio?: ComposioConnector;
   executor: ReturnType<typeof createRunExecutor>;
   stop: () => Promise<void>;
 }
@@ -58,7 +62,8 @@ export async function createApp(overrides: Partial<AppEnv> & { prisma?: PrismaCl
   const secrets = new EncryptedSecretStore(env.encryptionKey);
   const home = new LocalAgentHomeStore(env.dataDir);
   const memory = new MarkdownMemoryStore(prisma);
-  const connector = new DestinationEmulator();
+  const stack = createConnectorStack(isComposioEnabled(env.composioApiKey));
+  const connector = stack.destination;
   await connector.start();
   const runtime =
     env.agentRuntime === "pi" ? new PiAgentRuntime() : new ScriptedAgentRuntime();
@@ -68,8 +73,8 @@ export async function createApp(overrides: Partial<AppEnv> & { prisma?: PrismaCl
     sandbox,
     memory,
     home,
-    connector,
-    secrets: [env.openRouterKey ?? ""].filter(Boolean),
+    connector: stack.connector,
+    secrets: [env.openRouterKey ?? "", env.composioApiKey ?? ""].filter(Boolean),
     secretStore: secrets,
     deploymentModelKey: env.openRouterKey,
     dataDir: env.dataDir,
@@ -94,10 +99,12 @@ export async function createApp(overrides: Partial<AppEnv> & { prisma?: PrismaCl
     memory,
     home,
     secrets,
+    composio: stack.composio,
     env: {
       defaultProvider: env.defaultProvider,
       defaultModel: env.defaultModel,
       openRouterKey: env.openRouterKey,
+      webOrigin: env.webOrigin,
     },
   });
   const rpc = new RPCHandler(router);
@@ -127,6 +134,7 @@ export async function createApp(overrides: Partial<AppEnv> & { prisma?: PrismaCl
       ok: true,
       runtime: env.agentRuntime,
       sandbox: env.sandboxProvider,
+      composio: Boolean(stack.composio),
     }),
   );
 
@@ -136,6 +144,7 @@ export async function createApp(overrides: Partial<AppEnv> & { prisma?: PrismaCl
     wakeup,
     sandbox,
     connector,
+    composio: stack.composio,
     executor,
     stop: async () => {
       await wakeup.stop();

@@ -5,6 +5,7 @@ import {
   BotSchema,
   CapabilityInstallSchema,
   ComputerStatusSchema,
+  ConnectionCatalogItemSchema,
   ConnectionSchema,
   CreateBotInput,
   CreateRoutineInput,
@@ -160,6 +161,9 @@ export const appContract = {
     remove: oc.input(z.object({ id: Id })).output(z.object({ ok: z.literal(true) })),
   },
   connections: {
+    catalog: oc
+      .input(z.object({ query: z.string().optional() }))
+      .output(z.array(ConnectionCatalogItemSchema)),
     list: oc.output(z.array(ConnectionSchema)),
     begin: oc
       .input(z.object({ provider: z.string(), displayName: z.string() }))
