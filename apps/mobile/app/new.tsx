@@ -1,4 +1,4 @@
-import { useRouter } from "expo-router";
+import { Stack, useRouter } from "expo-router";
 import { useState } from "react";
 import { Pressable, ScrollView, Text, TextInput } from "react-native";
 import { type MobileBot, rpc } from "../lib/api";
@@ -10,6 +10,18 @@ export default function NewBot() {
   const [description, setDescription] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+
+  function close() {
+    if (router.canDismiss()) {
+      router.dismiss();
+      return;
+    }
+    if (router.canGoBack()) {
+      router.back();
+      return;
+    }
+    router.replace("/");
+  }
 
   async function create() {
     if (!name.trim() || pending) return;
@@ -32,12 +44,28 @@ export default function NewBot() {
   }
 
   return (
+    <>
+      <Stack.Screen
+        options={{
+          headerLeft: () => (
+            <Pressable
+              onPress={close}
+              hitSlop={12}
+              accessibilityRole="button"
+              accessibilityLabel="Cancel"
+            >
+              <Text style={{ color: "#0A84FF", fontSize: 17 }}>Cancel</Text>
+            </Pressable>
+          ),
+        }}
+      />
     <ScrollView
       style={{ flex: 1, backgroundColor: "#050506" }}
       contentContainerStyle={{ padding: 24 }}
+      keyboardShouldPersistTaps="handled"
+      keyboardDismissMode="on-drag"
     >
-      <Text style={{ color: "#ECECEE", fontSize: 28, fontWeight: "500" }}>New bot</Text>
-      <Text style={{ color: "#85858A", marginTop: 24, fontSize: 14 }}>Name</Text>
+      <Text style={{ color: "#85858A", fontSize: 14 }}>Name</Text>
       <TextInput
         value={name}
         onChangeText={setName}
@@ -98,5 +126,6 @@ export default function NewBot() {
         <Text style={{ color: "#17171A", fontSize: 16 }}>{pending ? "Creating…" : "Create"}</Text>
       </Pressable>
     </ScrollView>
+    </>
   );
 }
