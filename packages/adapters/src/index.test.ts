@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { EncryptedSecretStore } from "./secrets.js";
-import { inferScript } from "./scripted-runtime.js";
 import { FakeSandboxProvider } from "./fake-sandbox.js";
+import { inferScript } from "./scripted-runtime.js";
+import { EncryptedSecretStore } from "./secrets.js";
 
 describe("secret store", () => {
   it("round-trips and never stores plaintext in ciphertext", async () => {
@@ -32,7 +32,9 @@ describe("scripted runtime", () => {
 
   it("routes destination/crm work through the connector", () => {
     const script = inferScript("write this to the destination crm as a note");
-    expect(script?.some((t) => t.toolCalls?.some((c) => c.name === "destination.write"))).toBe(true);
+    expect(script?.some((t) => t.toolCalls?.some((c) => c.name === "destination.write"))).toBe(
+      true,
+    );
   });
 });
 

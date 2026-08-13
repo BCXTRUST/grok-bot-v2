@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
-import { Button } from "@rakazo/ui-web";
 import type { ConnectionCatalogItem } from "@rakazo/contracts";
+import { Button } from "@rakazo/ui-web";
+import { useEffect, useMemo, useState } from "react";
 import { rpc } from "../lib/rpc";
 
 export function PluginsOverlay({ onClose }: { onClose: () => void }) {
@@ -18,7 +18,9 @@ export function PluginsOverlay({ onClose }: { onClose: () => void }) {
 
   useEffect(() => {
     void refresh()
-      .catch((err: unknown) => setError(err instanceof Error ? err.message : "Could not load catalog"))
+      .catch((err: unknown) =>
+        setError(err instanceof Error ? err.message : "Could not load catalog"),
+      )
       .finally(() => setLoading(false));
   }, []);
 
@@ -26,7 +28,8 @@ export function PluginsOverlay({ onClose }: { onClose: () => void }) {
     const needle = query.trim().toLowerCase();
     if (!needle) return catalog;
     return catalog.filter(
-      (item) => item.name.toLowerCase().includes(needle) || item.slug.toLowerCase().includes(needle),
+      (item) =>
+        item.name.toLowerCase().includes(needle) || item.slug.toLowerCase().includes(needle),
     );
   }, [catalog, query]);
 
@@ -46,13 +49,18 @@ export function PluginsOverlay({ onClose }: { onClose: () => void }) {
     setPending(item.slug);
     try {
       const started = await rpc.connections.begin({ provider: item.slug, displayName: item.name });
-      if (started.authorizationUrl) window.open(started.authorizationUrl, "_blank", "noopener,noreferrer");
+      if (started.authorizationUrl)
+        window.open(started.authorizationUrl, "_blank", "noopener,noreferrer");
       if (item.noAuth && !started.authorizationUrl) {
-        setCatalog((prev) => prev.map((entry) => (entry.slug === item.slug ? { ...entry, connected: true } : entry)));
+        setCatalog((prev) =>
+          prev.map((entry) => (entry.slug === item.slug ? { ...entry, connected: true } : entry)),
+        );
         return;
       }
       for (let i = 0; i < 45; i += 1) {
-        await rpc.connections.complete({ connectionId: started.connectionId }).catch(() => undefined);
+        await rpc.connections
+          .complete({ connectionId: started.connectionId })
+          .catch(() => undefined);
         const items = await refresh();
         const match = items.find((entry) => entry.slug === item.slug);
         if (match?.connected) return;
@@ -75,7 +83,12 @@ export function PluginsOverlay({ onClose }: { onClose: () => void }) {
               {loading ? "Loading catalog…" : `${catalog.length} apps`}
             </p>
           </div>
-          <button type="button" aria-label="Close plugins" onClick={onClose} className="text-[#85858A]">
+          <button
+            type="button"
+            aria-label="Close plugins"
+            onClick={onClose}
+            className="text-[#85858A]"
+          >
             ✕
           </button>
         </div>
@@ -95,7 +108,11 @@ export function PluginsOverlay({ onClose }: { onClose: () => void }) {
           {visible.map((item) => (
             <div key={item.slug} className="flex items-center gap-4 rounded-[13px] px-3 py-2.5">
               {item.logo ? (
-                <img src={item.logo} alt="" className="h-[42px] w-[42px] rounded-xl bg-[#2C2C30] object-contain" />
+                <img
+                  src={item.logo}
+                  alt=""
+                  className="h-[42px] w-[42px] rounded-xl bg-[#2C2C30] object-contain"
+                />
               ) : (
                 <div className="grid h-[42px] w-[42px] place-items-center rounded-xl bg-[#2C2C30] font-semibold">
                   {item.name[0]}

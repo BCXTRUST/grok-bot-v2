@@ -1,5 +1,5 @@
-import { run, quickAddJob } from "graphile-worker";
 import type { AdapterContext, WakeupDriver, WakeupJob } from "@rakazo/adapter-kit";
+import { quickAddJob, run } from "graphile-worker";
 
 export class GraphileWakeupDriver implements WakeupDriver {
   private runner: Awaited<ReturnType<typeof run>> | undefined;
@@ -22,7 +22,9 @@ export class GraphileWakeupDriver implements WakeupDriver {
     });
   }
 
-  async start(handlers: Record<string, (payload: Record<string, unknown>) => Promise<void>>): Promise<void> {
+  async start(
+    handlers: Record<string, (payload: Record<string, unknown>) => Promise<void>>,
+  ): Promise<void> {
     const taskList: Record<string, (payload: unknown) => Promise<void>> = {};
     for (const [name, handler] of Object.entries(handlers)) {
       taskList[name] = async (payload) => {
@@ -68,7 +70,9 @@ export class InMemoryWakeupDriver implements WakeupDriver {
     this.timers.push(timer);
   }
 
-  async start(handlers: Record<string, (payload: Record<string, unknown>) => Promise<void>>): Promise<void> {
+  async start(
+    handlers: Record<string, (payload: Record<string, unknown>) => Promise<void>>,
+  ): Promise<void> {
     this.handlers = handlers;
   }
 

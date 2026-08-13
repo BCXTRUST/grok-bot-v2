@@ -11,8 +11,8 @@ import {
   CreateRoutineInput,
   DeploymentSettingsSchema,
   ExportManifestSchema,
-  MeSchema,
   MemoryDocumentSchema,
+  MeSchema,
   ModelCredentialSchema,
   RoutineSchema,
   ThreadSnapshotSchema,
@@ -43,9 +43,13 @@ export const appContract = {
       z.array(
         z.object({
           provider: z.string(),
+          providerName: z.string().optional(),
           id: z.string(),
           label: z.string(),
           billing: z.string(),
+          auth: z.enum(["api-key", "oauth", "both"]).optional(),
+          oauthLabel: z.string().optional(),
+          subscription: z.boolean().optional(),
         }),
       ),
     ),
@@ -112,7 +116,9 @@ export const appContract = {
       .output(z.object({ ok: z.literal(true) })),
     files: oc
       .input(z.object({ botId: Id, path: z.string().default("/") }))
-      .output(z.array(z.object({ path: z.string(), kind: z.enum(["file", "dir"]), size: z.number() }))),
+      .output(
+        z.array(z.object({ path: z.string(), kind: z.enum(["file", "dir"]), size: z.number() })),
+      ),
     readFile: oc
       .input(z.object({ botId: Id, path: z.string() }))
       .output(z.object({ path: z.string(), content: z.string() })),

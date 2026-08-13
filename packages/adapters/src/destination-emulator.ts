@@ -1,5 +1,11 @@
 import { createServer, type Server } from "node:http";
-import type { AdapterContext, ConnectorCall, ConnectorEvent, ConnectorProvider, ConnectorTool } from "@rakazo/adapter-kit";
+import type {
+  AdapterContext,
+  ConnectorCall,
+  ConnectorEvent,
+  ConnectorProvider,
+  ConnectorTool,
+} from "@rakazo/adapter-kit";
 
 export interface DestinationRecord {
   id: string;
@@ -29,7 +35,9 @@ export class DestinationEmulator implements ConnectorProvider {
         return;
       }
       if (req.url === "/records" && req.method === "GET") {
-        res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(this.records));
+        res
+          .writeHead(200, { "content-type": "application/json" })
+          .end(JSON.stringify(this.records));
         return;
       }
       if (req.url === "/records" && req.method === "POST") {
@@ -52,7 +60,9 @@ export class DestinationEmulator implements ConnectorProvider {
   }
 
   async stop(): Promise<void> {
-    await new Promise<void>((resolve, reject) => this.server?.close((err) => (err ? reject(err) : resolve())));
+    await new Promise<void>((resolve, reject) =>
+      this.server?.close((err) => (err ? reject(err) : resolve())),
+    );
   }
 
   async discoverTools(_context: AdapterContext): Promise<ConnectorTool[]> {

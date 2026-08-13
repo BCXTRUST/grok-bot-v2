@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 
 test.describe.configure({ mode: "serial" });
 
@@ -21,7 +21,9 @@ test("two users are isolated and a bot completes durable work", async ({ browser
   const composer = pageA.getByPlaceholder(/Message/);
   await composer.fill("write a file in your home called notes/result.txt that says isolation-ok");
   await pageA.keyboard.press("Enter");
-  await expect(pageA.getByText(/writing that into my home|isolation-ok|handled/i).first()).toBeVisible({
+  await expect(
+    pageA.getByText(/writing that into my home|isolation-ok|handled/i).first(),
+  ).toBeVisible({
     timeout: 30_000,
   });
 
@@ -49,7 +51,9 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }) =>
 
   await page.getByText("+ New routine").click();
   await page.locator("label:has-text('Name') input").fill("Monday briefing");
-  await page.locator("label:has-text('Instruction') textarea").fill("write a file in your home called notes/result.txt that says routine-ok");
+  await page
+    .locator("label:has-text('Instruction') textarea")
+    .fill("write a file in your home called notes/result.txt that says routine-ok");
   await page.getByRole("button", { name: "Save routine" }).click();
   await expect(page.getByText("Monday briefing")).toBeVisible();
 
@@ -72,10 +76,20 @@ async function completeOnboarding(page: Page, answers: string[]) {
   const chief = page.getByText("Chief").first();
   await heading.or(chief).waitFor({ timeout: 20_000 });
   if ((await chief.isVisible().catch(() => false)) && page.url().includes("/app")) return;
-  if (await page.getByRole("heading", { name: "Connect a model" }).isVisible().catch(() => false)) {
+  if (
+    await page
+      .getByRole("heading", { name: "Connect a model" })
+      .isVisible()
+      .catch(() => false)
+  ) {
     await page.getByRole("button", { name: "Skip for now" }).click();
   }
-  if (await page.getByRole("heading", { name: "Create your first bot" }).isVisible().catch(() => false)) {
+  if (
+    await page
+      .getByRole("heading", { name: "Create your first bot" })
+      .isVisible()
+      .catch(() => false)
+  ) {
     await page.getByRole("button", { name: "Continue" }).click();
     for (const answer of answers) {
       await page.getByText(answer, { exact: true }).click();

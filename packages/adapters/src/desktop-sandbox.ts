@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { randomUUID } from "node:crypto";
 import type {
   AdapterContext,
   CommandRequest,
@@ -42,9 +42,16 @@ export class DesktopSandboxProvider implements SandboxProvider {
     };
   }
 
-  async provision(request: { botId: string; homePath: string }, _context: AdapterContext): Promise<ComputerRef> {
+  async provision(
+    request: { botId: string; homePath: string },
+    _context: AdapterContext,
+  ): Promise<ComputerRef> {
     const id = `desktop-${request.botId}-${randomUUID().slice(0, 8)}`;
-    const home = path.resolve(this.opts.root ?? path.join(process.cwd(), "data"), "desktop-computers", request.botId);
+    const home = path.resolve(
+      this.opts.root ?? path.join(process.cwd(), "data"),
+      "desktop-computers",
+      request.botId,
+    );
     await mkdir(home, { recursive: true });
     const ref: ComputerRef = { id, botId: request.botId, kind: "desktop", providerRef: home };
     this.boxes.set(id, {
@@ -90,7 +97,11 @@ export class DesktopSandboxProvider implements SandboxProvider {
     yield { type: "exit", code: result.code };
   }
 
-  async connectScreen(computer: ComputerRef, _request: ScreenRequest, _context: AdapterContext): Promise<ScreenSession> {
+  async connectScreen(
+    computer: ComputerRef,
+    _request: ScreenRequest,
+    _context: AdapterContext,
+  ): Promise<ScreenSession> {
     return {
       url: `desktop://screen/${computer.id}`,
       mimeType: "text/plain",
@@ -112,16 +123,18 @@ export class DesktopSandboxProvider implements SandboxProvider {
     return { id: `desktop-snap-${computer.id}`, createdAt: new Date().toISOString() };
   }
 
-  async stop(computer: ComputerRef): Promise<void> {
+  async stop(computer: ComputerRef, _context: AdapterContext): Promise<void> {
     const box = this.boxes.get(computer.id);
     if (box) box.running = false;
   }
 
-  async destroy(computer: ComputerRef): Promise<void> {
+  async destroy(computer: ComputerRef, _context: AdapterContext): Promise<void> {
     const box = this.boxes.get(computer.id);
     this.boxes.delete(computer.id);
     if (box && this.opts.root) {
-      await writeFile(path.join(box.home, ".stopped"), new Date().toISOString(), "utf8").catch(() => undefined);
+      await writeFile(path.join(box.home, ".stopped"), new Date().toISOString(), "utf8").catch(
+        () => undefined,
+      );
     }
     if (box && !this.opts.root) {
       await rm(box.home, { recursive: true, force: true }).catch(() => undefined);
@@ -137,7 +150,10 @@ function allowedPath(target: string, grants: string[]) {
   });
 }
 
-function runCommand(argv: string[], cwd: string): Promise<{ stdout: string; stderr: string; code: number }> {
+function runCommand(
+  argv: string[],
+  cwd: string,
+): Promise<{ stdout: string; stderr: string; code: number }> {
   return new Promise((resolve) => {
     const child = spawn(argv[0]!, argv.slice(1), { cwd, env: process.env });
     let stdout = "";

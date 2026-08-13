@@ -1,10 +1,10 @@
+import { randomBytes } from "node:crypto";
+import { emailAllowed, parseAllowlist, signupsOpen } from "@rakazo/core";
+import type { PrismaClient } from "@rakazo/db";
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
-import { organization, bearer } from "better-auth/plugins";
-import { emailAllowed, parseAllowlist, signupsOpen } from "@rakazo/core";
 import { APIError } from "better-auth/api";
-import type { PrismaClient } from "@rakazo/db";
-import { randomBytes } from "node:crypto";
+import { bearer, organization } from "better-auth/plugins";
 
 export interface AuthEnv {
   secret: string;
@@ -39,7 +39,8 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
     ],
     hooks: {
       before: async (ctx) => {
-        if (!ctx.path.includes("sign-up")) return;
+        const path = String((ctx as { path?: string }).path ?? "");
+        if (!path.includes("sign-up")) return;
         const allowlist = parseAllowlist(env.signupAllowlist);
         const email =
           typeof ctx.body === "object" && ctx.body && "email" in ctx.body

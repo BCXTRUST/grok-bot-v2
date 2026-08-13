@@ -26,14 +26,19 @@ describe("composio tool mapping", () => {
         inputParameters: { type: "object", properties: { username: { type: "string" } } },
       },
     ]);
-    expect(tools.map((tool) => tool.name)).toEqual(["COMPOSIO_SEARCH_TOOLS", "HACKERNEWS_GET_USER"]);
+    expect(tools.map((tool) => tool.name)).toEqual([
+      "COMPOSIO_SEARCH_TOOLS",
+      "HACKERNEWS_GET_USER",
+    ]);
     expect(tools[1]?.inputSchema).toMatchObject({ properties: { username: { type: "string" } } });
   });
 
   it("redacts project keys from errors", () => {
     expect(sanitizeComposioError("denied ak_secretvaluehere")).toContain("[redacted]");
     expect(sanitizeComposioError("denied ak_secretvaluehere")).not.toContain("ak_secret");
-    expect(sanitizeComposioError("COMPOSIO_API_KEY=ak_shouldnotleak")).not.toContain("ak_shouldnotleak");
+    expect(sanitizeComposioError("COMPOSIO_API_KEY=ak_shouldnotleak")).not.toContain(
+      "ak_shouldnotleak",
+    );
   });
 
   it("paginates until the cursor ends", async () => {

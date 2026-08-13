@@ -1,8 +1,12 @@
 import { existsSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import {
+  DesktopSandboxProvider,
+  FakeSandboxProvider,
+  ManagedSandboxEmulator,
+} from "@rakazo/adapters";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { FakeSandboxProvider, ManagedSandboxEmulator, DesktopSandboxProvider } from "@rakazo/adapters";
 
 type App = { request: (input: string, init?: RequestInit) => Promise<Response> };
 
@@ -31,10 +35,18 @@ const describeJourneys = hasDb ? describe : describe.skip;
 describeJourneys("required product journeys", () => {
   let app: App;
   let stop: () => Promise<void>;
-  let prisma: Awaited<ReturnType<typeof import("../../../apps/api/src/app.ts").createApp>>["prisma"];
-  let connector: Awaited<ReturnType<typeof import("../../../apps/api/src/app.ts").createApp>>["connector"];
-  let executor: Awaited<ReturnType<typeof import("../../../apps/api/src/app.ts").createApp>>["executor"];
-  let wakeup: Awaited<ReturnType<typeof import("../../../apps/api/src/app.ts").createApp>>["wakeup"];
+  let prisma: Awaited<
+    ReturnType<typeof import("../../../apps/api/src/app.ts").createApp>
+  >["prisma"];
+  let connector: Awaited<
+    ReturnType<typeof import("../../../apps/api/src/app.ts").createApp>
+  >["connector"];
+  let executor: Awaited<
+    ReturnType<typeof import("../../../apps/api/src/app.ts").createApp>
+  >["executor"];
+  let wakeup: Awaited<
+    ReturnType<typeof import("../../../apps/api/src/app.ts").createApp>
+  >["wakeup"];
   const stamp = Date.now();
   const dataDir = mkdtempSync(path.join(tmpdir(), "rakazo-journey-"));
 
@@ -93,7 +105,12 @@ describeJourneys("required product journeys", () => {
     const forbidden = await raw(app, bob, "bots/get", { botId: chief.id });
     expect(forbidden.status).toBeGreaterThanOrEqual(400);
 
-    await sendAndWait(app, ada, chief.id, "write a file in your home called notes/result.txt that says isolation-ok");
+    await sendAndWait(
+      app,
+      ada,
+      chief.id,
+      "write a file in your home called notes/result.txt that says isolation-ok",
+    );
     await sendAndWait(app, ada, coder.id, "remember that coder prefers rust");
 
     const chiefFile = await rpc<{ path: string; content: string }>(app, ada, "computer/readFile", {
@@ -103,7 +120,9 @@ describeJourneys("required product journeys", () => {
     expect(chiefFile.content).toContain("isolation-ok");
     const computer = await rpc<{ state: string }>(app, ada, "computer/status", { botId: chief.id });
     expect(computer.state).toBe("running");
-    const coderMem = await rpc<Array<{ content: string }>>(app, ada, "memory/list", { botId: coder.id });
+    const coderMem = await rpc<Array<{ content: string }>>(app, ada, "memory/list", {
+      botId: coder.id,
+    });
     expect(coderMem.some((m) => m.content.toLowerCase().includes("rust"))).toBe(true);
     expect(bobBot.id).not.toBe(chief.id);
   });
@@ -117,9 +136,16 @@ describeJourneys("required product journeys", () => {
       instructions: "",
       notifyOnFinish: true,
     });
-    await sendAndWait(app, cookie, bot.id, "write a file in your home called notes/result.txt that says reconnect-ok");
+    await sendAndWait(
+      app,
+      cookie,
+      bot.id,
+      "write a file in your home called notes/result.txt that says reconnect-ok",
+    );
     const snap = await rpc<Snap>(app, cookie, "threads/get", { botId: bot.id });
-    expect(snap.messages.map((m) => m.seq)).toEqual([...snap.messages].map((m) => m.seq).sort((a, b) => a - b));
+    expect(snap.messages.map((m) => m.seq)).toEqual(
+      [...snap.messages].map((m) => m.seq).sort((a, b) => a - b),
+    );
     expect(snap.messages.some((m) => JSON.stringify(m.blocks).includes("reconnect-ok"))).toBe(true);
     const again = await rpc<Snap>(app, cookie, "threads/get", { botId: bot.id, afterSeq: -1 });
     expect(again.messages.length).toBe(snap.messages.length);
@@ -134,12 +160,25 @@ describeJourneys("required product journeys", () => {
       instructions: "",
       notifyOnFinish: true,
     });
-    await rpc(app, cookie, "threads/send", { botId: bot.id, text: "install the gsc cli and sign in" });
-    const waiting = await waitFor(app, cookie, bot.id, (snap) => snap.run?.status === "waiting_takeover");
+    await rpc(app, cookie, "threads/send", {
+      botId: bot.id,
+      text: "install the gsc cli and sign in",
+    });
+    const waiting = await waitFor(
+      app,
+      cookie,
+      bot.id,
+      (snap) => snap.run?.status === "waiting_takeover",
+    );
     expect(JSON.stringify(waiting.messages)).not.toMatch(/password|secret|token/i);
     await rpc(app, cookie, "computer/boot", { botId: bot.id });
     await rpc(app, cookie, "computer/takeover", { botId: bot.id });
-    const done = await waitFor(app, cookie, bot.id, (snap) => !snap.run || ["completed", "failed", "cancelled"].includes(snap.run.status));
+    const done = await waitFor(
+      app,
+      cookie,
+      bot.id,
+      (snap) => !snap.run || ["completed", "failed", "cancelled"].includes(snap.run.status),
+    );
     expect(JSON.stringify(done.messages).toLowerCase()).toMatch(/signed in|session/);
     expect(done.run?.status ?? "completed").not.toBe("waiting_takeover");
   });
@@ -164,7 +203,11 @@ describeJourneys("required product journeys", () => {
     });
     await wakeup.enqueue({ name: "routine.wakeup", payload: { routineId: routine.id } });
     const snap = await waitFor(app, cookie, bot.id, (s) =>
-      s.messages.some((m) => JSON.stringify(m.blocks).includes("routine-ok") || JSON.stringify(m.blocks).includes("writing")),
+      s.messages.some(
+        (m) =>
+          JSON.stringify(m.blocks).includes("routine-ok") ||
+          JSON.stringify(m.blocks).includes("writing"),
+      ),
     );
     expect(snap.messages.length).toBeGreaterThan(0);
   });
@@ -237,10 +280,18 @@ describeJourneys("required product journeys", () => {
       botId: bot.id,
       text: "write this to the destination crm as a note",
     });
-    await waitFor(app, cookie, bot.id, (s) => !s.run || ["completed", "failed", "cancelled"].includes(s.run.status));
+    await waitFor(
+      app,
+      cookie,
+      bot.id,
+      (s) => !s.run || ["completed", "failed", "cancelled"].includes(s.run.status),
+    );
     const afterFirst = connector.records.length;
     expect(afterFirst).toBeGreaterThan(before);
-    await prisma.run.update({ where: { id: sent.runId }, data: { status: "running", completedAt: null } });
+    await prisma.run.update({
+      where: { id: sent.runId },
+      data: { status: "running", completedAt: null },
+    });
     await executor.continueRun(sent.runId, "retry");
     expect(connector.records.length).toBe(afterFirst);
   });
@@ -261,8 +312,15 @@ describeJourneys("required product journeys", () => {
       label: "hidden",
       modelId: "scripted",
     });
-    await sendAndWait(app, cookie, bot.id, "write a file in your home called notes/result.txt that says export-ok");
-    const manifest = await rpc<Record<string, unknown>>(app, cookie, "export/bot", { botId: bot.id });
+    await sendAndWait(
+      app,
+      cookie,
+      bot.id,
+      "write a file in your home called notes/result.txt that says export-ok",
+    );
+    const manifest = await rpc<Record<string, unknown>>(app, cookie, "export/bot", {
+      botId: bot.id,
+    });
     const rawJson = JSON.stringify(manifest);
     expect(rawJson).toContain("export-ok");
     expect(rawJson).toContain("Be useful");
@@ -307,7 +365,7 @@ function cookieHeader(res: Response) {
   const many = res.headers.getSetCookie?.() ?? [];
   if (many.length) return many.map((c) => c.split(";")[0]).join("; ");
   const single = res.headers.get("set-cookie");
-  return single ? single.split(",")[0]?.split(";")[0] ?? "" : "";
+  return single ? (single.split(",")[0]?.split(";")[0] ?? "") : "";
 }
 
 async function raw(app: App, cookie: string, proc: string, body: unknown = {}) {
@@ -339,7 +397,12 @@ async function rpc<T>(app: App, cookie: string, proc: string, body: unknown = {}
 
 async function sendAndWait(app: App, cookie: string, botId: string, text: string) {
   await rpc(app, cookie, "threads/send", { botId, text });
-  return waitFor(app, cookie, botId, (snap) => !snap.run || ["completed", "failed", "cancelled"].includes(snap.run.status));
+  return waitFor(
+    app,
+    cookie,
+    botId,
+    (snap) => !snap.run || ["completed", "failed", "cancelled"].includes(snap.run.status),
+  );
 }
 
 async function waitFor(app: App, cookie: string, botId: string, pred: (snap: Snap) => boolean) {

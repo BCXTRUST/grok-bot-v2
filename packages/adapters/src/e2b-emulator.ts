@@ -38,11 +38,19 @@ export class ManagedSandboxEmulator implements SandboxProvider {
     return this.inner.provision(request, context).then((ref) => ({ ...ref, kind: "e2b" as const }));
   }
 
-  execute(computer: ComputerRef, request: CommandRequest, context: AdapterContext): AsyncIterable<ProcessEvent> {
+  execute(
+    computer: ComputerRef,
+    request: CommandRequest,
+    context: AdapterContext,
+  ): AsyncIterable<ProcessEvent> {
     return this.inner.execute(computer, request, context);
   }
 
-  connectScreen(computer: ComputerRef, request: ScreenRequest, context: AdapterContext): Promise<ScreenSession> {
+  connectScreen(
+    computer: ComputerRef,
+    request: ScreenRequest,
+    context: AdapterContext,
+  ): Promise<ScreenSession> {
     return this.inner.connectScreen(computer, request, context);
   }
 

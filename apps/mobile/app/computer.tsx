@@ -35,9 +35,19 @@ export default function Computer() {
 
   return (
     <View style={{ flex: 1, backgroundColor: "#0A0A0B", padding: 24 }}>
-      <Text style={{ color: "#ECECEE", fontSize: 20 }}>{name ? `${name}’s computer` : "Computer"}</Text>
+      <Text style={{ color: "#ECECEE", fontSize: 20 }}>
+        {name ? `${name}’s computer` : "Computer"}
+      </Text>
       {error ? <Text style={{ color: "#85858A", marginTop: 12 }}>{error}</Text> : null}
-      <View style={{ marginTop: 16, height: 220, borderRadius: 14, overflow: "hidden", backgroundColor: "#0E0E10" }}>
+      <View
+        style={{
+          marginTop: 16,
+          height: 220,
+          borderRadius: 14,
+          overflow: "hidden",
+          backgroundColor: "#0E0E10",
+        }}
+      >
         {screenUrl ? (
           <WebView
             source={{ uri: screenUrl }}
@@ -55,7 +65,13 @@ export default function Computer() {
       </Text>
       <Pressable
         onPress={() => void takeover()}
-        style={{ marginTop: 20, backgroundColor: "#1A1A1D", padding: 14, borderRadius: 12, alignItems: "center" }}
+        style={{
+          marginTop: 20,
+          backgroundColor: "#1A1A1D",
+          padding: 14,
+          borderRadius: 12,
+          alignItems: "center",
+        }}
       >
         <Text style={{ color: "#ECECEE" }}>Take control</Text>
       </Pressable>

@@ -1,24 +1,58 @@
-import { useEffect, useMemo, useRef, useState } from "react";
 import { BotAvatar, Button } from "@rakazo/ui-web";
-import { DEMO_BOTS, type DemoBot, type DemoMessage, type DemoRoutine, type DemoScreen } from "../demo";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  DEMO_BOTS,
+  type DemoBot,
+  type DemoMessage,
+  type DemoRoutine,
+  type DemoScreen,
+} from "../demo";
 
 const BOT_COLORS = ["#3EC5A8", "#F5A03C", "#6A6BF5", "#9B5CF6", "#3B82F6", "#F2622A", "#D9508A"];
-const FREQS = ["Every hour", "Every day", "Weekdays", "Every week", "Every month", "Interval", "Advanced"];
+const FREQS = [
+  "Every hour",
+  "Every day",
+  "Weekdays",
+  "Every week",
+  "Every month",
+  "Interval",
+  "Advanced",
+];
 const UNITS = ["minutes", "hours", "days"];
 const NUMBERS = [1, 2, 3, 5, 10, 15, 30, 45];
-const TIMES = ["6:00 AM", "7:00 AM", "8:00 AM", "9:00 AM", "12:00 PM", "3:00 PM", "6:00 PM", "9:00 PM"];
+const TIMES = [
+  "6:00 AM",
+  "7:00 AM",
+  "8:00 AM",
+  "9:00 AM",
+  "12:00 PM",
+  "3:00 PM",
+  "6:00 PM",
+  "9:00 PM",
+];
 
 const ONBOARD = [
   {
     q: "What do you mainly want me helping with?",
     sub: "Pick whatever’s closest, or type your own.",
-    opts: ["Inbox & email", "Slack & messages", "Coding & repos", "Research & writing", "A bit of everything"],
+    opts: [
+      "Inbox & email",
+      "Slack & messages",
+      "Coding & repos",
+      "Research & writing",
+      "A bit of everything",
+    ],
     ack: (answer: string) => `${answer.toLowerCase()} is a sweet spot for me.`,
   },
   {
     q: "How do you want me to write?",
     sub: "I’ll match this unless you say otherwise on a specific piece.",
-    opts: ["Clear and tight", "Warm and conversational", "Polished / formal", "Match whatever I draft"],
+    opts: [
+      "Clear and tight",
+      "Warm and conversational",
+      "Polished / formal",
+      "Match whatever I draft",
+    ],
     ack: (answer: string) => `Got it — ${answer.toLowerCase()} it is.`,
   },
   {
@@ -198,7 +232,10 @@ function Thread({ messages }: { messages: DemoMessage[] }) {
         }
         if (message.type === "typing") {
           return (
-            <div key={`typing-${index}`} className="product-demo__message product-demo__message--bot">
+            <div
+              key={`typing-${index}`}
+              className="product-demo__message product-demo__message--bot"
+            >
               <div className="product-demo__bubble product-demo__bubble--typing">working…</div>
             </div>
           );
@@ -208,7 +245,9 @@ function Thread({ messages }: { messages: DemoMessage[] }) {
             key={`${message.type}-${index}`}
             className={`product-demo__message product-demo__message--${message.type}`}
           >
-            <div className={`product-demo__bubble product-demo__bubble--${message.type}`}>{message.text}</div>
+            <div className={`product-demo__bubble product-demo__bubble--${message.type}`}>
+              {message.text}
+            </div>
           </div>
         );
       })}
@@ -227,7 +266,9 @@ function OnboardThread({
     <>
       <div className="product-demo__time">Today</div>
       <div className="product-demo__message product-demo__message--bot">
-        <div className="product-demo__bubble product-demo__bubble--bot">Hey Avery — good to meet you.</div>
+        <div className="product-demo__bubble product-demo__bubble--bot">
+          Hey Avery — good to meet you.
+        </div>
       </div>
       {ONBOARD.map((step, index) => {
         const answer = answers[index];
@@ -244,7 +285,9 @@ function OnboardThread({
                 </div>
               </div>
               <div className="product-demo__message product-demo__message--bot">
-                <div className="product-demo__bubble product-demo__bubble--bot">{step.ack(answer)}</div>
+                <div className="product-demo__bubble product-demo__bubble--bot">
+                  {step.ack(answer)}
+                </div>
               </div>
             </div>
           );
@@ -259,7 +302,9 @@ function OnboardThread({
             <div className="product-demo__choice-opts">
               {step.opts.map((opt, optIndex) => (
                 <button key={opt} type="button" onClick={() => onAnswer(opt)}>
-                  <span className="product-demo__choice-letter">{String.fromCharCode(65 + optIndex)}</span>
+                  <span className="product-demo__choice-letter">
+                    {String.fromCharCode(65 + optIndex)}
+                  </span>
                   <span>{opt}</span>
                 </button>
               ))}
@@ -271,8 +316,8 @@ function OnboardThread({
       {answers.length === ONBOARD.length ? (
         <div className="product-demo__message product-demo__message--bot">
           <div className="product-demo__bubble product-demo__bubble--bot">
-            That’s everything I need. Give me a first job whenever you’re ready — I’ll ask before anything leaves
-            the building.
+            That’s everything I need. Give me a first job whenever you’re ready — I’ll ask before
+            anything leaves the building.
           </div>
         </div>
       ) : null}
@@ -393,9 +438,7 @@ export function ProductDemo() {
   }
 
   function patchActive(patch: Partial<LiveBot>) {
-    setBots((current) =>
-      current.map((bot) => (bot.id === activeId ? { ...bot, ...patch } : bot)),
-    );
+    setBots((current) => current.map((bot) => (bot.id === activeId ? { ...bot, ...patch } : bot)));
   }
 
   function changeRoutine(patch: Partial<RoutineDraft>) {
@@ -603,7 +646,12 @@ export function ProductDemo() {
               <span />
               <span />
             </div>
-            <button type="button" className="product-demo__new" aria-label="New bot" onClick={startNewBot}>
+            <button
+              type="button"
+              className="product-demo__new"
+              aria-label="New bot"
+              onClick={startNewBot}
+            >
               +
             </button>
           </div>
@@ -658,7 +706,14 @@ export function ProductDemo() {
               title="Computer"
               onClick={toggleComputer}
             >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.6"
+              >
                 <rect x="2" y="4" width="20" height="13" rx="2" />
                 <path d="M8 21h8M12 17v4" />
               </svg>
@@ -666,9 +721,13 @@ export function ProductDemo() {
           </div>
 
           <div className="product-demo__thread" ref={scrollRef}>
-            {active.onboarding ? <OnboardThread answers={active.answers} onAnswer={answerOnboard} /> : null}
+            {active.onboarding ? (
+              <OnboardThread answers={active.answers} onAnswer={answerOnboard} />
+            ) : null}
             {messages.length === 0 && !active.onboarding ? (
-              <div className="product-demo__empty-thread">Message {active.name} to give it a first job.</div>
+              <div className="product-demo__empty-thread">
+                Message {active.name} to give it a first job.
+              </div>
             ) : (
               <Thread messages={messages} />
             )}
@@ -706,12 +765,23 @@ export function ProductDemo() {
                 <span>{panelMode === "settings" ? "settings" : `${active.name}’s computer`}</span>
                 <div className="product-demo__panel-actions">
                   <button type="button" aria-label="Bot settings" onClick={openSettings}>
-                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
+                    <svg
+                      width="17"
+                      height="17"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.6"
+                    >
                       <circle cx="12" cy="12" r="3" />
                       <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6h.09A1.65 1.65 0 0 0 10 3.09V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9v.09a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
                     </svg>
                   </button>
-                  <button type="button" aria-label="Close panel" onClick={() => setPanelOpen(false)}>
+                  <button
+                    type="button"
+                    aria-label="Close panel"
+                    onClick={() => setPanelOpen(false)}
+                  >
                     ✕
                   </button>
                 </div>
@@ -743,7 +813,11 @@ export function ProductDemo() {
                 {active.routines.length === 0 ? (
                   <div className="product-demo__empty-routines">
                     <p>Routines are recurring tasks this agent runs on a schedule.</p>
-                    <button type="button" className="product-demo__ghost-btn" onClick={() => openRoutine(null, null)}>
+                    <button
+                      type="button"
+                      className="product-demo__ghost-btn"
+                      onClick={() => openRoutine(null, null)}
+                    >
                       Create routine
                     </button>
                   </div>
@@ -761,7 +835,11 @@ export function ProductDemo() {
                         <span className="product-demo__routine-when">{routine.when}</span>
                       </button>
                     ))}
-                    <button type="button" className="product-demo__quiet" onClick={() => openRoutine(null, null)}>
+                    <button
+                      type="button"
+                      className="product-demo__quiet"
+                      onClick={() => openRoutine(null, null)}
+                    >
                       + New routine
                     </button>
                   </>
@@ -809,7 +887,11 @@ export function ProductDemo() {
                     ‹
                   </button>
                   <span>Routine</span>
-                  <button type="button" onClick={() => setPanelOpen(false)} aria-label="Close panel">
+                  <button
+                    type="button"
+                    onClick={() => setPanelOpen(false)}
+                    aria-label="Close panel"
+                  >
                     ✕
                   </button>
                 </div>
@@ -866,7 +948,12 @@ export function ProductDemo() {
                     <div className="product-demo__triggers">
                       {routineDraft.triggers.map((trigger, index) => {
                         const { lead, detail } = describeTrigger(trigger);
-                        const timed = ["Every day", "Weekdays", "Every week", "Every month"].includes(trigger.freq);
+                        const timed = [
+                          "Every day",
+                          "Weekdays",
+                          "Every week",
+                          "Every month",
+                        ].includes(trigger.freq);
                         return (
                           <div key={`${trigger.freq}-${index}`} className="product-demo__trigger">
                             <div className="product-demo__trigger-head">
@@ -878,7 +965,9 @@ export function ProductDemo() {
                                 aria-label="Remove schedule"
                                 onClick={() =>
                                   changeRoutine({
-                                    triggers: routineDraft.triggers.filter((_, triggerIndex) => triggerIndex !== index),
+                                    triggers: routineDraft.triggers.filter(
+                                      (_, triggerIndex) => triggerIndex !== index,
+                                    ),
                                   })
                                 }
                               >
@@ -888,7 +977,9 @@ export function ProductDemo() {
                             <div className="product-demo__trigger-row">
                               <select
                                 value={trigger.freq}
-                                onChange={(event) => patchTrigger(index, { freq: event.target.value })}
+                                onChange={(event) =>
+                                  patchTrigger(index, { freq: event.target.value })
+                                }
                               >
                                 {FREQS.map((freq) => (
                                   <option key={freq} value={freq}>
@@ -901,7 +992,9 @@ export function ProductDemo() {
                                   <span>every</span>
                                   <select
                                     value={String(trigger.n)}
-                                    onChange={(event) => patchTrigger(index, { n: Number(event.target.value) })}
+                                    onChange={(event) =>
+                                      patchTrigger(index, { n: Number(event.target.value) })
+                                    }
                                   >
                                     {NUMBERS.map((n) => (
                                       <option key={n} value={n}>
@@ -911,7 +1004,9 @@ export function ProductDemo() {
                                   </select>
                                   <select
                                     value={trigger.unit}
-                                    onChange={(event) => patchTrigger(index, { unit: event.target.value })}
+                                    onChange={(event) =>
+                                      patchTrigger(index, { unit: event.target.value })
+                                    }
                                   >
                                     {UNITS.map((unit) => (
                                       <option key={unit} value={unit}>
@@ -926,7 +1021,9 @@ export function ProductDemo() {
                                   <span>at</span>
                                   <select
                                     value={trigger.time}
-                                    onChange={(event) => patchTrigger(index, { time: event.target.value })}
+                                    onChange={(event) =>
+                                      patchTrigger(index, { time: event.target.value })
+                                    }
                                   >
                                     {TIMES.map((time) => (
                                       <option key={time} value={time}>
@@ -940,7 +1037,9 @@ export function ProductDemo() {
                                 <input
                                   value={trigger.cron}
                                   placeholder="*/3 * * * *"
-                                  onChange={(event) => patchTrigger(index, { cron: event.target.value })}
+                                  onChange={(event) =>
+                                    patchTrigger(index, { cron: event.target.value })
+                                  }
                                 />
                               ) : null}
                             </div>
@@ -1002,7 +1101,12 @@ export function ProductDemo() {
                     <Button type="button" variant="outline" size="sm" onClick={releaseControl}>
                       Release
                     </Button>
-                    <button type="button" className="product-demo__takeover-close" onClick={closeOverlay} aria-label="Close computer">
+                    <button
+                      type="button"
+                      className="product-demo__takeover-close"
+                      onClick={closeOverlay}
+                      aria-label="Close computer"
+                    >
                       ✕
                     </button>
                   </div>

@@ -1,4 +1,4 @@
-import { BOT_COLORS, type Actor, type Bot } from "@rakazo/contracts";
+import { type Actor, BOT_COLORS, type Bot } from "@rakazo/contracts";
 import type { PrismaClient } from "./client.js";
 import { IsolationError } from "./scope.js";
 
@@ -55,7 +55,10 @@ export function createRepos(prisma: PrismaClient) {
             orderBy: { seq: "desc" },
           });
           const run = await prisma.run.findFirst({
-            where: { botId: bot.id, status: { in: ["running", "queued", "leased", "waiting_input", "waiting_takeover"] } },
+            where: {
+              botId: bot.id,
+              status: { in: ["running", "queued", "leased", "waiting_input", "waiting_takeover"] },
+            },
             orderBy: { createdAt: "desc" },
           });
           let preview = "";

@@ -1,6 +1,6 @@
-import { app, BrowserWindow, ipcMain, dialog } from "electron";
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { app, BrowserWindow, dialog, ipcMain } from "electron";
 import { browserWindowOptions } from "./window-options.js";
 
 const WEB_URL = process.env.RAKAZO_WEB_URL ?? "http://127.0.0.1:5173";
@@ -24,7 +24,9 @@ function saveGrants(grants: string[]) {
 
 function assertGranted(filePath: string) {
   const resolved = path.resolve(filePath);
-  const ok = loadGrants().some((grant) => resolved === grant || resolved.startsWith(grant + path.sep));
+  const ok = loadGrants().some(
+    (grant) => resolved === grant || resolved.startsWith(grant + path.sep),
+  );
   if (!ok) throw new Error("Folder is not granted");
 }
 

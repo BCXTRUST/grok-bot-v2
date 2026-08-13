@@ -2,7 +2,10 @@
 set -uo pipefail
 export DISPLAY="${DISPLAY:-:1}"
 export HOME="${HOME:-/home/rakazo}"
-mkdir -p "$HOME" /tmp/rakazo /tmp/.X11-unix /tmp/fluxbox-home
+mkdir -p "$HOME" "$HOME/.local/bin" /tmp/rakazo /tmp/.X11-unix /tmp/fluxbox-home
+export PATH="$HOME/.local/bin:$PATH"
+export NPM_CONFIG_PREFIX="$HOME/.local"
+export PIP_USER=1
 cd "$HOME"
 
 rm -f /tmp/.X1-lock /tmp/.X11-unix/X1

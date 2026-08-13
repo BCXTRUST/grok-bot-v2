@@ -17,7 +17,11 @@ export function AuthPage({ mode }: { mode: "in" | "up" }) {
     setError(null);
     const result =
       mode === "up"
-        ? await authClient.signUp.email({ email, password, name: name || email.split("@")[0] || "User" })
+        ? await authClient.signUp.email({
+            email,
+            password,
+            name: name || email.split("@")[0] || "User",
+          })
         : await authClient.signIn.email({ email, password });
     setPending(false);
     if (result.error) {

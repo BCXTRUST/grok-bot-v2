@@ -1,7 +1,13 @@
 import { Agent, type AgentTool } from "@earendil-works/pi-agent-core";
 import { Type } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
-import type { AdapterContext, AgentRunRequest, AgentRuntime, AgentRuntimeEvent, ConnectorTool } from "@rakazo/adapter-kit";
+import type {
+  AdapterContext,
+  AgentRunRequest,
+  AgentRuntime,
+  AgentRuntimeEvent,
+  ConnectorTool,
+} from "@rakazo/adapter-kit";
 import { builtinAgentTools } from "./builtin-tools.js";
 
 const running = new Map<string, AbortController>();
@@ -29,7 +35,8 @@ export class PiAgentRuntime implements AgentRuntime {
 
     const work = (async () => {
       try {
-        const provider = request.model.provider === "scripted" ? "openrouter" : request.model.provider;
+        const provider =
+          request.model.provider === "scripted" ? "openrouter" : request.model.provider;
         const modelId =
           request.model.id === "scripted"
             ? (process.env.PI_DEFAULT_MODEL ?? "deepseek/deepseek-v4-flash-0731")
@@ -69,7 +76,10 @@ export class PiAgentRuntime implements AgentRuntime {
 
         let streamed = "";
         agent.subscribe((event) => {
-          if (event.type === "message_update" && event.assistantMessageEvent.type === "text_delta") {
+          if (
+            event.type === "message_update" &&
+            event.assistantMessageEvent.type === "text_delta"
+          ) {
             const delta = event.assistantMessageEvent.delta;
             if (delta) {
               streamed += delta;
@@ -166,7 +176,10 @@ function toAgentTool(tool: ConnectorTool, queue: EventQueue, request: AgentRunRe
         return { path: String(raw.path ?? "notes/result.txt"), content: String(raw.content ?? "") };
       }
       if (tool.name === "shell") {
-        return { command: String(raw.command ?? ""), cwd: raw.cwd ? String(raw.cwd) : "/home/rakazo" };
+        return {
+          command: String(raw.command ?? ""),
+          cwd: raw.cwd ? String(raw.cwd) : "/home/rakazo",
+        };
       }
       return raw as never;
     },
@@ -175,7 +188,10 @@ function toAgentTool(tool: ConnectorTool, queue: EventQueue, request: AgentRunRe
       const executionId = toolCallId || `${request.runId}:${tool.name}`;
       queue.push({ type: "tool", name: tool.name, args, executionId });
       if (tool.name === "request_takeover") {
-        queue.push({ type: "takeover", reason: String(args.reason ?? "I need you on the screen.") });
+        queue.push({
+          type: "takeover",
+          reason: String(args.reason ?? "I need you on the screen."),
+        });
         return {
           content: [{ type: "text", text: "Takeover requested." }],
           details: args,
@@ -229,13 +245,18 @@ function jsonSchemaParameters(schema: Record<string, unknown>) {
   const fields: Record<string, ReturnType<typeof Type.Optional>> = {};
   for (const [key, spec] of Object.entries(properties)) {
     const field = jsonField(spec);
-    fields[key] = required.has(key) ? field : Type.Optional(field);
+    fields[key] = (required.has(key) ? field : Type.Optional(field)) as unknown as ReturnType<
+      typeof Type.Optional
+    >;
   }
   return Type.Object(fields);
 }
 
 function jsonField(spec: unknown): ReturnType<typeof Type.String> {
-  const type = spec && typeof spec === "object" && "type" in spec ? String((spec as { type?: unknown }).type) : "string";
+  const type =
+    spec && typeof spec === "object" && "type" in spec
+      ? String((spec as { type?: unknown }).type)
+      : "string";
   if (type === "number" || type === "integer") return Type.Number() as never;
   if (type === "boolean") return Type.Boolean() as never;
   if (type === "array") return Type.Array(Type.Unknown()) as never;
@@ -259,7 +280,11 @@ function assistantText(message: unknown): string {
   if (typeof content === "string") return content;
   if (!Array.isArray(content)) return "";
   return content
-    .map((part) => (part && typeof part === "object" && "type" in part && part.type === "text" && "text" in part ? String(part.text) : ""))
+    .map((part) =>
+      part && typeof part === "object" && "type" in part && part.type === "text" && "text" in part
+        ? String(part.text)
+        : "",
+    )
     .join("");
 }
 

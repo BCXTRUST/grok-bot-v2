@@ -41,7 +41,9 @@ export function Wordmark({ className }: { className?: string }) {
         <span className="h-4 w-[7px] rounded-full bg-[#F7F7F4]" />
         <span className="h-4 w-[7px] rounded-full bg-[#F7F7F4]" />
       </div>
-      <span className="font-[Aeonik,ui-sans-serif] text-[28px] tracking-tight text-[#1B1B1E]">Rakazo</span>
+      <span className="font-[Aeonik,ui-sans-serif] text-[28px] tracking-tight text-[#1B1B1E]">
+        Rakazo
+      </span>
     </div>
   );
 }

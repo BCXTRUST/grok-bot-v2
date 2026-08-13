@@ -32,11 +32,18 @@ export class DockerSandboxProvider implements SandboxProvider {
     return `${this.supervisorUrl.replace(/\/$/, "")}${path}`;
   }
 
-  async provision(request: { botId: string; homePath: string }, context: AdapterContext): Promise<ComputerRef> {
+  async provision(
+    request: { botId: string; homePath: string },
+    context: AdapterContext,
+  ): Promise<ComputerRef> {
     const res = await fetch(this.url("/computers"), {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ botId: request.botId, homePath: request.homePath, workspaceId: context.workspaceId }),
+      body: JSON.stringify({
+        botId: request.botId,
+        homePath: request.homePath,
+        workspaceId: context.workspaceId,
+      }),
       signal: context.signal,
     });
     if (!res.ok) {
@@ -109,10 +116,16 @@ export class DockerSandboxProvider implements SandboxProvider {
   }
 
   async stop(computer: ComputerRef, context: AdapterContext): Promise<void> {
-    await fetch(this.url(`/computers/${computer.id}/stop`), { method: "POST", signal: context.signal });
+    await fetch(this.url(`/computers/${computer.id}/stop`), {
+      method: "POST",
+      signal: context.signal,
+    });
   }
 
   async destroy(computer: ComputerRef, context: AdapterContext): Promise<void> {
-    await fetch(this.url(`/computers/${computer.id}`), { method: "DELETE", signal: context.signal });
+    await fetch(this.url(`/computers/${computer.id}`), {
+      method: "DELETE",
+      signal: context.signal,
+    });
   }
 }

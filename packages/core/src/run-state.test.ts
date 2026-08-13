@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest";
 import * as fc from "fast-check";
-import { assertTransition, canTransition, isTerminal } from "./run-state.js";
+import { describe, expect, it } from "vitest";
+import { assertTransition, canTransition } from "./run-state.js";
 
 describe("run state machine", () => {
   it("allows takeover resume onto a lease", () => {

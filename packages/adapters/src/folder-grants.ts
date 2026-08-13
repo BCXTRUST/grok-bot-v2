@@ -14,7 +14,11 @@ export async function loadFolderGrants(dataDir: string, userId: string): Promise
   }
 }
 
-export async function addFolderGrant(dataDir: string, userId: string, folder: string): Promise<string[]> {
+export async function addFolderGrant(
+  dataDir: string,
+  userId: string,
+  folder: string,
+): Promise<string[]> {
   const resolved = path.resolve(folder);
   const grants = await loadFolderGrants(dataDir, userId);
   if (!grants.includes(resolved)) grants.push(resolved);

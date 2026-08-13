@@ -43,8 +43,12 @@ export default function SignIn() {
 
   return (
     <View style={{ flex: 1, backgroundColor: "#F7F7F4", justifyContent: "center", padding: 24 }}>
-      <Text style={{ color: "#1B1B1E", fontSize: 32, fontWeight: "500", textAlign: "center" }}>Sign in to Rakazo</Text>
-      <Text style={{ color: "#6E6E68", marginTop: 8, textAlign: "center" }}>Same Better Auth session as the web app.</Text>
+      <Text style={{ color: "#1B1B1E", fontSize: 32, fontWeight: "500", textAlign: "center" }}>
+        Sign in to Rakazo
+      </Text>
+      <Text style={{ color: "#6E6E68", marginTop: 8, textAlign: "center" }}>
+        Same Better Auth session as the web app.
+      </Text>
       <TextInput
         autoCapitalize="none"
         keyboardType="email-address"
@@ -52,7 +56,13 @@ export default function SignIn() {
         placeholderTextColor="#8C8C86"
         value={email}
         onChangeText={setEmail}
-        style={{ marginTop: 28, backgroundColor: "#F1F1ED", borderRadius: 13, padding: 16, color: "#1B1B1E" }}
+        style={{
+          marginTop: 28,
+          backgroundColor: "#F1F1ED",
+          borderRadius: 13,
+          padding: 16,
+          color: "#1B1B1E",
+        }}
       />
       <TextInput
         placeholder="Password"
@@ -60,15 +70,29 @@ export default function SignIn() {
         secureTextEntry
         value={password}
         onChangeText={setPassword}
-        style={{ marginTop: 12, backgroundColor: "#F1F1ED", borderRadius: 13, padding: 16, color: "#1B1B1E" }}
+        style={{
+          marginTop: 12,
+          backgroundColor: "#F1F1ED",
+          borderRadius: 13,
+          padding: 16,
+          color: "#1B1B1E",
+        }}
       />
       {error ? <Text style={{ color: "#C94244", marginTop: 12 }}>{error}</Text> : null}
       <Pressable
         onPress={() => void submit()}
         disabled={pending}
-        style={{ marginTop: 16, backgroundColor: "#121215", borderRadius: 13, padding: 18, alignItems: "center" }}
+        style={{
+          marginTop: 16,
+          backgroundColor: "#121215",
+          borderRadius: 13,
+          padding: 18,
+          alignItems: "center",
+        }}
       >
-        <Text style={{ color: "#FBFBF9", fontSize: 17 }}>{pending ? "Working…" : "Continue with email"}</Text>
+        <Text style={{ color: "#FBFBF9", fontSize: 17 }}>
+          {pending ? "Working…" : "Continue with email"}
+        </Text>
       </Pressable>
     </View>
   );

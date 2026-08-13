@@ -18,6 +18,9 @@ describe("folder grants", () => {
     await addFolderGrant(dataDir, "user-a", "/tmp/granted-a");
     await addFolderGrant(dataDir, "user-b", "/tmp/granted-b");
     expect(await loadFolderGrants(dataDir, "user-a")).toEqual([path.resolve("/tmp/granted-a")]);
-    expect(await loadAllFolderGrants(dataDir)).toEqual([path.resolve("/tmp/granted-a"), path.resolve("/tmp/granted-b")]);
+    expect(await loadAllFolderGrants(dataDir)).toEqual([
+      path.resolve("/tmp/granted-a"),
+      path.resolve("/tmp/granted-b"),
+    ]);
   });
 });

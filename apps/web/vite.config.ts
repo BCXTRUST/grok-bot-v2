@@ -1,8 +1,8 @@
 import http from "node:http";
 import net from "node:net";
-import { defineConfig, type PreviewServer, type ViteDevServer } from "vite";
-import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
+import react from "@vitejs/plugin-react";
+import { defineConfig, type PreviewServer, type ViteDevServer } from "vite";
 
 const api = process.env.API_PROXY_TARGET ?? "http://127.0.0.1:3100";
 const webPort = Number(process.env.WEB_PORT ?? 5173);

@@ -1,8 +1,8 @@
 import type { SandboxProvider } from "@rakazo/adapter-kit";
 import { DesktopSandboxProvider } from "./desktop-sandbox.js";
 import { DockerSandboxProvider } from "./docker-sandbox.js";
-import { E2BSandboxProvider } from "./e2b-sandbox.js";
 import { ManagedSandboxEmulator } from "./e2b-emulator.js";
+import { E2BSandboxProvider } from "./e2b-sandbox.js";
 import { FakeSandboxProvider } from "./fake-sandbox.js";
 
 export function createSandboxProvider(

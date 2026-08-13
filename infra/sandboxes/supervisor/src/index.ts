@@ -10,14 +10,15 @@ import {
   COMPUTER_IMAGE,
   containerCreateOptions,
   containerNameFor,
+  type SandboxInput,
   screenUrlFor,
   xdotoolCommand,
-  type SandboxInput,
 } from "./computer-spec.js";
 
 const docker = new Docker({ socketPath: process.env.DOCKER_SOCKET ?? "/var/run/docker.sock" });
 const computerContext =
-  process.env.RAKAZO_COMPUTER_CONTEXT ?? path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../computer");
+  process.env.RAKAZO_COMPUTER_CONTEXT ??
+  path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../computer");
 const boxes = new Map<string, { containerId: string; botId: string; screenUrl: string }>();
 let imageReady: Promise<void> | undefined;
 
@@ -95,7 +96,14 @@ app.post("/computers/:id/exec", async (c) => {
       AttachStdout: true,
       AttachStderr: true,
       WorkingDir: body.cwd ?? "/home/rakazo",
-      Env: ["DISPLAY=:1", "HOME=/home/rakazo", ...Object.entries(body.env ?? {}).map(([k, v]) => `${k}=${v}`)],
+      Env: [
+        "DISPLAY=:1",
+        "HOME=/home/rakazo",
+        "PATH=/home/rakazo/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        "NPM_CONFIG_PREFIX=/home/rakazo/.local",
+        "PIP_USER=1",
+        ...Object.entries(body.env ?? {}).map(([k, v]) => `${k}=${v}`),
+      ],
     });
     const stream = await exec.start({ hijack: true, stdin: false });
     const chunks: Buffer[] = [];
@@ -170,13 +178,19 @@ app.post("/computers/:id/input", async (c) => {
 });
 
 app.post("/computers/:id/stop", async (c) => {
-  await docker.getContainer(c.req.param("id")).stop().catch(() => undefined);
+  await docker
+    .getContainer(c.req.param("id"))
+    .stop()
+    .catch(() => undefined);
   return c.json({ ok: true });
 });
 
 app.delete("/computers/:id", async (c) => {
   const id = c.req.param("id");
-  await docker.getContainer(id).remove({ force: true }).catch(() => undefined);
+  await docker
+    .getContainer(id)
+    .remove({ force: true })
+    .catch(() => undefined);
   boxes.delete(id);
   return c.json({ ok: true });
 });
@@ -243,7 +257,8 @@ function toSandboxInput(input: {
   type?: "move" | "down" | "up" | "click";
   text?: string;
 }): SandboxInput {
-  if (input.kind === "key") return { kind: "key", key: input.key ?? "", modifiers: input.modifiers };
+  if (input.kind === "key")
+    return { kind: "key", key: input.key ?? "", modifiers: input.modifiers };
   if (input.kind === "clipboard") return { kind: "clipboard", text: input.text ?? "" };
   return {
     kind: "pointer",

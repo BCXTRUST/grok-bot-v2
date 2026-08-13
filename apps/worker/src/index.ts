@@ -30,8 +30,8 @@ import {
   GraphileWakeupDriver,
   InMemoryWakeupDriver,
   isComposioEnabled,
-  loadAllFolderGrants,
   LocalAgentHomeStore,
+  loadAllFolderGrants,
   PiAgentRuntime,
   ScriptedAgentRuntime,
 } from "@rakazo/adapters";
@@ -63,7 +63,9 @@ async function main() {
     memory: new MarkdownMemoryStore(prisma),
     home: new LocalAgentHomeStore(dataDir),
     connector: stack.connector,
-    secrets: [process.env.OPENROUTER_API_KEY ?? "", process.env.COMPOSIO_API_KEY ?? ""].filter(Boolean),
+    secrets: [process.env.OPENROUTER_API_KEY ?? "", process.env.COMPOSIO_API_KEY ?? ""].filter(
+      Boolean,
+    ),
     secretStore: secrets,
     deploymentModelKey: process.env.OPENROUTER_API_KEY,
     dataDir,

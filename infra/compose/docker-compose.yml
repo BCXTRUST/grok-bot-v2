@@ -43,7 +43,7 @@ services:
     build:
       context: ../..
       dockerfile: infra/compose/Dockerfile
-    command: ["bash", "-lc", "pnpm --filter @rakazo/db generate && pnpm --filter @rakazo/db exec prisma db push && pnpm --filter @rakazo/api start"]
+    command: ["bash", "-lc", "pnpm --filter @rakazo/db generate && pnpm --filter @rakazo/db exec prisma migrate deploy && pnpm --filter @rakazo/api start"]
     env_file:
       - ../../.env
     environment:

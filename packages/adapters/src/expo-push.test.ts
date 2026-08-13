@@ -51,7 +51,11 @@ describe("expo push", () => {
     expect(fetchMock).toHaveBeenCalledOnce();
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toBe("https://exp.host/--/api/v2/push/send");
-    const body = JSON.parse(String(init.body)) as { to: string; title: string; data: { kind: string } };
+    const body = JSON.parse(String(init.body)) as {
+      to: string;
+      title: string;
+      data: { kind: string };
+    };
     expect(body.to).toBe("ExponentPushToken[test]");
     expect(body.title).toBe("Need you");
     expect(body.data.kind).toBe("takeover");

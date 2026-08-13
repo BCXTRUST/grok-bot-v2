@@ -1,6 +1,12 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { AdapterContext, ArtifactPut, ArtifactStore, NotificationMessage, NotificationProvider } from "@rakazo/adapter-kit";
+import type {
+  AdapterContext,
+  ArtifactPut,
+  ArtifactStore,
+  NotificationMessage,
+  NotificationProvider,
+} from "@rakazo/adapter-kit";
 
 export class LocalArtifactStore implements ArtifactStore {
   constructor(private readonly root: string) {}
@@ -25,7 +31,9 @@ export class LocalArtifactStore implements ArtifactStore {
 
   async get(id: string, context: AdapterContext) {
     const { readFile } = await import("node:fs/promises");
-    return new Uint8Array(await readFile(path.join(this.root, "artifacts", context.workspaceId, id)));
+    return new Uint8Array(
+      await readFile(path.join(this.root, "artifacts", context.workspaceId, id)),
+    );
   }
 
   async remove(id: string, context: AdapterContext) {

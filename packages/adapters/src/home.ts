@@ -1,4 +1,4 @@
-import { mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { AdapterContext, AgentHomeStore, PortableFile } from "@rakazo/adapter-kit";
 
@@ -40,7 +40,12 @@ export class LocalAgentHomeStore implements AgentHomeStore {
     return revision;
   }
 
-  async restore(botId: string, _revision: string, dest: string, context: AdapterContext): Promise<void> {
+  async restore(
+    botId: string,
+    _revision: string,
+    dest: string,
+    context: AdapterContext,
+  ): Promise<void> {
     await this.checkout(botId, dest, context);
   }
 
@@ -55,7 +60,12 @@ export class LocalAgentHomeStore implements AgentHomeStore {
     return readFile(full, "utf8");
   }
 
-  async writeFile(botId: string, filePath: string, content: string, _context: AdapterContext): Promise<void> {
+  async writeFile(
+    botId: string,
+    filePath: string,
+    content: string,
+    _context: AdapterContext,
+  ): Promise<void> {
     const full = safeJoin(this.botDir(botId), filePath);
     await mkdir(path.dirname(full), { recursive: true });
     await writeFile(full, content, "utf8");

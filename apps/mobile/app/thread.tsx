@@ -1,7 +1,13 @@
 import { Link, useLocalSearchParams } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
-import { blockText, rpc, type MobileSnapshot } from "../lib/api";
+import {
+  applyMobileThreadEvent,
+  blockText,
+  type MobileSnapshot,
+  rpc,
+  subscribeThread,
+} from "../lib/api";
 
 export default function Thread() {
   const { botId, name } = useLocalSearchParams<{ botId?: string; name?: string }>();
@@ -14,12 +20,43 @@ export default function Thread() {
     if (!botId) return;
     const next = await rpc<MobileSnapshot>("threads/get", { botId });
     setSnap(next);
+    return next;
   }
 
   useEffect(() => {
-    void refresh().catch((err: Error) => setError(err.message));
-    const timer = setInterval(() => void refresh().catch(() => undefined), 1200);
-    return () => clearInterval(timer);
+    if (!botId) return;
+    const abort = new AbortController();
+    let fallback: ReturnType<typeof setInterval> | undefined;
+    void (async () => {
+      const next = await refresh().catch((err: Error) => {
+        setError(err.message);
+        return null;
+      });
+      if (abort.signal.aborted) return;
+      try {
+        await subscribeThread(
+          botId,
+          next?.cursor ?? -1,
+          (event) => {
+            if (event.type === "thread.progress" || event.type === "thread.message.created") {
+              setSnap((prev) => applyMobileThreadEvent(prev, event));
+            }
+            if (event.type === "thread.message.created" || event.type === "run.completed") {
+              void refresh().catch(() => undefined);
+            }
+          },
+          abort.signal,
+        );
+      } catch {
+        if (!abort.signal.aborted) {
+          fallback = setInterval(() => void refresh().catch(() => undefined), 2500);
+        }
+      }
+    })();
+    return () => {
+      abort.abort();
+      if (fallback) clearInterval(fallback);
+    };
   }, [botId]);
 
   async function send() {
@@ -51,7 +88,9 @@ export default function Thread() {
               maxWidth: "85%",
             }}
           >
-            <Text style={{ color: message.role === "user" ? "#1A1A1A" : "#DFDFE2" }}>{blockText(message)}</Text>
+            <Text style={{ color: message.role === "user" ? "#1A1A1A" : "#DFDFE2" }}>
+              {blockText(message)}
+            </Text>
           </View>
         ))}
       </ScrollView>
@@ -61,13 +100,33 @@ export default function Thread() {
           onChangeText={setDraft}
           placeholder="Message…"
           placeholderTextColor="#6C6C70"
-          style={{ flex: 1, color: "#ECECEE", backgroundColor: "#131315", borderRadius: 20, paddingHorizontal: 14, height: 44 }}
+          style={{
+            flex: 1,
+            color: "#ECECEE",
+            backgroundColor: "#131315",
+            borderRadius: 20,
+            paddingHorizontal: 14,
+            height: 44,
+          }}
         />
-        <Pressable onPress={() => void send()} style={{ backgroundColor: "#F1F1EF", borderRadius: 22, width: 44, height: 44, alignItems: "center", justifyContent: "center" }}>
+        <Pressable
+          onPress={() => void send()}
+          style={{
+            backgroundColor: "#F1F1EF",
+            borderRadius: 22,
+            width: 44,
+            height: 44,
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
           <Text>↑</Text>
         </Pressable>
       </View>
-      <Link href={{ pathname: "/computer", params: { botId: botId ?? "", name: name ?? "Bot" } }} asChild>
+      <Link
+        href={{ pathname: "/computer", params: { botId: botId ?? "", name: name ?? "Bot" } }}
+        asChild
+      >
         <Pressable style={{ marginTop: 16 }}>
           <Text style={{ color: "#C9C9CE" }}>Open computer →</Text>
         </Pressable>

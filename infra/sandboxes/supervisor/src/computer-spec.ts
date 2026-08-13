@@ -27,7 +27,13 @@ export function containerCreateOptions(input: ComputerCreateInput) {
     Image: input.image,
     name: input.name,
     Tty: true,
-    Env: ["DISPLAY=:1", "HOME=/home/rakazo"],
+    Env: [
+      "DISPLAY=:1",
+      "HOME=/home/rakazo",
+      "PATH=/home/rakazo/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+      "NPM_CONFIG_PREFIX=/home/rakazo/.local",
+      "PIP_USER=1",
+    ],
     Labels: {
       "rakazo.botId": input.botId,
       "rakazo.workspaceId": input.workspaceId,
@@ -64,7 +70,8 @@ export function xdotoolCommand(input: SandboxInput): string[] {
   }
   if (input.kind === "pointer") {
     const btn = input.button === "right" ? "3" : "1";
-    if (input.type === "move") return ["xdotool", "mousemove", "--", String(input.x), String(input.y)];
+    if (input.type === "move")
+      return ["xdotool", "mousemove", "--", String(input.x), String(input.y)];
     if (input.type === "down") {
       return ["xdotool", "mousemove", "--", String(input.x), String(input.y), "mousedown", btn];
     }

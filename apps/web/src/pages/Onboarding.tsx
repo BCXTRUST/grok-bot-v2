@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { rpc } from "../lib/rpc";
 
@@ -6,18 +6,42 @@ const QUESTIONS = [
   {
     q: "What do you mainly want help with?",
     sub: "Pick whatever’s closest, or type your own.",
-    opts: ["Inbox & email", "Slack & messages", "Coding & repos", "Research & writing", "A bit of everything"],
+    opts: [
+      "Inbox & email",
+      "Slack & messages",
+      "Coding & repos",
+      "Research & writing",
+      "A bit of everything",
+    ],
   },
   {
     q: "How do you want me to write?",
     sub: "I’ll match this unless you say otherwise.",
-    opts: ["Clear and tight", "Warm and conversational", "Polished / formal", "Match whatever I draft"],
+    opts: [
+      "Clear and tight",
+      "Warm and conversational",
+      "Polished / formal",
+      "Match whatever I draft",
+    ],
   },
 ];
+
+type CatalogEntry = {
+  provider: string;
+  providerName?: string;
+  id: string;
+  label: string;
+  billing: string;
+  auth?: "api-key" | "oauth" | "both";
+  oauthLabel?: string;
+  subscription?: boolean;
+};
 
 export function OnboardingPage() {
   const navigate = useNavigate();
   const [step, setStep] = useState<"loading" | "model" | "bot" | "questions">("loading");
+  const [catalog, setCatalog] = useState<CatalogEntry[]>([]);
+  const [query, setQuery] = useState("");
   const [provider, setProvider] = useState("openrouter");
   const [modelId, setModelId] = useState("deepseek/deepseek-v4-flash-0731");
   const [apiKey, setApiKey] = useState("");
@@ -28,19 +52,65 @@ export function OnboardingPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const timeout = new Promise<never>((_, reject) => {
-      setTimeout(() => reject(new Error("me timeout")), 2500);
-    });
-    void Promise.race([rpc.me(), timeout])
-      .then((me) => setStep(me.needsModel ? "model" : "bot"))
+    void Promise.all([rpc.me(), rpc.models.list().catch(() => [])])
+      .then(([me, models]) => {
+        setCatalog(models);
+        const preferred =
+          models.find(
+            (entry) => entry.provider === me.defaultProvider && entry.id === me.defaultModel,
+          ) ??
+          models.find((entry) => entry.provider === me.defaultProvider) ??
+          models[0];
+        if (preferred) {
+          setProvider(preferred.provider);
+          setModelId(preferred.id);
+        }
+        setStep(me.needsModel ? "model" : "bot");
+      })
       .catch(() => setStep("bot"));
   }, []);
+
+  const providers = useMemo(() => {
+    const seen = new Map<string, CatalogEntry>();
+    for (const entry of catalog) {
+      if (!seen.has(entry.provider)) seen.set(entry.provider, entry);
+    }
+    return [...seen.values()];
+  }, [catalog]);
+
+  const filteredProviders = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return providers;
+    const matching = new Set(
+      catalog
+        .filter((entry) =>
+          `${entry.provider} ${entry.providerName ?? ""} ${entry.label} ${entry.id} ${entry.billing} ${entry.oauthLabel ?? ""}`
+            .toLowerCase()
+            .includes(q),
+        )
+        .map((entry) => entry.provider),
+    );
+    return providers.filter((entry) => matching.has(entry.provider));
+  }, [catalog, providers, query]);
+
+  const modelsForProvider = useMemo(
+    () => catalog.filter((entry) => entry.provider === provider),
+    [catalog, provider],
+  );
+
+  const selected = modelsForProvider.find((entry) => entry.id === modelId) ?? modelsForProvider[0];
+  const acceptsKey = selected?.auth !== "oauth";
 
   async function saveModel() {
     setError(null);
     try {
       if (apiKey) {
-        await rpc.models.connect({ provider, apiKey, modelId, label: provider });
+        await rpc.models.connect({
+          provider,
+          apiKey,
+          modelId,
+          label: selected?.providerName ?? provider,
+        });
       }
       await rpc.models.setDefault({ provider, modelId });
       setStep("bot");
@@ -53,7 +123,13 @@ export function OnboardingPage() {
     const instructions = answers.length
       ? `User setup:\n${answers.map((a) => `- ${a}`).join("\n")}`
       : description;
-    const bot = await rpc.bots.create({ name, title, description, instructions, notifyOnFinish: true });
+    const bot = await rpc.bots.create({
+      name,
+      title,
+      description,
+      instructions,
+      notifyOnFinish: true,
+    });
     navigate(`/app/${bot.id}`);
   }
 
@@ -67,37 +143,74 @@ export function OnboardingPage() {
           <div>
             <h1 className="text-[32px] font-medium text-[#F1F1F2]">Connect a model</h1>
             <p className="mt-2 text-[#85858A]">
-              Rakazo does not pay for model usage. Bring an OpenRouter key, or skip if this deployment already has one.
+              Rakazo does not pay for model usage. Pick a provider from the Pi catalog, then an API
+              key or subscription sign-in where the provider supports it.
             </p>
-            <label className="mt-8 block text-sm text-[#85858A]">
-              Provider
-              <select
-                value={provider}
-                onChange={(e) => setProvider(e.target.value)}
-                className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
-              >
-                <option value="openrouter">OpenRouter</option>
-                <option value="scripted">Scripted (local tests)</option>
-              </select>
-            </label>
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search providers and models"
+              className="mt-8 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
+            />
+            <div className="mt-3 max-h-48 overflow-y-auto rounded-[11px] border border-[#26262A]">
+              {filteredProviders.map((entry) => (
+                <button
+                  key={entry.provider}
+                  type="button"
+                  onClick={() => {
+                    setProvider(entry.provider);
+                    const first = catalog.find((item) => item.provider === entry.provider);
+                    if (first) setModelId(first.id);
+                  }}
+                  className={`flex w-full items-center justify-between border-b border-[#202023] px-3.5 py-2.5 text-left last:border-0 ${
+                    entry.provider === provider ? "bg-[#1A1A1D]" : "hover:bg-[#161618]"
+                  }`}
+                >
+                  <span className="text-[15px] text-[#ECECEE]">
+                    {entry.providerName ?? entry.provider}
+                  </span>
+                  <span className="text-[12px] text-[#85858A]">
+                    {entry.subscription
+                      ? "Subscription"
+                      : entry.auth === "oauth"
+                        ? "OAuth"
+                        : "API key"}
+                  </span>
+                </button>
+              ))}
+            </div>
             <label className="mt-4 block text-sm text-[#85858A]">
               Model
-              <input
-                value={modelId}
+              <select
+                value={selected?.id ?? modelId}
                 onChange={(e) => setModelId(e.target.value)}
                 className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
-              />
+              >
+                {modelsForProvider.map((entry) => (
+                  <option key={`${entry.provider}:${entry.id}`} value={entry.id}>
+                    {entry.label}
+                  </option>
+                ))}
+              </select>
             </label>
-            <label className="mt-4 block text-sm text-[#85858A]">
-              API key
-              <input
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-                placeholder="sk-or-…"
-                type="password"
-                className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
-              />
-            </label>
+            <p className="mt-2 text-[13px] text-[#85858A]">{selected?.billing}</p>
+            {acceptsKey ? (
+              <label className="mt-4 block text-sm text-[#85858A]">
+                API key
+                <input
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  placeholder="sk-…"
+                  type="password"
+                  className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
+                />
+              </label>
+            ) : (
+              <p className="mt-4 text-sm text-[#85858A]">
+                {selected?.oauthLabel ?? selected?.providerName ?? provider} uses OAuth or a
+                subscription. Pi owns that sign-in. Skip if this deployment already has credentials.
+              </p>
+            )}
             {error ? <p className="mt-3 text-sm text-[#E65707]">{error}</p> : null}
             <div className="mt-6 flex gap-3">
               <button

@@ -31,7 +31,11 @@ function jsonToken(body: unknown): string {
   const record = body as Record<string, unknown>;
   if (typeof record.token === "string" && record.token) return record.token;
   const session = record.session;
-  if (session && typeof session === "object" && typeof (session as { token?: string }).token === "string") {
+  if (
+    session &&
+    typeof session === "object" &&
+    typeof (session as { token?: string }).token === "string"
+  ) {
     return (session as { token: string }).token;
   }
   return "";

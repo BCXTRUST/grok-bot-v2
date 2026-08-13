@@ -55,7 +55,13 @@ export interface ScreenSession {
 
 export type ComputerInput =
   | { kind: "key"; key: string; modifiers?: string[] }
-  | { kind: "pointer"; x: number; y: number; button?: "left" | "right"; type: "move" | "down" | "up" | "click" }
+  | {
+      kind: "pointer";
+      x: number;
+      y: number;
+      button?: "left" | "right";
+      type: "move" | "down" | "up" | "click";
+    }
   | { kind: "clipboard"; text: string };
 
 export interface ControlLeaseRef {
@@ -161,7 +167,11 @@ export interface AgentRunRequest {
   model: { provider: string; id: string; apiKey?: string };
   resumeFromCheckpoint?: string;
   script?: ScriptedTurn[];
-  executeTool?: (name: string, args: Record<string, unknown>, executionId: string) => Promise<unknown>;
+  executeTool?: (
+    name: string,
+    args: Record<string, unknown>,
+    executionId: string,
+  ) => Promise<unknown>;
 }
 
 export interface ScriptedTurn {

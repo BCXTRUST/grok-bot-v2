@@ -1,7 +1,7 @@
-import { PostgreSqlContainer } from "@testcontainers/postgresql";
 import { execSync, spawn } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { PostgreSqlContainer } from "@testcontainers/postgresql";
 
 const providers = process.argv.includes("--providers");
 
@@ -36,7 +36,7 @@ async function main() {
   process.env.CI = "1";
 
   execSync("pnpm --filter @rakazo/db generate", { stdio: "inherit", env: process.env });
-  execSync("pnpm --filter @rakazo/db exec prisma db push", {
+  execSync("pnpm --filter @rakazo/db exec prisma migrate deploy", {
     stdio: "inherit",
     env: process.env,
     cwd: path.resolve("packages/db"),

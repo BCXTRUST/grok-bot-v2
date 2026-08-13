@@ -3,8 +3,7 @@ import { rpc } from "./api";
 
 export async function registerPushToken() {
   const existing = await Notifications.getPermissionsAsync();
-  const granted =
-    existing.granted || (await Notifications.requestPermissionsAsync()).granted;
+  const granted = existing.granted || (await Notifications.requestPermissionsAsync()).granted;
   if (!granted) return;
   try {
     const projectId = process.env.EXPO_PUBLIC_PROJECT_ID;

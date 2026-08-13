@@ -1,10 +1,17 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import type {
+  Bot,
+  ComputerStatus,
+  ProductEvent,
+  Routine,
+  ThreadMessage,
+  ThreadSnapshot,
+} from "@rakazo/contracts";
 import { BotAvatar, Button } from "@rakazo/ui-web";
-import type { Bot, ComputerStatus, Routine, ThreadMessage, ThreadSnapshot } from "@rakazo/contracts";
+import { type Dispatch, type SetStateAction, useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 import { authClient } from "../lib/auth";
-import { rpc } from "../lib/rpc";
 import { desktopBridge } from "../lib/desktop";
+import { rpc } from "../lib/rpc";
 import { PluginsOverlay } from "./PluginsOverlay";
 import { WindowChrome } from "./WindowChrome";
 
@@ -28,7 +35,11 @@ export function ShellPage() {
   const [memory, setMemory] = useState<string>("");
   const [routineDraft, setRoutineDraft] = useState({ name: "", prompt: "", cron: "0 9 * * 1" });
   const [screenUrl, setScreenUrl] = useState<string | null>(null);
-  const [usage, setUsage] = useState<{ inputTokens: number; outputTokens: number; runs: number } | null>(null);
+  const [usage, setUsage] = useState<{
+    inputTokens: number;
+    outputTokens: number;
+    runs: number;
+  } | null>(null);
   const autoBooted = useRef<string | null>(null);
 
   const active = bots.find((b) => b.id === botId) ?? bots[0];
@@ -57,6 +68,7 @@ export function ShellPage() {
     setFiles(fileList);
     const screen = await rpc.computer.screenUrl({ botId: id }).catch(() => ({ url: null }));
     setScreenUrl(screen.url);
+    return snap;
   }
 
   useEffect(() => {
@@ -65,9 +77,41 @@ export function ShellPage() {
 
   useEffect(() => {
     if (!active) return;
-    void refreshThread(active.id).catch(() => undefined);
-    const timer = setInterval(() => void refreshThread(active.id).catch(() => undefined), 800);
-    return () => clearInterval(timer);
+    const abort = new AbortController();
+    let fallback: number | undefined;
+    void (async () => {
+      const snap = await refreshThread(active.id).catch(() => null);
+      if (abort.signal.aborted) return;
+      try {
+        const events = await rpc.threads.subscribe(
+          { botId: active.id, cursor: snap?.cursor ?? -1 },
+          { signal: abort.signal },
+        );
+        for await (const event of events) {
+          if (abort.signal.aborted) break;
+          applyThreadEvent(event, setSnapshot, setComputer);
+          if (
+            event.type === "thread.message.created" ||
+            event.type === "run.completed" ||
+            event.type === "computer.status" ||
+            event.type === "computer.takeover.granted"
+          ) {
+            void refreshThread(active.id).catch(() => undefined);
+          }
+        }
+      } catch {
+        if (!abort.signal.aborted) {
+          fallback = window.setInterval(
+            () => void refreshThread(active.id).catch(() => undefined),
+            2500,
+          );
+        }
+      }
+    })();
+    return () => {
+      abort.abort();
+      if (fallback !== undefined) window.clearInterval(fallback);
+    };
   }, [active?.id]);
 
   const filtered = useMemo(
@@ -96,7 +140,13 @@ export function ShellPage() {
     setPanel("settings");
   }
 
-  async function bootComputer({ takeControl, overlay }: { takeControl: boolean; overlay: boolean }) {
+  async function bootComputer({
+    takeControl,
+    overlay,
+  }: {
+    takeControl: boolean;
+    overlay: boolean;
+  }) {
     if (!active) return;
     const needsBoot = computer?.state !== "running" || !screenUrl;
     if (overlay && needsBoot) setBooting(true);
@@ -164,9 +214,13 @@ export function ShellPage() {
               <div className="min-w-0 flex-1">
                 <div className="flex items-baseline justify-between gap-2">
                   <span className="text-[15px] font-medium text-[#ECECEE]">{bot.name}</span>
-                  <span className="shrink-0 text-[12.5px] text-[#6C6C70]">{bot.status === "idle" ? "" : bot.status}</span>
+                  <span className="shrink-0 text-[12.5px] text-[#6C6C70]">
+                    {bot.status === "idle" ? "" : bot.status}
+                  </span>
                 </div>
-                <div className="mt-0.5 truncate text-[13.5px] text-[#85858A]">{bot.preview || bot.title}</div>
+                <div className="mt-0.5 truncate text-[13.5px] text-[#85858A]">
+                  {bot.preview || bot.title}
+                </div>
               </div>
             </button>
           ))}
@@ -176,7 +230,9 @@ export function ShellPage() {
           onClick={() => setPluginsOpen(true)}
           className="mx-3 mb-1 flex items-center gap-3 rounded-[11px] px-2.5 py-2 hover:bg-[#131315]"
         >
-          <span className="grid h-[30px] w-[30px] place-items-center rounded-full bg-[#17171A] text-[#9A9AA0]">⌁</span>
+          <span className="grid h-[30px] w-[30px] place-items-center rounded-full bg-[#17171A] text-[#9A9AA0]">
+            ⌁
+          </span>
           <span className="text-[14.5px] text-[#C9C9CE]">Plugins</span>
         </button>
         <div className="relative">
@@ -207,8 +263,14 @@ export function ShellPage() {
               </button>
             </div>
           ) : null}
-          <button type="button" onClick={() => setMenuOpen((v) => !v)} className="flex items-center gap-[11px] px-[18px] py-3.5">
-            <span className="grid h-8 w-8 place-items-center rounded-full bg-[#232326] text-[12px] text-[#A8A8AD]">{initials}</span>
+          <button
+            type="button"
+            onClick={() => setMenuOpen((v) => !v)}
+            className="flex items-center gap-[11px] px-[18px] py-3.5"
+          >
+            <span className="grid h-8 w-8 place-items-center rounded-full bg-[#232326] text-[12px] text-[#A8A8AD]">
+              {initials}
+            </span>
             <span className="text-[14.5px] text-[#C9C9CE]">{userName}</span>
           </button>
         </div>
@@ -216,9 +278,15 @@ export function ShellPage() {
 
       <main className="flex min-w-0 flex-1 flex-col bg-[#0D0D0E]">
         <div className="flex items-center justify-between border-b border-[#141416] px-[22px] py-[17px]">
-          <button type="button" onClick={() => setPanel("settings")} className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => setPanel("settings")}
+            className="flex items-center gap-3"
+          >
             {active ? <BotAvatar color={active.color} size={26} /> : null}
-            <span className="text-[16px] font-medium text-[#ECECEE]">{active?.name ?? "Select a bot"}</span>
+            <span className="text-[16px] font-medium text-[#ECECEE]">
+              {active?.name ?? "Select a bot"}
+            </span>
           </button>
           <button
             type="button"
@@ -227,7 +295,14 @@ export function ShellPage() {
             className="grid h-[30px] w-[34px] place-items-center rounded-[9px] hover:bg-[#1B1B1E]"
             style={{ background: panel ? "#1B1B1E" : "transparent" }}
           >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#A8A8AD" strokeWidth="1.6">
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="#A8A8AD"
+              strokeWidth="1.6"
+            >
               <rect x="2" y="4" width="20" height="13" rx="2" />
               <path d="M8 21h8M12 17v4" />
             </svg>
@@ -235,11 +310,21 @@ export function ShellPage() {
         </div>
         <div className="rk-scroll flex flex-1 flex-col gap-[13px] overflow-y-auto px-7 py-6">
           {(snapshot?.messages ?? []).map((message) => (
-            <MessageView key={message.id} message={message} onAnswer={(text) => active && rpc.threads.answer({ botId: active.id, runId: message.runId ?? "", answer: text })} />
+            <MessageView
+              key={message.id}
+              message={message}
+              onAnswer={(text) =>
+                active &&
+                rpc.threads.answer({ botId: active.id, runId: message.runId ?? "", answer: text })
+              }
+            />
           ))}
           {snapshot?.run && ["running", "queued", "leased"].includes(snapshot.run.status) ? (
             <div className="flex justify-start">
-              <div className="rounded-[20px] bg-[#1A1A1D] px-[18px] py-[13px] text-[14.5px] text-[#85858A]" style={{ animation: "rkPulse 1.2s ease-in-out infinite" }}>
+              <div
+                className="rounded-[20px] bg-[#1A1A1D] px-[18px] py-[13px] text-[14.5px] text-[#85858A]"
+                style={{ animation: "rkPulse 1.2s ease-in-out infinite" }}
+              >
                 working…
               </div>
             </div>
@@ -247,7 +332,9 @@ export function ShellPage() {
         </div>
         <div className="px-6 pb-6 pt-3">
           <div className="flex items-center gap-3.5 rounded-full border border-[#202023] bg-[#131315] py-[9px] pr-2.5 pl-3">
-            <span className="grid h-[34px] w-[34px] shrink-0 place-items-center rounded-full border border-[#26262A] text-[18px] text-[#9A9AA0]">+</span>
+            <span className="grid h-[34px] w-[34px] shrink-0 place-items-center rounded-full border border-[#26262A] text-[18px] text-[#9A9AA0]">
+              +
+            </span>
             <input
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
@@ -269,7 +356,11 @@ export function ShellPage() {
                 ■
               </button>
             ) : (
-              <button type="button" onClick={() => void send()} className="grid h-9 w-9 place-items-center rounded-full bg-[#F1F1EF] text-[#17171A]">
+              <button
+                type="button"
+                onClick={() => void send()}
+                className="grid h-9 w-9 place-items-center rounded-full bg-[#F1F1EF] text-[#17171A]"
+              >
                 ↑
               </button>
             )}
@@ -281,7 +372,9 @@ export function ShellPage() {
         <aside className="rk-scroll absolute inset-y-0 right-0 z-20 w-[min(384px,100%)] overflow-y-auto border-l border-[#141416] bg-[#0A0A0B] px-5 py-[17px] shadow-[-24px_0_48px_rgba(0,0,0,.35)]">
           {panel !== "routine" ? (
             <div className="mb-4 flex items-center justify-between">
-              <span className="text-[13.5px] text-[#85858A]">{computer?.state ?? active.status}</span>
+              <span className="text-[13.5px] text-[#85858A]">
+                {computer?.state ?? active.status}
+              </span>
               <div className="flex gap-3.5">
                 <button type="button" onClick={() => setPanel("settings")}>
                   ⚙
@@ -317,7 +410,9 @@ export function ShellPage() {
               </div>
               <div className="mt-3 flex items-center justify-between">
                 <span className="text-[13.5px] text-[#85858A]">
-                  {computer?.controlHolder === "user" ? "You have control" : `${active.name}’s screen`}
+                  {computer?.controlHolder === "user"
+                    ? "You have control"
+                    : `${active.name}’s screen`}
                 </span>
                 <Button
                   type="button"
@@ -334,13 +429,19 @@ export function ShellPage() {
                   key={routine.id}
                   type="button"
                   onClick={() => {
-                    setRoutineDraft({ name: routine.name, prompt: routine.prompt, cron: routine.cron });
+                    setRoutineDraft({
+                      name: routine.name,
+                      prompt: routine.prompt,
+                      cron: routine.cron,
+                    });
                     setPanel("routine");
                   }}
                   className="flex w-full items-center gap-3 rounded-[11px] px-2.5 py-2.5 hover:bg-[#121214]"
                 >
                   <span className="text-[#E65707]">◷</span>
-                  <span className="flex-1 text-left text-[14.5px] text-[#ECECEE]">{routine.name}</span>
+                  <span className="flex-1 text-left text-[14.5px] text-[#ECECEE]">
+                    {routine.name}
+                  </span>
                   <span className="text-[13px] text-[#6C6C70]">{routine.cron}</span>
                 </button>
               ))}
@@ -359,15 +460,27 @@ export function ShellPage() {
               >
                 Run now
               </button>
-              <button type="button" onClick={() => setPanel("routine")} className="mt-1 flex items-center gap-2.5 px-2.5 py-2.5 text-[14.5px] text-[#7A7A80]">
+              <button
+                type="button"
+                onClick={() => setPanel("routine")}
+                className="mt-1 flex items-center gap-2.5 px-2.5 py-2.5 text-[14.5px] text-[#7A7A80]"
+              >
                 + New routine
               </button>
               <div className="mt-8 text-[14px] text-[#85858A]">Memory</div>
-              <pre className="mt-2 whitespace-pre-wrap text-[13px] text-[#C9C9CE]">{memory || "No memory yet."}</pre>
+              <pre className="mt-2 whitespace-pre-wrap text-[13px] text-[#C9C9CE]">
+                {memory || "No memory yet."}
+              </pre>
               <div className="mt-8 text-[14px] text-[#85858A]">Files</div>
               <ul className="mt-2 text-[13px] text-[#C9C9CE]">
                 {files
-                  .filter((file) => !file.path.split("/").filter(Boolean).some((part) => part.startsWith(".")))
+                  .filter(
+                    (file) =>
+                      !file.path
+                        .split("/")
+                        .filter(Boolean)
+                        .some((part) => part.startsWith(".")),
+                  )
                   .map((file) => (
                     <li key={file.path}>{file.path}</li>
                   ))}
@@ -383,7 +496,9 @@ export function ShellPage() {
               }}
               onExport={async () => {
                 const manifest = await rpc.export.bot({ botId: active.id });
-                const blob = new Blob([JSON.stringify(manifest, null, 2)], { type: "application/json" });
+                const blob = new Blob([JSON.stringify(manifest, null, 2)], {
+                  type: "application/json",
+                });
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement("a");
                 a.href = url;
@@ -396,7 +511,11 @@ export function ShellPage() {
           {panel === "routine" ? (
             <div>
               <div className="mb-5 flex items-center justify-between">
-                <button type="button" onClick={() => setPanel("computer")} className="text-[#9A9AA0]">
+                <button
+                  type="button"
+                  onClick={() => setPanel("computer")}
+                  className="text-[#9A9AA0]"
+                >
                   ‹
                 </button>
                 <div className="text-[15.5px] font-medium text-[#F1F1F2]">Routine</div>
@@ -458,7 +577,9 @@ export function ShellPage() {
 
       {booting ? (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-[22px] bg-[rgba(4,4,5,.88)]">
-          <div className="text-[19px] font-medium text-[#F1F1F2]">Booting up {active?.name}’s computer</div>
+          <div className="text-[19px] font-medium text-[#F1F1F2]">
+            Booting up {active?.name}’s computer
+          </div>
           <div className="h-[5px] w-[420px] overflow-hidden rounded-full bg-[#232327]">
             <div className="h-full w-2/3 rounded-full bg-[#F1F1EF]" />
           </div>
@@ -466,6 +587,61 @@ export function ShellPage() {
       ) : null}
     </div>
   );
+}
+
+function applyThreadEvent(
+  event: ProductEvent,
+  setSnapshot: Dispatch<SetStateAction<ThreadSnapshot | null>>,
+  setComputer: Dispatch<SetStateAction<ComputerStatus | null>>,
+) {
+  if (event.type === "thread.progress") {
+    const text = String(event.payload.text ?? "");
+    setSnapshot((prev) => {
+      if (!prev) return prev;
+      const streaming: ThreadMessage = {
+        id: `progress:${event.runId ?? event.id}`,
+        threadId: event.threadId,
+        seq: event.seq,
+        role: "bot",
+        blocks: [{ kind: "progress", text }],
+        runId: event.runId,
+        createdAt: event.createdAt,
+      };
+      const without = prev.messages.filter((message) => !message.id.startsWith("progress:"));
+      return { ...prev, cursor: event.seq, messages: [...without, streaming] };
+    });
+    return;
+  }
+  if (event.type === "thread.message.created") {
+    const role = (event.payload.role as ThreadMessage["role"]) ?? "bot";
+    const blocks = (event.payload.blocks as ThreadMessage["blocks"]) ?? [];
+    const next: ThreadMessage = {
+      id: String(event.payload.messageId ?? event.id),
+      threadId: event.threadId,
+      seq: event.seq,
+      role,
+      blocks,
+      runId: event.runId,
+      createdAt: event.createdAt,
+    };
+    setSnapshot((prev) => {
+      if (!prev) return prev;
+      const without = prev.messages.filter(
+        (message) => message.id !== next.id && !message.id.startsWith("progress:"),
+      );
+      return { ...prev, cursor: event.seq, messages: [...without, next] };
+    });
+  }
+  if (event.type === "computer.status" || event.type === "computer.takeover.granted") {
+    setComputer((prev) =>
+      prev
+        ? {
+            ...prev,
+            controlHolder: event.type === "computer.takeover.granted" ? "user" : prev.controlHolder,
+          }
+        : prev,
+    );
+  }
 }
 
 function MessageView({
@@ -480,9 +656,22 @@ function MessageView({
       {message.blocks.map((block, i) => {
         if (block.kind === "meta") {
           return (
-            <div key={i} className="flex items-center justify-center gap-2 py-1 text-[13.5px] text-[#85858A]">
+            <div
+              key={i}
+              className="flex items-center justify-center gap-2 py-1 text-[13.5px] text-[#85858A]"
+            >
               <span className="text-[#E65707]">◷</span>
               <span>{block.text}</span>
+            </div>
+          );
+        }
+        if (block.kind === "progress") {
+          return (
+            <div key={i} className="flex justify-start">
+              <div className="max-w-[74%] rounded-[20px] bg-[#1A1A1D] px-[18px] py-3 text-[15.5px] leading-[1.5] text-[#DFDFE2]">
+                {block.text}
+                <span className="ml-1 inline-block animate-pulse text-[#85858A]">▍</span>
+              </div>
             </div>
           );
         }
@@ -522,7 +711,10 @@ function MessageView({
         }
         if (block.kind === "ask") {
           return (
-            <div key={i} className="max-w-[74%] rounded-[20px] border border-[#242428] bg-[#141417] px-5 py-[17px]">
+            <div
+              key={i}
+              className="max-w-[74%] rounded-[20px] border border-[#242428] bg-[#141417] px-5 py-[17px]"
+            >
               <div className="text-[15.5px] leading-[1.5] text-[#ECECEE]">{block.text}</div>
               {block.detail ? (
                 <pre className="mt-3 rounded-xl bg-[#0E0E10] px-3.5 py-3 font-mono text-[12.5px] leading-[1.7] text-[#85858A]">
@@ -530,10 +722,17 @@ function MessageView({
                 </pre>
               ) : null}
               <div className="mt-3.5 flex gap-2">
-                <button type="button" onClick={() => onAnswer("approved")} className="rounded-[11px] bg-[#F1F1EF] px-[17px] py-2 text-[14.5px] font-medium text-[#17171A]">
+                <button
+                  type="button"
+                  onClick={() => onAnswer("approved")}
+                  className="rounded-[11px] bg-[#F1F1EF] px-[17px] py-2 text-[14.5px] font-medium text-[#17171A]"
+                >
                   Send it
                 </button>
-                <button type="button" className="rounded-[11px] border border-[#26262A] px-[17px] py-2 text-[14.5px] text-[#C9C9CE]">
+                <button
+                  type="button"
+                  className="rounded-[11px] border border-[#26262A] px-[17px] py-2 text-[14.5px] text-[#C9C9CE]"
+                >
                   Edit first
                 </button>
               </div>
@@ -542,10 +741,15 @@ function MessageView({
         }
         if (block.kind === "computer") {
           return (
-            <div key={i} className="w-[340px] rounded-[18px] border border-[#232326] bg-[#17171A] px-[18px] py-4">
+            <div
+              key={i}
+              className="w-[340px] rounded-[18px] border border-[#232326] bg-[#17171A] px-[18px] py-4"
+            >
               <div className="flex items-center justify-between">
                 <span className="text-[15px] font-medium text-[#ECECEE]">Computer</span>
-                <span className="rounded-full bg-[rgba(48,162,75,.14)] px-[11px] py-1 text-[13px] text-[#4ECB71]">{block.state}</span>
+                <span className="rounded-full bg-[rgba(48,162,75,.14)] px-[11px] py-1 text-[13px] text-[#4ECB71]">
+                  {block.state}
+                </span>
               </div>
               <p className="my-2.5 text-[14.5px] leading-[1.5] text-[#A8A8AD]">{block.text}</p>
             </div>
@@ -563,7 +767,12 @@ function BotSettings({
   onExport,
 }: {
   bot: Bot;
-  onSave: (patch: { name?: string; title?: string; description?: string; instructions?: string }) => Promise<void>;
+  onSave: (patch: {
+    name?: string;
+    title?: string;
+    description?: string;
+    instructions?: string;
+  }) => Promise<void>;
   onExport: () => Promise<void>;
 }) {
   const [name, setName] = useState(bot.name);
@@ -574,7 +783,10 @@ function BotSettings({
 
   useEffect(() => {
     if (!desktop) return;
-    void desktop.listGrants().then(setGrants).catch(() => undefined);
+    void desktop
+      .listGrants()
+      .then(setGrants)
+      .catch(() => undefined);
   }, [desktop]);
 
   return (
@@ -584,15 +796,28 @@ function BotSettings({
       </div>
       <label className="mt-6 block text-[14px] text-[#85858A]">
         Name
-        <input value={name} onChange={(e) => setName(e.target.value)} className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]" />
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
+        />
       </label>
       <label className="mt-4 block text-[14px] text-[#85858A]">
         Title
-        <input value={title} onChange={(e) => setTitle(e.target.value)} className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]" />
+        <input
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
+        />
       </label>
       <label className="mt-4 block text-[14px] text-[#85858A]">
         Description
-        <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={4} className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]" />
+        <textarea
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          rows={4}
+          className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
+        />
       </label>
       <button
         type="button"
@@ -601,7 +826,11 @@ function BotSettings({
       >
         Save
       </button>
-      <button type="button" onClick={() => void onExport()} className="mt-3 text-[14px] text-[#85858A]">
+      <button
+        type="button"
+        onClick={() => void onExport()}
+        className="mt-3 text-[14px] text-[#85858A]"
+      >
         Export without secrets
       </button>
       {desktop ? (

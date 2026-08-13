@@ -27,7 +27,10 @@ export class McpEmulator {
                 {
                   name: "notes.write",
                   description: "Write a note in the destination filesystem",
-                  inputSchema: { type: "object", properties: { path: { type: "string" }, text: { type: "string" } } },
+                  inputSchema: {
+                    type: "object",
+                    properties: { path: { type: "string" }, text: { type: "string" } },
+                  },
                 },
               ],
             }),
@@ -37,7 +40,9 @@ export class McpEmulator {
         if (body.method === "tools/call" && body.params.name === "notes.write") {
           const args = (body.params.arguments ?? {}) as { path?: string; text?: string };
           this.writes.push({ path: args.path ?? "note.md", text: args.text ?? "" });
-          res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ ok: true }));
+          res
+            .writeHead(200, { "content-type": "application/json" })
+            .end(JSON.stringify({ ok: true }));
           return;
         }
         res.writeHead(400).end("unknown method");
@@ -50,7 +55,9 @@ export class McpEmulator {
   }
 
   async stop(): Promise<void> {
-    await new Promise<void>((resolve, reject) => this.server?.close((err) => (err ? reject(err) : resolve())));
+    await new Promise<void>((resolve, reject) =>
+      this.server?.close((err) => (err ? reject(err) : resolve())),
+    );
   }
 
   inspect() {

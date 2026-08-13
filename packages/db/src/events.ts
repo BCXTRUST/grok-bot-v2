@@ -1,5 +1,6 @@
 import type { ProductEvent } from "@rakazo/contracts";
-import type { PrismaClient } from "./client.js";
+import type { Notification, Pool, PoolClient } from "pg";
+import type { Prisma, PrismaClient } from "./client.js";
 
 export async function appendEvent(
   prisma: PrismaClient,
@@ -26,7 +27,7 @@ export async function appendEvent(
         botId: input.botId,
         seq,
         type: input.type,
-        payload: input.payload,
+        payload: input.payload as Prisma.InputJsonValue,
         runId: input.runId,
       },
     });
@@ -50,13 +51,91 @@ export async function appendEvent(
   };
 }
 
-export async function eventsAfter(
-  prisma: PrismaClient,
-  threadId: string,
-  cursor: number,
-) {
+export async function eventsAfter(prisma: PrismaClient, threadId: string, cursor: number) {
   return prisma.event.findMany({
     where: { threadId, seq: { gt: cursor } },
     orderBy: { seq: "asc" },
+  });
+}
+
+export async function* followThreadEvents(
+  prisma: PrismaClient,
+  threadId: string,
+  cursor: number,
+  pool?: Pool,
+  signal?: AbortSignal,
+): AsyncGenerator<Awaited<ReturnType<typeof eventsAfter>>[number]> {
+  let seq = cursor;
+  const client = pool ? await pool.connect() : undefined;
+  try {
+    if (client) await client.query("LISTEN rakazo_events");
+    while (!signal?.aborted) {
+      const events = await eventsAfter(prisma, threadId, seq);
+      for (const event of events) {
+        seq = event.seq;
+        yield event;
+      }
+      if (signal?.aborted) break;
+      if (client) await waitForThreadNotify(client, threadId, 15_000, signal);
+      else await sleep(400, signal);
+    }
+  } finally {
+    if (client) {
+      await client.query("UNLISTEN rakazo_events").catch(() => undefined);
+      client.release();
+    }
+  }
+}
+
+function waitForThreadNotify(
+  client: PoolClient,
+  threadId: string,
+  ms: number,
+  signal?: AbortSignal,
+) {
+  return new Promise<void>((resolve) => {
+    const onNotify = (msg: Notification) => {
+      if (msg.channel !== "rakazo_events") return;
+      try {
+        const data = JSON.parse(msg.payload ?? "{}") as { threadId?: string };
+        if (data.threadId === threadId) {
+          cleanup();
+          resolve();
+        }
+      } catch {
+        // ignore malformed payloads
+      }
+    };
+    const onAbort = () => {
+      cleanup();
+      resolve();
+    };
+    const timer = setTimeout(() => {
+      cleanup();
+      resolve();
+    }, ms);
+    const cleanup = () => {
+      clearTimeout(timer);
+      client.off("notification", onNotify);
+      signal?.removeEventListener("abort", onAbort);
+    };
+    client.on("notification", onNotify);
+    signal?.addEventListener("abort", onAbort, { once: true });
+    if (signal?.aborted) onAbort();
+  });
+}
+
+function sleep(ms: number, signal?: AbortSignal) {
+  return new Promise<void>((resolve) => {
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      resolve();
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+    if (signal?.aborted) onAbort();
   });
 }

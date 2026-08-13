@@ -1,6 +1,10 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { AdapterContext, NotificationMessage, NotificationProvider } from "@rakazo/adapter-kit";
+import type {
+  AdapterContext,
+  NotificationMessage,
+  NotificationProvider,
+} from "@rakazo/adapter-kit";
 
 export function pushTokenPath(dataDir: string, userId: string) {
   return path.join(dataDir, "push-tokens", `${userId}.txt`);

@@ -1,6 +1,6 @@
 import { PrismaPg } from "@prisma/adapter-pg";
-import { PrismaClient } from "./generated/prisma/client.js";
 import { Pool } from "pg";
+import { PrismaClient } from "./generated/prisma/client.js";
 
 export type Db = PrismaClient;
 
@@ -11,5 +11,6 @@ export function createDb(connectionString: string): { prisma: PrismaClient; pool
   return { prisma, pool };
 }
 
-export { PrismaClient } from "./generated/prisma/client.js";
+export type { Pool } from "pg";
 export * from "./generated/prisma/client.js";
+export { Prisma, PrismaClient } from "./generated/prisma/client.js";

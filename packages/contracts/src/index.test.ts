@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CreateBotInput, ProductEventType, appContract } from "./index.js";
+import { appContract, CreateBotInput, ProductEventType } from "./index.js";
 
 describe("contracts", () => {
   it("parses bot create input", () => {

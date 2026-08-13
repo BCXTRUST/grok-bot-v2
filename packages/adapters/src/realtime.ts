@@ -17,7 +17,10 @@ export class PostgresRealtimeFanout implements RealtimeFanout {
     await this.pool.query("SELECT pg_notify($1, $2)", [channel, payload]);
   }
 
-  async subscribe(channel: string, onMessage: (payload: string) => void): Promise<() => Promise<void>> {
+  async subscribe(
+    channel: string,
+    onMessage: (payload: string) => void,
+  ): Promise<() => Promise<void>> {
     const client = await this.pool.connect();
     await client.query(`LISTEN ${channel}`);
     const handler = (msg: { channel: string; payload?: string }) => {

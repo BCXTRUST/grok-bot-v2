@@ -58,7 +58,10 @@ export const DEMO_BOTS: DemoBot[] = [
     thread: [
       { type: "time", text: "Yesterday 9:02 AM" },
       { type: "user", text: "lock the offsite for the week of the 14th" },
-      { type: "bot", text: "looking at three venues in range. i will hold dates and come back before anything is signed." },
+      {
+        type: "bot",
+        text: "looking at three venues in range. i will hold dates and come back before anything is signed.",
+      },
       {
         type: "card",
         lines: [
@@ -68,7 +71,10 @@ export const DEMO_BOTS: DemoBot[] = [
         ],
       },
       { type: "user", text: "harbor house if the quote lands under 9k" },
-      { type: "bot", text: "quote came in at $8,400. venue booked and the contract is out for signature. calendar holds are now invites." },
+      {
+        type: "bot",
+        text: "quote came in at $8,400. venue booked and the contract is out for signature. calendar holds are now invites.",
+      },
     ],
     reply: "added. i will confirm headcount with the crew thread and update the doc.",
   },
@@ -89,8 +95,14 @@ export const DEMO_BOTS: DemoBot[] = [
     },
     thread: [
       { type: "time", text: "Yesterday 11:40 PM" },
-      { type: "user", text: "work the seed-stage fintech list overnight, my voice, nothing sent without me" },
-      { type: "bot", text: "understood. i will research, score, and draft. everything lands in a review list at 6am." },
+      {
+        type: "user",
+        text: "work the seed-stage fintech list overnight, my voice, nothing sent without me",
+      },
+      {
+        type: "bot",
+        text: "understood. i will research, score, and draft. everything lands in a review list at 6am.",
+      },
       { type: "meta", text: "Created routine ◷ Overnight sourcing" },
       { type: "time", text: "3:10 AM" },
       {
@@ -101,7 +113,10 @@ export const DEMO_BOTS: DemoBot[] = [
           { k: "Skipped", v: "4 · already in pipeline" },
         ],
       },
-      { type: "bot", text: "two of them raised last week, so those drafts lead with the round. everything else follows your usual opener." },
+      {
+        type: "bot",
+        text: "two of them raised last week, so those drafts lead with the round. everything else follows your usual opener.",
+      },
     ],
     reply: "on it — i will queue those and leave the rest in review.",
   },
@@ -123,7 +138,10 @@ export const DEMO_BOTS: DemoBot[] = [
     thread: [
       { type: "time", text: "Yesterday 11:11 PM" },
       { type: "user", text: "inbox got away from me over the weekend, sweep it?" },
-      { type: "bot", text: "on it. 41 unread since friday. archiving the noise, drafting the rest." },
+      {
+        type: "bot",
+        text: "on it. 41 unread since friday. archiving the noise, drafting the rest.",
+      },
       { type: "time", text: "12:11 AM" },
       {
         type: "card",
@@ -134,7 +152,10 @@ export const DEMO_BOTS: DemoBot[] = [
           { k: "Flagged", v: "1 from nora · contract question" },
         ],
       },
-      { type: "bot", text: "nora is asking whether the renewal covers the new seats. her draft answers yes and quotes the contract line. it is at the top of the held pile." },
+      {
+        type: "bot",
+        text: "nora is asking whether the renewal covers the new seats. her draft answers yes and quotes the contract line. it is at the top of the held pile.",
+      },
       { type: "user", text: "send nora's, i'll take the rest tomorrow" },
       { type: "bot", text: "sent. inbox is at zero, with 5 drafts parked for tomorrow." },
     ],
@@ -154,11 +175,20 @@ export const DEMO_BOTS: DemoBot[] = [
     },
     thread: [
       { type: "time", text: "Yesterday 2:40 PM" },
-      { type: "bot", text: "northstar replied on pricing, same thread as last quarter. i already had the context, so i answered without waiting on you." },
+      {
+        type: "bot",
+        text: "northstar replied on pricing, same thread as last quarter. i already had the context, so i answered without waiting on you.",
+      },
       { type: "meta", text: "Updated memory · Account Manager" },
-      { type: "bot", text: "noted for next time: they only sign annual, and nora is the one who approves." },
+      {
+        type: "bot",
+        text: "noted for next time: they only sign annual, and nora is the one who approves.",
+      },
       { type: "user", text: "good. set the helix renewal call with sam" },
-      { type: "bot", text: "invite's out to sam for thursday 10am, with the renewal summary attached." },
+      {
+        type: "bot",
+        text: "invite's out to sam for thursday 10am, with the renewal summary attached.",
+      },
     ],
     reply: "noted. i will remember that for this account.",
   },
@@ -176,7 +206,10 @@ export const DEMO_BOTS: DemoBot[] = [
     },
     thread: [
       { type: "time", text: "Yesterday 4:15 PM" },
-      { type: "user", text: "read the infra applicants and shortlist anyone who has run their own cluster" },
+      {
+        type: "user",
+        text: "read the infra applicants and shortlist anyone who has run their own cluster",
+      },
       {
         type: "card",
         lines: [
@@ -185,7 +218,10 @@ export const DEMO_BOTS: DemoBot[] = [
           { k: "Drafted", v: "3 intros in your voice" },
         ],
       },
-      { type: "bot", text: "the three i drafted have all shipped a scheduler of their own. held for your read before anything goes out." },
+      {
+        type: "bot",
+        text: "the three i drafted have all shipped a scheduler of their own. held for your read before anything goes out.",
+      },
     ],
     reply: "i will pull those and leave the intros in review.",
   },
@@ -204,7 +240,10 @@ export const DEMO_BOTS: DemoBot[] = [
     thread: [
       { type: "time", text: "Yesterday 3:11 AM" },
       { type: "user", text: "month-end is friday, close out the card for me?" },
-      { type: "bot", text: "i'll match every charge to a receipt and file the report. anything that doesn't line up, i ask instead of guessing." },
+      {
+        type: "bot",
+        text: "i'll match every charge to a receipt and file the report. anything that doesn't line up, i ask instead of guessing.",
+      },
       { type: "meta", text: "Created routine ◷ Month-end close" },
       { type: "time", text: "Yesterday 10:11 PM" },
       {
@@ -215,9 +254,15 @@ export const DEMO_BOTS: DemoBot[] = [
           { k: "Flagged", v: "1 charge · harbor hotel, $412 twice" },
         ],
       },
-      { type: "bot", text: "the harbor hotel charged $412 on the 12th and again on the 14th. double-billed, or two separate nights?" },
+      {
+        type: "bot",
+        text: "the harbor hotel charged $412 on the 12th and again on the 14th. double-billed, or two separate nights?",
+      },
       { type: "user", text: "two nights, riley stayed the second one" },
-      { type: "bot", text: "that clears it. report filed: 9 receipts matched, $2,340 across 3 trips, nothing outstanding." },
+      {
+        type: "bot",
+        text: "that clears it. report filed: 9 receipts matched, $2,340 across 3 trips, nothing outstanding.",
+      },
     ],
     reply: "logged. i will fold that into the next close.",
   },
@@ -244,7 +289,10 @@ export const DEMO_BOTS: DemoBot[] = [
           { k: "Severity", v: "1 raised to P1 · auth loop" },
         ],
       },
-      { type: "bot", text: "the auth loop only happens on a stale session token. steps and a video are on the issue." },
+      {
+        type: "bot",
+        text: "the auth loop only happens on a stale session token. steps and a video are on the issue.",
+      },
     ],
     reply: "i will reproduce it and attach the steps to the issue.",
   },

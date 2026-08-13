@@ -39,7 +39,10 @@ export class E2BSandboxProvider implements SandboxProvider {
     return connected;
   }
 
-  async provision(request: { botId: string; homePath: string }, _context: AdapterContext): Promise<ComputerRef> {
+  async provision(
+    request: { botId: string; homePath: string },
+    _context: AdapterContext,
+  ): Promise<ComputerRef> {
     const desktop = await Sandbox.create({
       apiKey: this.apiKey,
       timeoutMs: 15 * 60_000,
@@ -75,7 +78,9 @@ export class E2BSandboxProvider implements SandboxProvider {
     _context: AdapterContext,
   ): Promise<ScreenSession> {
     const desktop = await this.box(computer);
-    const authKey = await desktop.stream.getAuthKey?.().catch(() => undefined);
+    const authKey = await Promise.resolve(
+      desktop.stream.getAuthKey?.() as string | Promise<string> | undefined,
+    ).catch(() => undefined);
     const url =
       typeof desktop.stream.getUrl === "function"
         ? desktop.stream.getUrl(authKey ? { authKey } : undefined)

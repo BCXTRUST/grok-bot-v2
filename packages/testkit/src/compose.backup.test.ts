@@ -42,11 +42,14 @@ describeBackup("compose backup and restore", () => {
       `docker compose -f ${composeFile} exec -T postgres psql -U rakazo -d postgres -c "CREATE DATABASE rakazo_restore_test"`,
       { stdio: "pipe", timeout: 20_000 },
     );
-    execSync(`docker compose -f ${composeFile} exec -T postgres psql -U rakazo -d rakazo_restore_test`, {
-      input: sql,
-      stdio: ["pipe", "pipe", "pipe"],
-      timeout: 60_000,
-    });
+    execSync(
+      `docker compose -f ${composeFile} exec -T postgres psql -U rakazo -d rakazo_restore_test`,
+      {
+        input: sql,
+        stdio: ["pipe", "pipe", "pipe"],
+        timeout: 60_000,
+      },
+    );
     const tables = execSync(
       `docker compose -f ${composeFile} exec -T postgres psql -U rakazo -d rakazo_restore_test -c "\\dt"`,
       { encoding: "utf8", timeout: 20_000 },

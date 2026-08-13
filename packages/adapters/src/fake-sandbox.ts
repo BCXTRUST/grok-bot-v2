@@ -10,7 +10,7 @@ import type {
   ScreenSession,
 } from "@rakazo/adapter-kit";
 
-interface FakeBox {
+export interface FakeBox {
   ref: ComputerRef;
   files: Map<string, string>;
   running: boolean;
@@ -35,7 +35,10 @@ export class FakeSandboxProvider implements SandboxProvider {
     };
   }
 
-  async provision(request: { botId: string; homePath: string }, _context: AdapterContext): Promise<ComputerRef> {
+  async provision(
+    request: { botId: string; homePath: string },
+    _context: AdapterContext,
+  ): Promise<ComputerRef> {
     const id = `fake-${request.botId}`;
     const existing = this.boxes.get(id);
     if (existing) {
@@ -106,12 +109,12 @@ export class FakeSandboxProvider implements SandboxProvider {
     return { id: `snap-${computer.id}`, createdAt: new Date().toISOString() };
   }
 
-  async stop(computer: ComputerRef): Promise<void> {
+  async stop(computer: ComputerRef, _context: AdapterContext): Promise<void> {
     const box = this.boxes.get(computer.id);
     if (box) box.running = false;
   }
 
-  async destroy(computer: ComputerRef): Promise<void> {
+  async destroy(computer: ComputerRef, _context: AdapterContext): Promise<void> {
     this.boxes.delete(computer.id);
   }
 }

@@ -17,13 +17,17 @@ cp .env.example .env
 docker compose -f infra/compose/docker-compose.yml up postgres -d
 pnpm install
 pnpm db:generate
-pnpm --filter @rakazo/db exec prisma db push
+pnpm db:migrate
 pnpm dev
 ```
 
-Open [http://127.0.0.1:5173](http://127.0.0.1:5173).
+`pnpm dev` starts the API, Graphile Worker, web app, and sandbox supervisor. Product wakeups default to Graphile Worker so a run continues if the API process restarts. `pnpm verify:fast` still forces `WAKEUP_DRIVER=memory`.
 
-Bring your own model key (OpenRouter by default). Rakazo does not pay for user model usage.
+If this Postgres was created with `prisma db push` before checked-in migrations existed, mark the baseline once:
+
+```bash
+pnpm --filter @rakazo/db exec prisma migrate resolve --applied 0001_init
+```
 
 ## Verify
 

@@ -34,7 +34,10 @@ import type {
 
 export interface SandboxProvider {
   describe(): AdapterDescriptor<SandboxCapabilities>;
-  provision(request: { botId: string; homePath: string }, context: AdapterContext): Promise<ComputerRef>;
+  provision(
+    request: { botId: string; homePath: string },
+    context: AdapterContext,
+  ): Promise<ComputerRef>;
   execute(
     computer: ComputerRef,
     request: CommandRequest,
@@ -80,8 +83,14 @@ export interface MemoryStore {
   read(request: MemoryReadRequest, context: AdapterContext): Promise<MemorySnapshot>;
   search(request: MemorySearchRequest, context: AdapterContext): Promise<MemorySearchResult[]>;
   commit(request: MemoryCommitRequest, context: AdapterContext): Promise<MemoryRevision>;
-  exportMarkdown(request: MemoryExportRequest, context: AdapterContext): AsyncIterable<PortableFile>;
-  importMarkdown(files: AsyncIterable<PortableFile>, context: AdapterContext): Promise<MemoryRevision>;
+  exportMarkdown(
+    request: MemoryExportRequest,
+    context: AdapterContext,
+  ): AsyncIterable<PortableFile>;
+  importMarkdown(
+    files: AsyncIterable<PortableFile>,
+    context: AdapterContext,
+  ): Promise<MemoryRevision>;
 }
 
 export interface AgentRuntime {
@@ -98,7 +107,9 @@ export interface ModelProvider {
 export interface WakeupDriver {
   describe(): AdapterDescriptor<{ cron: boolean; delay: boolean }>;
   enqueue(job: WakeupJob): Promise<void>;
-  start(handlers: Record<string, (payload: Record<string, unknown>) => Promise<void>>): Promise<void>;
+  start(
+    handlers: Record<string, (payload: Record<string, unknown>) => Promise<void>>,
+  ): Promise<void>;
   stop(): Promise<void>;
 }
 
@@ -110,7 +121,11 @@ export interface AgentHomeStore {
   exportHome(botId: string, context: AdapterContext): AsyncIterable<PortableFile>;
   readFile(botId: string, path: string, context: AdapterContext): Promise<string>;
   writeFile(botId: string, path: string, content: string, context: AdapterContext): Promise<void>;
-  list(botId: string, path: string, context: AdapterContext): Promise<Array<{ path: string; kind: "file" | "dir"; size: number }>>;
+  list(
+    botId: string,
+    path: string,
+    context: AdapterContext,
+  ): Promise<Array<{ path: string; kind: "file" | "dir"; size: number }>>;
 }
 
 export interface ArtifactStore {

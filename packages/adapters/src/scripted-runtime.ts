@@ -37,7 +37,12 @@ export class ScriptedAgentRuntime implements AgentRuntime {
           yield { type: "text", text: turn.assistant };
         }
         for (const call of turn.toolCalls ?? []) {
-          yield { type: "tool", name: call.name, args: call.args, executionId: `${request.runId}:${call.name}` };
+          yield {
+            type: "tool",
+            name: call.name,
+            args: call.args,
+            executionId: `${request.runId}:${call.name}`,
+          };
         }
         if (turn.ask) {
           yield { type: "ask", text: turn.ask.text, detail: turn.ask.detail };
@@ -48,7 +53,13 @@ export class ScriptedAgentRuntime implements AgentRuntime {
           return;
         }
         if (turn.complete) {
-          yield { type: "usage", inputTokens: 12, outputTokens: 40, provider: "scripted", model: "scripted" };
+          yield {
+            type: "usage",
+            inputTokens: 12,
+            outputTokens: 40,
+            provider: "scripted",
+            model: "scripted",
+          };
           yield { type: "done", text: turn.assistant };
           return;
         }
@@ -61,12 +72,20 @@ export class ScriptedAgentRuntime implements AgentRuntime {
   }
 }
 
-export function inferScript(prompt: string, resumeFromCheckpoint?: string): AgentRunRequest["script"] {
+export function inferScript(
+  prompt: string,
+  resumeFromCheckpoint?: string,
+): NonNullable<AgentRunRequest["script"]> {
   const lower = prompt.toLowerCase();
-  if (resumeFromCheckpoint === "takeover" || lower.includes("completed sign-in") || lower.includes("continue without requesting takeover")) {
+  if (
+    resumeFromCheckpoint === "takeover" ||
+    lower.includes("completed sign-in") ||
+    lower.includes("continue without requesting takeover")
+  ) {
     return [
       {
-        assistant: "signed in. the session stays in this computer — protected input never hit the thread.",
+        assistant:
+          "signed in. the session stays in this computer — protected input never hit the thread.",
         complete: true,
       },
     ];
@@ -91,7 +110,10 @@ export function inferScript(prompt: string, resumeFromCheckpoint?: string): Agen
       },
     ];
   }
-  if (lower.includes("write") && (lower.includes("file") || lower.includes("home") || lower.includes("note"))) {
+  if (
+    lower.includes("write") &&
+    (lower.includes("file") || lower.includes("home") || lower.includes("note"))
+  ) {
     const said = /says?\s+(.+)$/i.exec(prompt)?.[1]?.replace(/[.]+$/, "") ?? prompt;
     const content = `${said.trim()}\n`;
     return [
@@ -113,7 +135,9 @@ export function inferScript(prompt: string, resumeFromCheckpoint?: string): Agen
     ];
   }
   return [
-    { assistant: `on it. i will work this in the background and come back with a result.\n\n${summarize(prompt)}` },
+    {
+      assistant: `on it. i will work this in the background and come back with a result.\n\n${summarize(prompt)}`,
+    },
     {
       files: [{ path: "notes/last-task.md", content: `# Task\n\n${prompt}\n` }],
       complete: true,

@@ -1,11 +1,11 @@
 import { execSync, spawn } from "node:child_process";
 import path from "node:path";
+import type { SandboxProvider } from "@rakazo/adapter-kit";
 import { afterAll, describe, expect, it } from "vitest";
 import { DesktopSandboxProvider } from "./desktop-sandbox.js";
 import { DockerSandboxProvider } from "./docker-sandbox.js";
-import { FakeSandboxProvider } from "./fake-sandbox.js";
 import { ManagedSandboxEmulator } from "./e2b-emulator.js";
-import type { SandboxProvider } from "@rakazo/adapter-kit";
+import { FakeSandboxProvider } from "./fake-sandbox.js";
 
 const ctx = {
   operationId: "1",
@@ -17,7 +17,12 @@ const ctx = {
 
 async function drain(
   provider: SandboxProvider,
-  computer: { id: string; botId: string; kind: "fake" | "e2b" | "docker" | "desktop"; providerRef: string },
+  computer: {
+    id: string;
+    botId: string;
+    kind: "fake" | "e2b" | "docker" | "desktop";
+    providerRef: string;
+  },
 ) {
   let stdout = "";
   for await (const event of provider.execute(computer, { argv: ["echo", "graphical-ok"] }, ctx)) {
@@ -42,9 +47,9 @@ describe("sandbox conformance", () => {
     expect(outB).toContain("graphical-ok");
     expect(outC).toContain("graphical-ok");
     expect(new Set([a.id, b.id, c.id]).size).toBe(3);
-    await fake.destroy(a);
-    await managed.destroy(b);
-    await desktop.destroy(c);
+    await fake.destroy(a, ctx);
+    await managed.destroy(b, ctx);
+    await desktop.destroy(c, ctx);
   });
 
   it("desktop executor refuses paths outside granted folders", async () => {
@@ -52,25 +57,36 @@ describe("sandbox conformance", () => {
     const computer = await desktop.provision({ botId: "grant", homePath: "/tmp/grant" }, ctx);
     let stderr = "";
     let code = 0;
-    for await (const event of desktop.execute(computer, { argv: ["echo", "nope"], cwd: "/etc" }, ctx)) {
+    for await (const event of desktop.execute(
+      computer,
+      { argv: ["echo", "nope"], cwd: "/etc" },
+      ctx,
+    )) {
       if (event.type === "stderr") stderr += event.data;
       if (event.type === "exit") code = event.code;
     }
     expect(code).toBe(1);
     expect(stderr).toMatch(/not granted/i);
-    await desktop.destroy(computer);
+    await desktop.destroy(computer, ctx);
   });
 
   it("desktop addGrant unlocks a previously refused path", async () => {
     const desktop = new DesktopSandboxProvider({ grants: [] });
-    const computer = await desktop.provision({ botId: "grant-add", homePath: "/tmp/grant-add" }, ctx);
+    const computer = await desktop.provision(
+      { botId: "grant-add", homePath: "/tmp/grant-add" },
+      ctx,
+    );
     desktop.addGrant("/etc");
     let code = 1;
-    for await (const event of desktop.execute(computer, { argv: ["echo", "granted"], cwd: "/etc" }, ctx)) {
+    for await (const event of desktop.execute(
+      computer,
+      { argv: ["echo", "granted"], cwd: "/etc" },
+      ctx,
+    )) {
       if (event.type === "exit") code = event.code;
     }
     expect(code).toBe(0);
-    await desktop.destroy(computer);
+    await desktop.destroy(computer, ctx);
   });
 });
 
@@ -104,7 +120,10 @@ describe("docker sandbox", () => {
       }
     }
     const provider = new DockerSandboxProvider(url);
-    const computer = await provider.provision({ botId: `conf-${Date.now()}`, homePath: "/tmp/rakazo-docker" }, ctx);
+    const computer = await provider.provision(
+      { botId: `conf-${Date.now()}`, homePath: "/tmp/rakazo-docker" },
+      ctx,
+    );
     const out = await drain(provider, computer);
     expect(out).toContain("graphical-ok");
     const session = await provider.connectScreen(computer, { view: "stream" }, ctx);

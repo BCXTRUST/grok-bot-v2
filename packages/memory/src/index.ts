@@ -44,7 +44,10 @@ export class MarkdownMemoryStore implements MemoryStore {
     };
   }
 
-  async search(request: MemorySearchRequest, context: AdapterContext): Promise<MemorySearchResult[]> {
+  async search(
+    request: MemorySearchRequest,
+    context: AdapterContext,
+  ): Promise<MemorySearchResult[]> {
     const documents = await this.prisma.memoryDocument.findMany({
       where: {
         workspaceId: context.workspaceId,
@@ -100,7 +103,10 @@ export class MarkdownMemoryStore implements MemoryStore {
     return { id: doc.id, path: doc.path, revision: doc.revision, content: doc.content };
   }
 
-  async *exportMarkdown(request: MemoryExportRequest, context: AdapterContext): AsyncIterable<PortableFile> {
+  async *exportMarkdown(
+    request: MemoryExportRequest,
+    context: AdapterContext,
+  ): AsyncIterable<PortableFile> {
     const snapshot = await this.read(
       { scope: request.scope === "all" ? "user" : request.scope, botId: request.botId },
       context,

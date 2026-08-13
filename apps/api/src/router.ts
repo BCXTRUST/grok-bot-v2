@@ -1,27 +1,44 @@
+import { mkdir } from "node:fs/promises";
+import path from "node:path";
 import { implement, ORPCError } from "@orpc/server";
+import type {
+  AgentHomeStore,
+  MemoryStore,
+  SandboxProvider,
+  WakeupDriver,
+} from "@rakazo/adapter-kit";
 import {
-  appContract,
+  addFolderGrant,
+  type ComposioConnector,
+  DesktopSandboxProvider,
+  type EncryptedSecretStore,
+  listPiCatalog,
+  loadFolderGrants,
+  resolveAgentHomePath,
+  sanitizeComposioError,
+  savePushToken,
+  scriptedCatalogEntry,
+} from "@rakazo/adapters";
+import type { Auth } from "@rakazo/auth";
+import {
   type Actor,
+  appContract,
   type ComputerStatus,
   type Me,
   type ThreadSnapshot,
 } from "@rakazo/contracts";
 import { nextCronDate, projectMessages } from "@rakazo/core";
-import { appendEvent, createRepos, eventsAfter, IsolationError, requireMembership, type PrismaClient } from "@rakazo/db";
-import type { AgentHomeStore, MemoryStore, SandboxProvider, WakeupDriver } from "@rakazo/adapter-kit";
 import {
-  addFolderGrant,
-  DesktopSandboxProvider,
-  EncryptedSecretStore,
-  loadFolderGrants,
-  resolveAgentHomePath,
-  sanitizeComposioError,
-  savePushToken,
-  type ComposioConnector,
-} from "@rakazo/adapters";
-import { mkdir } from "node:fs/promises";
-import path from "node:path";
-import type { Auth } from "@rakazo/auth";
+  appendEvent,
+  createRepos,
+  eventsAfter,
+  followThreadEvents,
+  IsolationError,
+  type Pool,
+  type Prisma,
+  type PrismaClient,
+  requireMembership,
+} from "@rakazo/db";
 
 export interface RouterDeps {
   prisma: PrismaClient;
@@ -33,6 +50,7 @@ export interface RouterDeps {
   secrets: EncryptedSecretStore;
   composio?: ComposioConnector;
   dataDir: string;
+  pool?: Pool;
   env: {
     defaultProvider: string;
     defaultModel: string;
@@ -42,7 +60,7 @@ export interface RouterDeps {
 }
 
 export function createRouter(deps: RouterDeps) {
-  const os = implement(appContract).$context<{ actor: Actor | null }>();
+  const os = implement(appContract).$context<{ actor: Actor | null; signal?: AbortSignal }>();
   const repos = createRepos(deps.prisma);
 
   const authed = os.use(async ({ context, next }) => {
@@ -58,8 +76,12 @@ export function createRouter(deps: RouterDeps) {
       const cred = await deps.prisma.userModelCredential.findFirst({
         where: { userId: actor.userId, isDefault: true },
       });
-      const settings = await deps.prisma.deploymentSettings.findUnique({ where: { id: "default" } });
-      const hasDeployment = Boolean(settings?.deploymentModelCredentialCipher || deps.env.openRouterKey);
+      const settings = await deps.prisma.deploymentSettings.findUnique({
+        where: { id: "default" },
+      });
+      const hasDeployment = Boolean(
+        settings?.deploymentModelCredentialCipher || deps.env.openRouterKey,
+      );
       return {
         userId: actor.userId,
         email: user.email,
@@ -67,7 +89,8 @@ export function createRouter(deps: RouterDeps) {
         workspaceId: actor.workspaceId,
         isDeploymentOwner: actor.isDeploymentOwner,
         needsModel: !cred && !hasDeployment,
-        defaultProvider: cred?.provider ?? settings?.defaultModelProvider ?? deps.env.defaultProvider,
+        defaultProvider:
+          cred?.provider ?? settings?.defaultModelProvider ?? deps.env.defaultProvider,
         defaultModel: cred?.defaultModel ?? settings?.defaultModelId ?? deps.env.defaultModel,
       };
     }),
@@ -95,26 +118,7 @@ export function createRouter(deps: RouterDeps) {
       }),
     },
     models: {
-      list: authed.models.list.handler(async () => [
-        {
-          provider: "openrouter",
-          id: "deepseek/deepseek-v4-flash-0731",
-          label: "DeepSeek V4 Flash (OpenRouter)",
-          billing: "Uses your OpenRouter key. Rakazo does not pay for model usage.",
-        },
-        {
-          provider: "openrouter",
-          id: "openai/gpt-4.1-mini",
-          label: "GPT-4.1 Mini (OpenRouter)",
-          billing: "Billed by OpenRouter against the key you provide.",
-        },
-        {
-          provider: "scripted",
-          id: "scripted",
-          label: "Scripted runtime (local verification)",
-          billing: "No model charges. Deterministic fixture for tests.",
-        },
-      ]),
+      list: authed.models.list.handler(async () => [...listPiCatalog(), scriptedCatalogEntry]),
       credentials: authed.models.credentials.handler(async ({ context }) => {
         const rows = await deps.prisma.userModelCredential.findMany({
           where: { userId: context.actor.userId, workspaceId: context.actor.workspaceId },
@@ -184,7 +188,9 @@ export function createRouter(deps: RouterDeps) {
         if (!found) throw new IsolationError();
         return found ?? mapped;
       }),
-      create: authed.bots.create.handler(async ({ context, input }) => repos.createBot(context.actor, input)),
+      create: authed.bots.create.handler(async ({ context, input }) =>
+        repos.createBot(context.actor, input),
+      ),
       update: authed.bots.update.handler(async ({ context, input }) => {
         await repos.getBot(context.actor, input.botId);
         await deps.prisma.bot.update({
@@ -210,26 +216,30 @@ export function createRouter(deps: RouterDeps) {
       }),
     },
     threads: {
-      get: authed.threads.get.handler(async ({ context, input }) => snapshot(deps, context.actor, input.botId, input.afterSeq ?? -1)),
+      get: authed.threads.get.handler(async ({ context, input }) =>
+        snapshot(deps, context.actor, input.botId, input.afterSeq ?? -1),
+      ),
       subscribe: authed.threads.subscribe.handler(async function* ({ context, input }) {
-        let cursor = input.cursor;
-        while (true) {
-          const events = await eventsAfter(deps.prisma, (await repos.getBot(context.actor, input.botId)).thread!.id, cursor);
-          for (const event of events) {
-            cursor = event.seq;
-            yield {
-              id: event.id,
-              workspaceId: event.workspaceId,
-              threadId: event.threadId,
-              botId: event.botId,
-              seq: event.seq,
-              type: event.type as never,
-              runId: event.runId ?? undefined,
-              createdAt: event.createdAt.toISOString(),
-              payload: event.payload as Record<string, unknown>,
-            };
-          }
-          await delay(400);
+        const bot = await repos.getBot(context.actor, input.botId);
+        if (!bot.thread) throw new IsolationError();
+        for await (const event of followThreadEvents(
+          deps.prisma,
+          bot.thread.id,
+          input.cursor,
+          deps.pool,
+          context.signal,
+        )) {
+          yield {
+            id: event.id,
+            workspaceId: event.workspaceId,
+            threadId: event.threadId,
+            botId: event.botId,
+            seq: event.seq,
+            type: event.type as never,
+            runId: event.runId ?? undefined,
+            createdAt: event.createdAt.toISOString(),
+            payload: event.payload as Record<string, unknown>,
+          };
         }
       }),
       send: authed.threads.send.handler(async ({ context, input }) => {
@@ -370,7 +380,9 @@ export function createRouter(deps: RouterDeps) {
       }),
     },
     computer: {
-      status: authed.computer.status.handler(async ({ context, input }) => computerStatus(deps, context.actor, input.botId)),
+      status: authed.computer.status.handler(async ({ context, input }) =>
+        computerStatus(deps, context.actor, input.botId),
+      ),
       boot: authed.computer.boot.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);
         const ctx = {
@@ -415,7 +427,10 @@ export function createRouter(deps: RouterDeps) {
             },
           );
         }
-        await deps.prisma.computer.update({ where: { botId: bot.id }, data: { state: "stopped", controlHolder: "none" } });
+        await deps.prisma.computer.update({
+          where: { botId: bot.id },
+          data: { state: "stopped", controlHolder: "none" },
+        });
         return computerStatus(deps, context.actor, input.botId);
       }),
       takeover: authed.computer.takeover.handler(async ({ context, input }) => {
@@ -438,7 +453,8 @@ export function createRouter(deps: RouterDeps) {
           where: { botId: bot.id, status: "waiting_takeover" },
           orderBy: { createdAt: "desc" },
         });
-        if (waiting) await deps.wakeup.enqueue({ name: "run.continue", payload: { runId: waiting.id } });
+        if (waiting)
+          await deps.wakeup.enqueue({ name: "run.continue", payload: { runId: waiting.id } });
         return { leaseId, expiresAt: new Date(Date.now() + 15 * 60_000).toISOString() };
       }),
       release: authed.computer.release.handler(async ({ context, input }) => {
@@ -463,7 +479,8 @@ export function createRouter(deps: RouterDeps) {
                   x: Number(input.payload.x ?? 0),
                   y: Number(input.payload.y ?? 0),
                   button: (input.payload.button as "left" | "right" | undefined) ?? "left",
-                  type: (input.payload.type as "move" | "down" | "up" | "click" | undefined) ?? "click",
+                  type:
+                    (input.payload.type as "move" | "down" | "up" | "click" | undefined) ?? "click",
                 };
         await deps.sandbox.sendInput(
           {
@@ -507,7 +524,10 @@ export function createRouter(deps: RouterDeps) {
       }),
       screenUrl: authed.computer.screenUrl.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);
-        if (!bot.computer?.providerRef || (bot.computer.state !== "running" && bot.computer.state !== "booting")) {
+        if (
+          !bot.computer?.providerRef ||
+          (bot.computer.state !== "running" && bot.computer.state !== "booting")
+        ) {
           return { url: null };
         }
         const session = await deps.sandbox.connectScreen(
@@ -531,7 +551,8 @@ export function createRouter(deps: RouterDeps) {
       }),
       grantFolder: authed.computer.grantFolder.handler(async ({ context, input }) => {
         const folder = path.resolve(input.folder);
-        if (!path.isAbsolute(folder)) throw new ORPCError("BAD_REQUEST", { message: "Folder path must be absolute" });
+        if (!path.isAbsolute(folder))
+          throw new ORPCError("BAD_REQUEST", { message: "Folder path must be absolute" });
         const grants = await addFolderGrant(deps.dataDir, context.actor.userId, folder);
         applyDesktopGrant(deps.sandbox, folder);
         return { grants };
@@ -562,11 +583,20 @@ export function createRouter(deps: RouterDeps) {
       }),
       update: authed.memory.update.handler(async ({ context, input }) => {
         const doc = await deps.prisma.memoryDocument.findFirst({
-          where: { id: input.documentId, workspaceId: context.actor.workspaceId, userId: context.actor.userId },
+          where: {
+            id: input.documentId,
+            workspaceId: context.actor.workspaceId,
+            userId: context.actor.userId,
+          },
         });
         if (!doc) throw new IsolationError();
         const updated = await deps.memory.commit(
-          { scope: doc.scope as "bot" | "user", botId: doc.botId ?? undefined, path: doc.path, content: input.content },
+          {
+            scope: doc.scope as "bot" | "user",
+            botId: doc.botId ?? undefined,
+            path: doc.path,
+            content: input.content,
+          },
           {
             operationId: "mem",
             traceId: "mem",
@@ -642,7 +672,11 @@ export function createRouter(deps: RouterDeps) {
       }),
       update: authed.routines.update.handler(async ({ context, input }) => {
         const existing = await deps.prisma.routine.findFirst({
-          where: { id: input.routineId, workspaceId: context.actor.workspaceId, userId: context.actor.userId },
+          where: {
+            id: input.routineId,
+            workspaceId: context.actor.workspaceId,
+            userId: context.actor.userId,
+          },
         });
         if (!existing) throw new IsolationError();
         const row = await deps.prisma.routine.update({
@@ -722,7 +756,7 @@ export function createRouter(deps: RouterDeps) {
             kind: input.kind,
             name: input.name,
             source: input.source,
-            config: input.config,
+            config: input.config as Prisma.InputJsonValue,
             digest: "sha256:local",
             version: "0.0.0",
           },
@@ -740,7 +774,11 @@ export function createRouter(deps: RouterDeps) {
       }),
       remove: authed.capabilities.remove.handler(async ({ context, input }) => {
         await deps.prisma.capabilityInstall.deleteMany({
-          where: { id: input.id, workspaceId: context.actor.workspaceId, userId: context.actor.userId },
+          where: {
+            id: input.id,
+            workspaceId: context.actor.workspaceId,
+            userId: context.actor.userId,
+          },
         });
         return { ok: true as const };
       }),
@@ -810,11 +848,18 @@ export function createRouter(deps: RouterDeps) {
       }),
       complete: authed.connections.complete.handler(async ({ context, input }) => {
         const existing = await deps.prisma.connection.findFirst({
-          where: { id: input.connectionId, workspaceId: context.actor.workspaceId, userId: context.actor.userId },
+          where: {
+            id: input.connectionId,
+            workspaceId: context.actor.workspaceId,
+            userId: context.actor.userId,
+          },
         });
         if (!existing) throw new IsolationError();
         if (deps.composio) {
-          const ready = await deps.composio.connectionReady(context.actor.userId, existing.provider);
+          const ready = await deps.composio.connectionReady(
+            context.actor.userId,
+            existing.provider,
+          );
           if (ready) {
             await deps.prisma.connection.update({
               where: { id: existing.id },
@@ -839,7 +884,11 @@ export function createRouter(deps: RouterDeps) {
       }),
       revoke: authed.connections.revoke.handler(async ({ context, input }) => {
         const row = await deps.prisma.connection.findFirst({
-          where: { id: input.connectionId, workspaceId: context.actor.workspaceId, userId: context.actor.userId },
+          where: {
+            id: input.connectionId,
+            workspaceId: context.actor.workspaceId,
+            userId: context.actor.userId,
+          },
         });
         if (row && deps.composio) {
           await deps.composio.revoke(row.provider, {
@@ -973,20 +1022,26 @@ async function snapshot(
     where: { threadId: bot.thread.id, seq: { gt: afterSeq } },
     orderBy: { seq: "asc" },
   });
-  const messages =
-    rows.length >= projected.length
-      ? rows.map((row) => ({
-          id: row.id,
-          threadId: row.threadId,
-          seq: row.seq,
-          role: row.role as "user" | "bot" | "system",
-          blocks: row.blocks as ThreadSnapshot["messages"][number]["blocks"],
-          runId: row.runId ?? undefined,
-          createdAt: row.createdAt.toISOString(),
-        }))
+  const persisted = rows.map((row) => ({
+    id: row.id,
+    threadId: row.threadId,
+    seq: row.seq,
+    role: row.role as "user" | "bot" | "system",
+    blocks: row.blocks as ThreadSnapshot["messages"][number]["blocks"],
+    runId: row.runId ?? undefined,
+    createdAt: row.createdAt.toISOString(),
+  }));
+  const streaming = projected.at(-1);
+  const messages = streaming?.blocks.some((block) => block.kind === "progress")
+    ? [...persisted, streaming]
+    : persisted.length
+      ? persisted
       : projected;
   const run = await deps.prisma.run.findFirst({
-    where: { botId, status: { in: ["queued", "leased", "running", "waiting_input", "waiting_takeover"] } },
+    where: {
+      botId,
+      status: { in: ["queued", "leased", "running", "waiting_input", "waiting_takeover"] },
+    },
     orderBy: { createdAt: "desc" },
   });
   const last = await deps.prisma.event.findFirst({
@@ -1017,7 +1072,11 @@ async function snapshot(
   };
 }
 
-async function computerStatus(deps: RouterDeps, actor: Actor, botId: string): Promise<ComputerStatus> {
+async function computerStatus(
+  deps: RouterDeps,
+  actor: Actor,
+  botId: string,
+): Promise<ComputerStatus> {
   const bot = await createRepos(deps.prisma).getBot(actor, botId);
   const computer = bot.computer;
   const home = await deps.prisma.agentHome.findUnique({ where: { botId } });
@@ -1036,7 +1095,9 @@ async function deploymentDto(prisma: PrismaClient) {
   return {
     ownerUserId: settings?.ownerUserId ?? null,
     signupsEnabled: settings?.signupsEnabled ?? true,
-    signupAllowlist: settings?.signupAllowlist ? settings.signupAllowlist.split(",").filter(Boolean) : [],
+    signupAllowlist: settings?.signupAllowlist
+      ? settings.signupAllowlist.split(",").filter(Boolean)
+      : [],
     hasDeploymentModelCredential: Boolean(settings?.deploymentModelCredentialCipher),
     defaultProvider: settings?.defaultModelProvider ?? null,
     defaultModel: settings?.defaultModelId ?? null,
@@ -1080,10 +1141,6 @@ function withViewOnly(url: string, viewOnly: boolean) {
     const join = url.includes("?") ? "&" : "?";
     return `${url}${join}view_only=${viewOnly ? "true" : "false"}`;
   }
-}
-
-function delay(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 export { requireMembership };

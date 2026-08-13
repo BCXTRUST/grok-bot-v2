@@ -1,4 +1,5 @@
 import { loadRootEnv } from "./load-root-env.js";
+
 loadRootEnv();
 
 import { serve } from "@hono/node-server";

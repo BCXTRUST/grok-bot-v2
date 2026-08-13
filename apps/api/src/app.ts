@@ -1,27 +1,27 @@
-import { Hono } from "hono";
-import { cors } from "hono/cors";
 import { RPCHandler } from "@orpc/server/fetch";
-import { blockedAuthPaths, createAuth } from "@rakazo/auth";
-import { createDb, requireMembership, type PrismaClient } from "@rakazo/db";
+import type { SandboxProvider, WakeupDriver } from "@rakazo/adapter-kit";
 import {
-  EncryptedSecretStore,
-  GraphileWakeupDriver,
-  InMemoryWakeupDriver,
-  LocalAgentHomeStore,
+  type ComposioConnector,
   createConnectorStack,
   createRunExecutor,
   createSandboxProvider,
-  DestinationEmulator,
+  type DestinationEmulator,
+  EncryptedSecretStore,
   ExpoPushProvider,
+  GraphileWakeupDriver,
+  InMemoryWakeupDriver,
   isComposioEnabled,
+  LocalAgentHomeStore,
   loadAllFolderGrants,
   PiAgentRuntime,
   ScriptedAgentRuntime,
-  type ComposioConnector,
 } from "@rakazo/adapters";
+import { blockedAuthPaths, createAuth } from "@rakazo/auth";
+import { createDb, type PrismaClient, requireMembership } from "@rakazo/db";
 import { MarkdownMemoryStore } from "@rakazo/memory";
-import type { WakeupDriver, SandboxProvider } from "@rakazo/adapter-kit";
-import { loadEnv, type AppEnv } from "./env.js";
+import { Hono } from "hono";
+import { cors } from "hono/cors";
+import { type AppEnv, loadEnv } from "./env.js";
 import { createRouter } from "./router.js";
 
 export interface AppHandles {
@@ -35,9 +35,13 @@ export interface AppHandles {
   stop: () => Promise<void>;
 }
 
-export async function createApp(overrides: Partial<AppEnv> & { prisma?: PrismaClient } = {}): Promise<AppHandles> {
+export async function createApp(
+  overrides: Partial<AppEnv> & { prisma?: PrismaClient } = {},
+): Promise<AppHandles> {
   const env = { ...loadEnv(process.env), ...overrides };
-  const created = overrides.prisma ? { prisma: overrides.prisma, pool: undefined } : createDb(env.databaseUrl);
+  const created = overrides.prisma
+    ? { prisma: overrides.prisma, pool: undefined }
+    : createDb(env.databaseUrl);
   const { prisma } = created;
   created.pool?.on("error", () => undefined);
   await prisma.deploymentSettings.upsert({
@@ -62,9 +66,11 @@ export async function createApp(overrides: Partial<AppEnv> & { prisma?: PrismaCl
       "http://127.0.0.1:19006",
     ],
   });
-  const wakeupKind = process.env.WAKEUP_DRIVER ?? "memory";
+  const wakeupKind = env.wakeupDriver;
   const wakeup =
-    wakeupKind === "graphile" ? new GraphileWakeupDriver(env.databaseUrl) : new InMemoryWakeupDriver();
+    wakeupKind === "memory"
+      ? new InMemoryWakeupDriver()
+      : new GraphileWakeupDriver(env.databaseUrl);
   const desktopGrants = await loadAllFolderGrants(env.dataDir);
   const sandbox: SandboxProvider = createSandboxProvider(env.sandboxProvider, {
     supervisorUrl: env.sandboxSupervisorUrl,
@@ -78,8 +84,7 @@ export async function createApp(overrides: Partial<AppEnv> & { prisma?: PrismaCl
   const stack = createConnectorStack(isComposioEnabled(env.composioApiKey));
   const connector = stack.destination;
   await connector.start();
-  const runtime =
-    env.agentRuntime === "pi" ? new PiAgentRuntime() : new ScriptedAgentRuntime();
+  const runtime = env.agentRuntime === "pi" ? new PiAgentRuntime() : new ScriptedAgentRuntime();
   const notifications = new ExpoPushProvider(env.dataDir);
   const executor = createRunExecutor({
     prisma,
@@ -116,6 +121,7 @@ export async function createApp(overrides: Partial<AppEnv> & { prisma?: PrismaCl
     secrets,
     composio: stack.composio,
     dataDir: env.dataDir,
+    pool: created.pool,
     env: {
       defaultProvider: env.defaultProvider,
       defaultModel: env.defaultModel,
@@ -149,7 +155,7 @@ export async function createApp(overrides: Partial<AppEnv> & { prisma?: PrismaCl
       : null;
     const { matched, response } = await rpc.handle(c.req.raw, {
       prefix: "/rpc",
-      context: { actor },
+      context: { actor, signal: c.req.raw.signal },
     });
     if (matched) return c.newResponse(response.body, response);
     await next();
@@ -160,6 +166,7 @@ export async function createApp(overrides: Partial<AppEnv> & { prisma?: PrismaCl
       runtime: env.agentRuntime,
       sandbox: env.sandboxProvider,
       composio: Boolean(stack.composio),
+      wakeup: wakeupKind,
     }),
   );
 

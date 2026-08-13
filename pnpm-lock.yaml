@@ -9,7 +9,7 @@ importers:
   .:
     devDependencies:
       '@biomejs/biome':
-        specifier: ^2.2.4
+        specifier: ^2.5.8
         version: 2.5.8
       '@types/node':
         specifier: ^24.3.0
@@ -383,6 +383,9 @@ importers:
       '@types/dockerode':
         specifier: ^3.3.44
         version: 3.3.47
+      '@types/pg':
+        specifier: ^8.15.5
+        version: 8.21.0
       '@types/ws':
         specifier: ^8.18.1
         version: 8.18.1

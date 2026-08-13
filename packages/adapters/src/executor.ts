@@ -36,8 +36,11 @@ export function createRunExecutor(deps: ExecutorDeps) {
   return {
     async wakeRoutine(routineId: string, workerId: string) {
       const routine = await deps.prisma.routine.findUnique({ where: { id: routineId } });
-      if (!routine || !routine.active) return;
-      const bot = await deps.prisma.bot.findUnique({ where: { id: routine.botId }, include: { thread: true } });
+      if (!routine?.active) return;
+      const bot = await deps.prisma.bot.findUnique({
+        where: { id: routine.botId },
+        include: { thread: true },
+      });
       if (!bot?.thread) return;
       const task = await deps.prisma.task.create({
         data: {
@@ -94,7 +97,12 @@ export function createRunExecutor(deps: ExecutorDeps) {
       }
 
       const current = await deps.prisma.run.findUniqueOrThrow({ where: { id: runId } });
-      if (current.status === "queued" || current.status === "leased" || current.status === "waiting_input" || current.status === "waiting_takeover") {
+      if (
+        current.status === "queued" ||
+        current.status === "leased" ||
+        current.status === "waiting_input" ||
+        current.status === "waiting_takeover"
+      ) {
         assertTransition(current.status as RunStatus, "running");
       }
       await deps.prisma.run.update({
@@ -145,24 +153,36 @@ export function createRunExecutor(deps: ExecutorDeps) {
       const credential = await deps.prisma.userModelCredential.findFirst({
         where: { userId: run.userId, workspaceId: run.workspaceId, isDefault: true },
       });
-      const settings = await deps.prisma.deploymentSettings.findUnique({ where: { id: "default" } });
+      const settings = await deps.prisma.deploymentSettings.findUnique({
+        where: { id: "default" },
+      });
       const discovered = deps.connector ? await deps.connector.discoverTools(context) : [];
       const tools = [
         ...builtinAgentTools,
         ...discovered.filter((tool) => !builtinAgentTools.some((b) => b.name === tool.name)),
       ];
       const history = messages.map((m) => ({
-        role: (m.role === "user" ? "user" : m.role === "system" ? "system" : "assistant") as "user" | "assistant" | "system",
+        role: (m.role === "user" ? "user" : m.role === "system" ? "system" : "assistant") as
+          | "user"
+          | "assistant"
+          | "system",
         content: blocksToText(m.blocks as MessageBlock[]),
       }));
       const apiKey = await resolveModelKey(deps, run.userId, run.workspaceId, credential);
       const computer = await ensureComputer(deps, bot.id, context);
 
       let assembled = "";
+      let lastProgressAt = 0;
       const scripted = deps.runtime.describe().capabilities.scripted;
-      const script = scripted ? inferScript(task.prompt, resumeFromTakeover ? "takeover" : undefined) : undefined;
+      const script = scripted
+        ? inferScript(task.prompt, resumeFromTakeover ? "takeover" : undefined)
+        : undefined;
 
-      const applyTool = async (name: string, args: Record<string, unknown>, executionId: string) => {
+      const applyTool = async (
+        name: string,
+        args: Record<string, unknown>,
+        executionId: string,
+      ) => {
         const applied = await recordEffect(deps, run, name, executionId, args);
         if (applied.duplicate) return applied.effect.result ?? { duplicate: true };
         if (name === "write_file") {
@@ -193,7 +213,10 @@ export function createRunExecutor(deps: ExecutorDeps) {
         if (name === "request_takeover") return { ok: true };
         if (deps.connector) {
           let result: unknown = { error: `unknown tool ${name}` };
-          for await (const event of deps.connector.execute({ tool: name, args, executionId }, context)) {
+          for await (const event of deps.connector.execute(
+            { tool: name, args, executionId },
+            context,
+          )) {
             if (event.type === "result") {
               result = event.data;
               const logIds = collectLogIds(event.data);
@@ -251,6 +274,18 @@ export function createRunExecutor(deps: ExecutorDeps) {
 
           if (event.type === "text") {
             assembled += event.text;
+            const now = Date.now();
+            if (!scripted && assembled.trim() && now - lastProgressAt >= 80) {
+              lastProgressAt = now;
+              await appendEvent(deps.prisma, {
+                workspaceId: run.workspaceId,
+                threadId: thread.id,
+                botId: bot.id,
+                type: "thread.progress",
+                runId,
+                payload: { text: assembled, streaming: true },
+              });
+            }
           } else if (event.type === "progress") {
             await appendEvent(deps.prisma, {
               workspaceId: run.workspaceId,
@@ -278,7 +313,9 @@ export function createRunExecutor(deps: ExecutorDeps) {
             return;
           } else if (event.type === "takeover") {
             if (assembled.trim()) {
-              await publishMessage(deps, actor, thread.id, bot.id, runId, "bot", [{ kind: "text", text: assembled }]);
+              await publishMessage(deps, actor, thread.id, bot.id, runId, "bot", [
+                { kind: "text", text: assembled },
+              ]);
             }
             await publishMessage(deps, actor, thread.id, bot.id, runId, "bot", [
               { kind: "computer", state: "Ready", text: event.reason },
@@ -358,7 +395,9 @@ export function createRunExecutor(deps: ExecutorDeps) {
         if (containsSecret(text, deps.secrets)) {
           throw new Error("refusing to persist a secret in the thread");
         }
-        await publishMessage(deps, actor, thread.id, bot.id, runId, "bot", [{ kind: "text", text }]);
+        await publishMessage(deps, actor, thread.id, bot.id, runId, "bot", [
+          { kind: "text", text },
+        ]);
         await deps.prisma.run.update({
           where: { id: runId },
           data: { status: "completed", completedAt: new Date() },
@@ -449,7 +488,8 @@ async function publishMessage(
     data: { threadId, seq, role, blocks, runId },
   });
   await appendEvent(deps.prisma, {
-    workspaceId: (await deps.prisma.thread.findUniqueOrThrow({ where: { id: threadId } })).workspaceId,
+    workspaceId: (await deps.prisma.thread.findUniqueOrThrow({ where: { id: threadId } }))
+      .workspaceId,
     threadId,
     botId,
     type: "thread.message.created",
@@ -520,7 +560,12 @@ async function ensureComputer(
     const ref = await deps.sandbox.provision({ botId, homePath }, context);
     await deps.prisma.computer.updateMany({
       where: { botId },
-      data: { state: "running", providerRef: ref.providerRef, kind: ref.kind, controlHolder: "bot" },
+      data: {
+        state: "running",
+        providerRef: ref.providerRef,
+        kind: ref.kind,
+        controlHolder: "bot",
+      },
     });
     return ref;
   } catch (error) {
@@ -560,8 +605,8 @@ async function runSandboxCommand(
 
 async function resolveModelKey(
   deps: ExecutorDeps,
-  userId: string,
-  workspaceId: string,
+  _userId: string,
+  _workspaceId: string,
   credential: { secretId: string } | null,
 ): Promise<string | undefined> {
   if (credential && deps.secretStore) {

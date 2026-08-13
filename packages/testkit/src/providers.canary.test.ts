@@ -1,8 +1,8 @@
 import { existsSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterAll, describe, expect, it } from "vitest";
 import { E2BSandboxProvider, PiAgentRuntime } from "@rakazo/adapters";
+import { afterAll, describe, expect, it } from "vitest";
 
 function loadEnvFile() {
   const file = path.resolve(".env");
@@ -38,7 +38,10 @@ describeE2b("live E2B canary", () => {
       userId: "canary",
       signal: new AbortController().signal,
     };
-    const computer = await sandbox.provision({ botId: "canary", homePath: "/home/user/rakazo-home" }, ctx);
+    const computer = await sandbox.provision(
+      { botId: "canary", homePath: "/home/user/rakazo-home" },
+      ctx,
+    );
     let stdout = "";
     for await (const event of sandbox.execute(computer, { argv: ["echo", "e2b-ok"] }, ctx)) {
       if (event.type === "stdout") stdout += event.data;
@@ -128,20 +131,27 @@ describePiApp("live OpenRouter product journey", () => {
       botId: botRes.id,
       path: "notes/result.txt",
     }).catch(() => ({ content: "" }));
-    const ok = file.content.includes("openrouter-ok") || blob.toLowerCase().includes("openrouter-ok") || blob.toLowerCase().includes("pong") || snap.messages.some((m) => m.role === "bot");
+    const ok =
+      file.content.includes("openrouter-ok") ||
+      blob.toLowerCase().includes("openrouter-ok") ||
+      blob.toLowerCase().includes("pong") ||
+      snap.messages.some((m) => m.role === "bot");
     expect(ok).toBe(true);
     if (file.content) expect(file.content).toContain("openrouter-ok");
   }, 120_000);
 });
 
 type App = { request: (input: string, init?: RequestInit) => Promise<Response> };
-type Snap = { messages: Array<{ role: string; blocks: unknown[] }>; run: { status: string } | null };
+type Snap = {
+  messages: Array<{ role: string; blocks: unknown[] }>;
+  run: { status: string } | null;
+};
 
 function cookieHeader(res: Response) {
   const many = res.headers.getSetCookie?.() ?? [];
   if (many.length) return many.map((c) => c.split(";")[0]).join("; ");
   const single = res.headers.get("set-cookie");
-  return single ? single.split(",")[0]?.split(";")[0] ?? "" : "";
+  return single ? (single.split(",")[0]?.split(";")[0] ?? "") : "";
 }
 
 async function rpc<T>(app: App, cookie: string, proc: string, body: unknown = {}): Promise<T> {
@@ -151,7 +161,8 @@ async function rpc<T>(app: App, cookie: string, proc: string, body: unknown = {}
     body: JSON.stringify({ json: body }),
   });
   const parsed = (await res.json()) as { json?: T; error?: { message?: string } };
-  if (res.status >= 400 || parsed.error) throw new Error(`${proc} ${res.status}: ${parsed.error?.message ?? "failed"}`);
+  if (res.status >= 400 || parsed.error)
+    throw new Error(`${proc} ${res.status}: ${parsed.error?.message ?? "failed"}`);
   return parsed.json as T;
 }
 

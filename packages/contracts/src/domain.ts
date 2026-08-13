@@ -1,6 +1,6 @@
 import * as z from "zod";
-import { Id, MemoryScope, RunStatus, SandboxKind } from "./ids.js";
 import { ThreadMessageSchema } from "./events.js";
+import { Id, MemoryScope, RunStatus, SandboxKind } from "./ids.js";
 
 export const BotSchema = z.object({
   id: Id,

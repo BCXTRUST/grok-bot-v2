@@ -47,12 +47,16 @@ function mapOneTool(item: unknown): ConnectorTool | undefined {
   return {
     name,
     description: String(raw.description ?? name),
-    inputSchema: asObject(raw.inputParameters) ?? asObject(raw.inputSchema) ?? asObject(raw.parameters) ?? { type: "object", properties: {} },
+    inputSchema: asObject(raw.inputParameters) ??
+      asObject(raw.inputSchema) ??
+      asObject(raw.parameters) ?? { type: "object", properties: {} },
   };
 }
 
 function asObject(value: unknown): Record<string, unknown> | undefined {
-  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
 }
 
 export interface ComposioCatalogItem {
@@ -66,7 +70,9 @@ export interface ComposioCatalogItem {
 export function filterCatalog(items: ComposioCatalogItem[], query: string): ComposioCatalogItem[] {
   const needle = query.trim().toLowerCase();
   if (!needle) return items;
-  return items.filter((item) => item.name.toLowerCase().includes(needle) || item.slug.toLowerCase().includes(needle));
+  return items.filter(
+    (item) => item.name.toLowerCase().includes(needle) || item.slug.toLowerCase().includes(needle),
+  );
 }
 
 export async function collectPages<T>(
@@ -112,7 +118,10 @@ export class ComposioConnector implements ConnectorProvider, ConnectionAuthProvi
         this.catalogSessions.delete(userId);
       }
     }
-    const session = await composio.create(userId, { manageConnections: false, sandbox: { enable: false } });
+    const session = await composio.create(userId, {
+      manageConnections: false,
+      sandbox: { enable: false },
+    });
     this.catalogSessions.set(userId, session.sessionId);
     return session;
   }
@@ -167,7 +176,10 @@ export class ComposioConnector implements ConnectorProvider, ConnectionAuthProvi
 
   async *execute(call: ConnectorCall, context: AdapterContext): AsyncIterable<ConnectorEvent> {
     try {
-      const session = await this.sessionForExecute(context.userId, context.connectedProviders ?? []);
+      const session = await this.sessionForExecute(
+        context.userId,
+        context.connectedProviders ?? [],
+      );
       const result = await session.execute(call.tool, call.args ?? {});
       if (result.error) {
         yield { type: "error", message: sanitizeComposioError(result.error) };
@@ -192,7 +204,9 @@ export class ComposioConnector implements ConnectorProvider, ConnectionAuthProvi
   ): Promise<{ authorizationUrl: string | null; state: string }> {
     const session = await this.sessionFor(context.userId);
     try {
-      const connectionRequest = await session.authorize(request.provider, { callbackUrl: request.redirectUrl });
+      const connectionRequest = await session.authorize(request.provider, {
+        callbackUrl: request.redirectUrl,
+      });
       if (!connectionRequest.redirectUrl) {
         await connectionRequest.waitForConnection(20_000).catch(() => undefined);
       }
@@ -294,7 +308,12 @@ export function collectLogIds(value: unknown): string[] {
     }
     const record = node as Record<string, unknown>;
     for (const [key, nested] of Object.entries(record)) {
-      if ((key === "logId" || key === "log_id") && typeof nested === "string" && nested && !seen.has(nested)) {
+      if (
+        (key === "logId" || key === "log_id") &&
+        typeof nested === "string" &&
+        nested &&
+        !seen.has(nested)
+      ) {
         seen.add(nested);
         ids.push(nested);
       } else {
@@ -308,7 +327,9 @@ export function collectLogIds(value: unknown): string[] {
 
 export function isNoAuthToolkitError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
-  return message.includes("ToolkitsIsNoAuth") || message.includes("does not require authentication");
+  return (
+    message.includes("ToolkitsIsNoAuth") || message.includes("does not require authentication")
+  );
 }
 
 export function sanitizeComposioError(error: unknown): string {
