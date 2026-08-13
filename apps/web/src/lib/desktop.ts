@@ -6,6 +6,7 @@ export interface RakazoDesktop {
     close: () => Promise<void>;
     minimize: () => Promise<void>;
     toggleMaximize: () => Promise<void>;
+    state: () => Promise<{ minimized: boolean; maximized: boolean; fullScreen: boolean }>;
   };
 }
 

@@ -63,6 +63,14 @@ app.whenReady().then(() => {
       win.maximize();
     }
   });
+  ipcMain.handle("desktop.window.state", (event) => {
+    const win = windowFrom(event);
+    return {
+      minimized: win?.isMinimized() ?? false,
+      maximized: win?.isMaximized() ?? false,
+      fullScreen: win?.isFullScreen() ?? false,
+    };
+  });
   ipcMain.handle("desktop.grantFolder", async () => {
     const result = await dialog.showOpenDialog({ properties: ["openDirectory"] });
     const folder = result.filePaths[0];

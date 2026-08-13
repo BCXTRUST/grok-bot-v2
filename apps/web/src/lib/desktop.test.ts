@@ -13,6 +13,7 @@ function desktop(platform: string): RakazoDesktop {
       close: async () => undefined,
       minimize: async () => undefined,
       toggleMaximize: async () => undefined,
+      state: async () => ({ minimized: false, maximized: false, fullScreen: false }),
     },
   };
 }
