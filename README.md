@@ -117,3 +117,7 @@ infra/compose sandboxes
 ## Self-host and Cloud
 
 See `docs/self-host.md`. Cloud and self-hosted editions share the same application and contracts. There is no separate Rakazo-hosted control plane in this repo yet — a public Cloud deploy is a VPS (or E2B) plus the marketing site, not a serverless push of the chat app.
+
+---
+
+[Inbox Zero Inc.](https://www.getinboxzero.com/?utm_source=rakazo&utm_medium=github&utm_campaign=readme)

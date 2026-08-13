@@ -560,6 +560,11 @@ button {
   font-size: 13.5px;
 }
 
+.site-footer__legal a:hover,
+.site-footer__legal a:focus-visible {
+  color: var(--ink);
+}
+
 .site-footer__links {
   color: var(--muted);
   font-size: 14px;
