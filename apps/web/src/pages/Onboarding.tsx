@@ -65,7 +65,7 @@ export function OnboardingPage() {
           setProvider(preferred.provider);
           setModelId(preferred.id);
         }
-        setStep(me.needsModel ? "model" : "bot");
+        setStep("model");
       })
       .catch(() => setStep("bot"));
   }, []);
