@@ -2,6 +2,7 @@ import { Link, Redirect } from "expo-router";
 import { useEffect, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import { loadSessionToken, type MobileBot, rpc, signOut } from "../lib/api";
+import { previewSnippet } from "../lib/preview";
 import { registerPushToken } from "../lib/push";
 
 export default function Home() {
@@ -56,8 +57,8 @@ export default function Home() {
             style={{ marginTop: 24, backgroundColor: "#1A1A1D", padding: 16, borderRadius: 16 }}
           >
             <Text style={{ color: "#ECECEE", fontSize: 16 }}>{bot.name}</Text>
-            <Text style={{ color: "#85858A", marginTop: 4 }}>
-              {bot.preview || bot.title || "One continuous thread"}
+            <Text style={{ color: "#85858A", marginTop: 4 }} numberOfLines={1}>
+              {previewSnippet(bot.preview) || bot.title || "One continuous thread"}
             </Text>
           </Pressable>
         </Link>
