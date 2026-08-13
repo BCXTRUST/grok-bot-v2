@@ -82,22 +82,31 @@ export default function Thread() {
             key={message.id}
             style={{
               marginTop: 12,
-              alignSelf: message.role === "user" ? "flex-end" : "flex-start",
-              backgroundColor: message.role === "user" ? "#F1F1EF" : "#1A1A1D",
-              padding: 12,
-              borderRadius: 20,
-              maxWidth: "85%",
+              width: "100%",
+              flexDirection: "row",
+              justifyContent: message.role === "user" ? "flex-end" : "flex-start",
             }}
           >
-            {message.role === "user" ? (
-              <Text style={{ color: "#1A1A1A", fontSize: 15.5, lineHeight: 23 }}>
-                {blockText(message)}
-              </Text>
-            ) : (
-              <ChatMarkdown streaming={message.id.startsWith("progress:")}>
-                {blockText(message)}
-              </ChatMarkdown>
-            )}
+            <View
+              style={{
+                flexShrink: 1,
+                minWidth: 0,
+                maxWidth: "85%",
+                backgroundColor: message.role === "user" ? "#F1F1EF" : "#1A1A1D",
+                padding: 12,
+                borderRadius: 20,
+              }}
+            >
+              {message.role === "user" ? (
+                <Text style={{ color: "#1A1A1A", fontSize: 15.5, lineHeight: 23 }}>
+                  {blockText(message)}
+                </Text>
+              ) : (
+                <ChatMarkdown streaming={message.id.startsWith("progress:")}>
+                  {blockText(message)}
+                </ChatMarkdown>
+              )}
+            </View>
           </View>
         ))}
       </ScrollView>
