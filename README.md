@@ -26,7 +26,7 @@ cp .env.example .env
 
 Edit `.env`:
 
-- Set `BETTER_AUTH_SECRET` and `ENCRYPTION_KEY` to long random strings.
+- Set `BETTER_AUTH_SECRET` and `ENCRYPTION_KEY` to long random strings before any network exposure. Placeholder values only work in local `development` / `test` runs.
 - Put your OpenRouter key in `OPENROUTER_API_KEY` (or skip the key and paste one during onboarding).
 - Optional: `COMPOSIO_API_KEY` if you want Plugins to talk to live apps.
 

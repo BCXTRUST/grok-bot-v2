@@ -1,3 +1,5 @@
+import { resolveAuthSecret, resolveEncryptionKey, resolveSupervisorToken } from "@rakazo/core";
+
 export interface AppEnv {
   databaseUrl: string;
   authSecret: string;
@@ -22,7 +24,7 @@ export interface AppEnv {
 }
 
 export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
-  const authSecret = source.BETTER_AUTH_SECRET || "dev-secret-change-me-please-32chars";
+  const authSecret = resolveAuthSecret(source);
   return {
     databaseUrl: required(source, "DATABASE_URL"),
     authSecret,
@@ -31,10 +33,10 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     apiUrl: source.API_URL ?? "http://127.0.0.1:3100",
     signupsEnabled: source.SIGNUPS_ENABLED,
     signupAllowlist: source.SIGNUP_ALLOWLIST,
-    encryptionKey: source.ENCRYPTION_KEY ?? "dev-encryption-key",
+    encryptionKey: resolveEncryptionKey(source),
     dataDir: source.DATA_DIR ?? "./data",
     sandboxSupervisorUrl: source.SANDBOX_SUPERVISOR_URL ?? "http://127.0.0.1:7091",
-    sandboxSupervisorToken: source.SANDBOX_SUPERVISOR_TOKEN || authSecret,
+    sandboxSupervisorToken: resolveSupervisorToken(source),
     sandboxProvider: source.SANDBOX_PROVIDER ?? "docker",
     agentRuntime: source.AGENT_RUNTIME ?? "pi",
     openRouterKey: source.OPENROUTER_API_KEY,

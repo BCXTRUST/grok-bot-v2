@@ -5,6 +5,7 @@ import path from "node:path";
 import { loadEnvFile } from "node:process";
 import { fileURLToPath } from "node:url";
 import { serve } from "@hono/node-server";
+import { resolveSupervisorToken } from "@rakazo/core";
 import Docker from "dockerode";
 import { Hono } from "hono";
 import { z } from "zod";
@@ -28,10 +29,7 @@ const dataDir = path.resolve(repositoryRoot, process.env.DATA_DIR ?? "./data");
 const boxes = new Map<string, { containerId: string; botId: string; screenUrl: string }>();
 let imageReady: Promise<void> | undefined;
 let supervisorInfo: Docker.ContainerInspectInfo | undefined;
-const supervisorToken =
-  process.env.SANDBOX_SUPERVISOR_TOKEN ||
-  process.env.BETTER_AUTH_SECRET ||
-  "dev-secret-change-me-please-32chars";
+const supervisorToken = resolveSupervisorToken(process.env);
 
 const app = new Hono();
 

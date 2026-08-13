@@ -312,6 +312,9 @@ importers:
       '@hono/node-server':
         specifier: ^1.19.1
         version: 1.19.17(hono@4.13.1)
+      '@rakazo/core':
+        specifier: workspace:*
+        version: link:../../../packages/core
       dockerode:
         specifier: ^4.0.7
         version: 4.0.12

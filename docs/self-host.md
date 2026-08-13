@@ -8,13 +8,15 @@ Same as the README quick start: `.env` from `.env.example`, Postgres via Compose
 
 ## Docker Compose (single machine)
 
-1. Copy `.env.example` to `.env` and set `BETTER_AUTH_SECRET` and `ENCRYPTION_KEY`.
+1. Copy `.env.example` to `.env` and set `BETTER_AUTH_SECRET` and `ENCRYPTION_KEY` to long random strings. Rakazo refuses placeholder or missing secrets outside `development` / `test` (or when `RAKAZO_ALLOW_DEV_SECRETS=1` is set).
 2. Set `OPENROUTER_API_KEY` (and `COMPOSIO_API_KEY` if you want Plugins).
 3. Build the computer image: `pnpm sandbox:build` (Compose also builds it via the `computer` service).
 4. `docker compose -f infra/compose/docker-compose.yml up --build`
 5. Open the web origin (`http://127.0.0.1:5173` by default). The first registered user becomes the deployment owner.
 
 Compose runs Postgres, the sandbox supervisor (Docker socket), API, worker, and a Vite preview of the web app. Bot computers are sibling containers (`rakazo/computer:local`). The API process does not get an unrestricted Docker socket; the supervisor owns lifecycle.
+
+Postgres is published on **loopback only** (`127.0.0.1:5433` on the host). Do not expose that port on a public VPS. Change `POSTGRES_PASSWORD` and keep Postgres on an internal network when you deploy remotely.
 
 The Docker supervisor is not published. It is authenticated and stays on the internal Compose network because access to it is equivalent to control of the Docker host. It uses `BETTER_AUTH_SECRET` as its shared service credential by default; advanced deployments can set the same independent `SANDBOX_SUPERVISOR_TOKEN` value on the API, worker, and supervisor.
 

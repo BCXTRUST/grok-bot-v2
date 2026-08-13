@@ -6,7 +6,7 @@ services:
       POSTGRES_PASSWORD: rakazo
       POSTGRES_DB: rakazo
     ports:
-      - "5433:5432"
+      - "127.0.0.1:5433:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -91,7 +91,7 @@ services:
     command: ["pnpm", "--filter", "@rakazo/web", "preview", "--host", "0.0.0.0", "--port", "5173"]
     environment:
       API_PROXY_TARGET: http://api:3100
-      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-dev-secret-change-me-please-32chars}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET}
     ports:
       - "5173:5173"
     depends_on:

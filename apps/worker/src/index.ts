@@ -36,6 +36,7 @@ import {
   ScriptedAgentRuntime,
   sleepComputerIfIdle,
 } from "@rakazo/adapters";
+import { resolveEncryptionKey } from "@rakazo/core";
 import { createDb } from "@rakazo/db";
 import { MarkdownMemoryStore } from "@rakazo/memory";
 
@@ -56,7 +57,7 @@ async function main() {
   const stack = createConnectorStack(isComposioEnabled(process.env.COMPOSIO_API_KEY));
   const connector = stack.destination;
   await connector.start();
-  const secrets = new EncryptedSecretStore(process.env.ENCRYPTION_KEY ?? "dev-encryption-key");
+  const secrets = new EncryptedSecretStore(resolveEncryptionKey(process.env));
   const wakeup =
     process.env.WAKEUP_DRIVER === "memory"
       ? new InMemoryWakeupDriver()

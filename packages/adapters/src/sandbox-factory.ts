@@ -31,7 +31,11 @@ export function createSandboxProvider(
         root: opts.dataDir,
         grants: opts.desktopGrants ?? (process.env.DESKTOP_GRANTS ?? "").split(":").filter(Boolean),
       });
-    default:
+    case "fake":
       return new FakeSandboxProvider();
+    default:
+      throw new Error(
+        `Unknown SANDBOX_PROVIDER "${kind}". Use docker | e2b | e2b-emulator | desktop | fake.`,
+      );
   }
 }

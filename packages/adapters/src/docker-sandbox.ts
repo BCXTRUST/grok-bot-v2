@@ -9,14 +9,17 @@ import type {
   ScreenRequest,
   ScreenSession,
 } from "@rakazo/adapter-kit";
+import { resolveSupervisorToken } from "@rakazo/core";
 
 export class DockerSandboxProvider implements SandboxProvider {
+  private readonly supervisorToken: string;
+
   constructor(
     private readonly supervisorUrl: string,
-    private readonly supervisorToken = process.env.SANDBOX_SUPERVISOR_TOKEN ||
-      process.env.BETTER_AUTH_SECRET ||
-      "dev-secret-change-me-please-32chars",
-  ) {}
+    supervisorToken?: string,
+  ) {
+    this.supervisorToken = supervisorToken ?? resolveSupervisorToken(process.env);
+  }
 
   describe() {
     return {
