@@ -1,0 +1,13 @@
+{
+  "expo": {
+    "name": "Rakazo",
+    "slug": "rakazo",
+    "scheme": "rakazo",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "plugins": ["expo-router"],
+    "ios": { "supportsTablet": true },
+    "android": { "adaptiveIcon": { "backgroundColor": "#050506" } }
+  }
+}

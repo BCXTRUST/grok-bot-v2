@@ -1,0 +1,420 @@
+import type { AgentHomeStore, AgentRuntime, ConnectorProvider, MemoryStore, SandboxProvider } from "@rakazo/adapter-kit";
+import type { Actor, MessageBlock, RunStatus } from "@rakazo/contracts";
+import { assertTransition, containsSecret, nextCronDate, redactSecrets } from "@rakazo/core";
+import { appendEvent, type PrismaClient } from "@rakazo/db";
+import { builtinAgentTools } from "./builtin-tools.js";
+import { inferScript } from "./scripted-runtime.js";
+import type { EncryptedSecretStore } from "./secrets.js";
+
+export interface ExecutorDeps {
+  prisma: PrismaClient;
+  runtime: AgentRuntime;
+  sandbox: SandboxProvider;
+  memory: MemoryStore;
+  home: AgentHomeStore;
+  connector?: ConnectorProvider;
+  secrets: string[];
+  secretStore?: EncryptedSecretStore;
+  deploymentModelKey?: string;
+}
+
+export function createRunExecutor(deps: ExecutorDeps) {
+  return {
+    async wakeRoutine(routineId: string, workerId: string) {
+      const routine = await deps.prisma.routine.findUnique({ where: { id: routineId } });
+      if (!routine || !routine.active) return;
+      const bot = await deps.prisma.bot.findUnique({ where: { id: routine.botId }, include: { thread: true } });
+      if (!bot?.thread) return;
+      const task = await deps.prisma.task.create({
+        data: {
+          workspaceId: routine.workspaceId,
+          botId: bot.id,
+          threadId: bot.thread.id,
+          userId: routine.userId,
+          prompt: routine.prompt,
+          status: "queued",
+        },
+      });
+      const run = await deps.prisma.run.create({
+        data: {
+          workspaceId: routine.workspaceId,
+          botId: bot.id,
+          threadId: bot.thread.id,
+          taskId: task.id,
+          userId: routine.userId,
+          status: "queued",
+          trigger: "routine",
+        },
+      });
+      await deps.prisma.routine.update({
+        where: { id: routine.id },
+        data: {
+          lastRunAt: new Date(),
+          nextRunAt: nextCronDate(routine.cron, new Date(), routine.timezone),
+        },
+      });
+      await this.continueRun(run.id, workerId);
+    },
+
+    async continueRun(runId: string, workerId: string) {
+      const run = await deps.prisma.run.findUnique({ where: { id: runId } });
+      if (!run) return;
+      if (["completed", "failed", "cancelled"].includes(run.status)) return;
+      const resumeFromTakeover = run.status === "waiting_takeover";
+
+      const fence = run.leaseFence + 1;
+      const leased = await deps.prisma.run.updateMany({
+        where: {
+          id: runId,
+          status: { in: ["queued", "waiting_input", "waiting_takeover", "leased"] },
+        },
+        data: {
+          status: "leased",
+          leaseOwner: workerId,
+          leaseFence: fence,
+          leaseExpiresAt: new Date(Date.now() + 5 * 60_000),
+        },
+      });
+      if (leased.count !== 1 && run.status !== "running") {
+        return;
+      }
+
+      const current = await deps.prisma.run.findUniqueOrThrow({ where: { id: runId } });
+      if (current.status === "queued" || current.status === "leased" || current.status === "waiting_input" || current.status === "waiting_takeover") {
+        assertTransition(current.status as RunStatus, "running");
+      }
+      await deps.prisma.run.update({
+        where: { id: runId },
+        data: { status: "running", startedAt: current.startedAt ?? new Date() },
+      });
+      await deps.prisma.attempt.create({
+        data: { runId, fence, status: "running" },
+      });
+
+      const bot = await deps.prisma.bot.findUniqueOrThrow({ where: { id: run.botId } });
+      const thread = await deps.prisma.thread.findUniqueOrThrow({ where: { id: run.threadId } });
+      const messages = await deps.prisma.message.findMany({
+        where: { threadId: thread.id },
+        orderBy: { seq: "asc" },
+      });
+      const task = await deps.prisma.task.findUniqueOrThrow({ where: { id: run.taskId } });
+      const actor: Actor = {
+        userId: run.userId,
+        workspaceId: run.workspaceId,
+        email: "",
+        isDeploymentOwner: false,
+      };
+      const context = {
+        operationId: runId,
+        traceId: runId,
+        workspaceId: run.workspaceId,
+        userId: run.userId,
+        botId: bot.id,
+        runId,
+        signal: new AbortController().signal,
+      };
+
+      await appendEvent(deps.prisma, {
+        workspaceId: run.workspaceId,
+        threadId: thread.id,
+        botId: bot.id,
+        type: "run.started",
+        runId,
+        payload: { trigger: run.trigger },
+      });
+
+      const credential = await deps.prisma.userModelCredential.findFirst({
+        where: { userId: run.userId, workspaceId: run.workspaceId, isDefault: true },
+      });
+      const settings = await deps.prisma.deploymentSettings.findUnique({ where: { id: "default" } });
+      const discovered = deps.connector ? await deps.connector.discoverTools(context) : [];
+      const tools = [
+        ...builtinAgentTools,
+        ...discovered.filter((tool) => !builtinAgentTools.some((b) => b.name === tool.name)),
+      ];
+      const history = messages.map((m) => ({
+        role: (m.role === "user" ? "user" : m.role === "system" ? "system" : "assistant") as "user" | "assistant" | "system",
+        content: blocksToText(m.blocks as MessageBlock[]),
+      }));
+      const apiKey = await resolveModelKey(deps, run.userId, run.workspaceId, credential);
+
+      let assembled = "";
+      const scripted = deps.runtime.describe().capabilities.scripted;
+      const script = scripted ? inferScript(task.prompt, resumeFromTakeover ? "takeover" : undefined) : undefined;
+      try {
+        for await (const event of deps.runtime.run(
+          {
+            botId: bot.id,
+            threadId: thread.id,
+            runId,
+            prompt: task.prompt,
+            instructions: bot.instructions || `${bot.name}: ${bot.title}\n${bot.description}`,
+            history,
+            tools,
+            model: {
+              provider: credential?.provider ?? settings?.defaultModelProvider ?? "scripted",
+              id: credential?.defaultModel ?? settings?.defaultModelId ?? "scripted",
+              apiKey,
+            },
+            resumeFromCheckpoint: resumeFromTakeover ? "takeover" : undefined,
+            script,
+          },
+          context,
+        )) {
+          const still = await deps.prisma.run.findUnique({ where: { id: runId } });
+          if (!still || still.status === "cancelled") return;
+
+          if (event.type === "text") {
+            assembled += event.text;
+          } else if (event.type === "progress") {
+            await appendEvent(deps.prisma, {
+              workspaceId: run.workspaceId,
+              threadId: thread.id,
+              botId: bot.id,
+              type: "thread.progress",
+              runId,
+              payload: { text: event.text },
+            });
+          } else if (event.type === "ask") {
+            await publishMessage(deps, actor, thread.id, bot.id, runId, "bot", [
+              { kind: "ask", text: event.text, detail: event.detail },
+            ]);
+            await deps.prisma.run.update({
+              where: { id: runId },
+              data: { status: "waiting_input" },
+            });
+            return;
+          } else if (event.type === "takeover") {
+            if (assembled.trim()) {
+              await publishMessage(deps, actor, thread.id, bot.id, runId, "bot", [{ kind: "text", text: assembled }]);
+            }
+            await publishMessage(deps, actor, thread.id, bot.id, runId, "bot", [
+              { kind: "computer", state: "Ready", text: event.reason },
+            ]);
+            await appendEvent(deps.prisma, {
+              workspaceId: run.workspaceId,
+              threadId: thread.id,
+              botId: bot.id,
+              type: "computer.takeover.requested",
+              runId,
+              payload: { reason: event.reason },
+            });
+            await deps.prisma.computer.updateMany({
+              where: { botId: bot.id },
+              data: { state: "running", controlHolder: "user" },
+            });
+            await deps.prisma.run.update({
+              where: { id: runId },
+              data: { status: "waiting_takeover" },
+            });
+            return;
+          } else if (event.type === "tool") {
+            const applied = await recordEffect(deps, run, event.name, event.executionId, event.args);
+            if (!applied.duplicate) {
+              if (event.name === "write_file") {
+                await deps.home.writeFile(
+                  bot.id,
+                  String(event.args.path ?? "notes/result.txt"),
+                  String(event.args.content ?? ""),
+                  context,
+                );
+              }
+              if (event.name === "remember") {
+                await deps.memory.commit(
+                  {
+                    scope: "bot",
+                    botId: bot.id,
+                    path: String(event.args.path ?? "MEMORY.md"),
+                    content: String(event.args.content ?? ""),
+                    sourceRunId: runId,
+                    sourceThreadId: thread.id,
+                  },
+                  context,
+                );
+              }
+              if (event.name === "destination.write" && deps.connector) {
+                for await (const _ of deps.connector.execute(
+                  {
+                    tool: event.name,
+                    args: event.args,
+                    executionId: event.executionId,
+                  },
+                  context,
+                )) {
+                  /* drain */
+                }
+              }
+            }
+          } else if (event.type === "usage") {
+            await deps.prisma.usageRecord.create({
+              data: {
+                workspaceId: run.workspaceId,
+                botId: bot.id,
+                userId: run.userId,
+                runId,
+                provider: event.provider,
+                model: event.model,
+                inputTokens: event.inputTokens,
+                outputTokens: event.outputTokens,
+              },
+            });
+          } else if (event.type === "done") {
+            assembled = assembled || event.text || assembled;
+          }
+        }
+
+        for (const turn of script ?? []) {
+          for (const file of turn.files ?? []) {
+            await deps.home.writeFile(bot.id, file.path, file.content, context);
+          }
+          for (const mem of turn.memory ?? []) {
+            await deps.memory.commit(
+              {
+                scope: mem.scope,
+                botId: mem.scope === "bot" ? bot.id : undefined,
+                path: mem.path,
+                content: mem.content,
+                sourceRunId: runId,
+                sourceThreadId: thread.id,
+              },
+              context,
+            );
+            await appendEvent(deps.prisma, {
+              workspaceId: run.workspaceId,
+              threadId: thread.id,
+              botId: bot.id,
+              type: "memory.revised",
+              runId,
+              payload: { path: mem.path, scope: mem.scope },
+            });
+          }
+        }
+
+        const text = redactSecrets(assembled || "done.", deps.secrets);
+        if (containsSecret(text, deps.secrets)) {
+          throw new Error("refusing to persist a secret in the thread");
+        }
+        await publishMessage(deps, actor, thread.id, bot.id, runId, "bot", [{ kind: "text", text }]);
+        await deps.prisma.run.update({
+          where: { id: runId },
+          data: { status: "completed", completedAt: new Date() },
+        });
+        await deps.prisma.task.update({
+          where: { id: run.taskId },
+          data: { status: "completed" },
+        });
+        await appendEvent(deps.prisma, {
+          workspaceId: run.workspaceId,
+          threadId: thread.id,
+          botId: bot.id,
+          type: "run.completed",
+          runId,
+          payload: {},
+        });
+        await deps.prisma.bot.update({ where: { id: bot.id }, data: { updatedAt: new Date() } });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        await deps.prisma.run.update({
+          where: { id: runId },
+          data: { status: "failed", error: message, completedAt: new Date() },
+        });
+        await appendEvent(deps.prisma, {
+          workspaceId: run.workspaceId,
+          threadId: thread.id,
+          botId: bot.id,
+          type: "run.failed",
+          runId,
+          payload: { error: message },
+        });
+      }
+    },
+  };
+}
+
+async function publishMessage(
+  deps: ExecutorDeps,
+  _actor: Actor,
+  threadId: string,
+  botId: string,
+  runId: string,
+  role: "user" | "bot" | "system",
+  blocks: MessageBlock[],
+) {
+  const last = await deps.prisma.message.findFirst({
+    where: { threadId },
+    orderBy: { seq: "desc" },
+  });
+  const seq = (last?.seq ?? -1) + 1;
+  const message = await deps.prisma.message.create({
+    data: { threadId, seq, role, blocks, runId },
+  });
+  await appendEvent(deps.prisma, {
+    workspaceId: (await deps.prisma.thread.findUniqueOrThrow({ where: { id: threadId } })).workspaceId,
+    threadId,
+    botId,
+    type: "thread.message.created",
+    runId,
+    payload: { messageId: message.id, role, blocks },
+  });
+  return message;
+}
+
+async function recordEffect(
+  deps: ExecutorDeps,
+  run: { id: string; workspaceId: string },
+  kind: string,
+  executionId: string,
+  request: Record<string, unknown>,
+) {
+  const existing = await deps.prisma.externalEffect.findUnique({
+    where: { idempotencyKey: executionId },
+  });
+  if (existing) {
+    await appendEvent(deps.prisma, {
+      workspaceId: run.workspaceId,
+      threadId: (await deps.prisma.run.findUniqueOrThrow({ where: { id: run.id } })).threadId,
+      botId: (await deps.prisma.run.findUniqueOrThrow({ where: { id: run.id } })).botId,
+      type: "effect.reconciled",
+      runId: run.id,
+      payload: { executionId, kind },
+    });
+    return { duplicate: true, effect: existing };
+  }
+  const effect = await deps.prisma.externalEffect.create({
+    data: {
+      workspaceId: run.workspaceId,
+      runId: run.id,
+      kind,
+      idempotencyKey: executionId,
+      status: "intended",
+      request: request as never,
+    },
+  });
+  await deps.prisma.externalEffect.update({
+    where: { id: effect.id },
+    data: { status: "completed", result: { ok: true } },
+  });
+  return { duplicate: false, effect };
+}
+
+async function resolveModelKey(
+  deps: ExecutorDeps,
+  userId: string,
+  workspaceId: string,
+  credential: { secretId: string } | null,
+): Promise<string | undefined> {
+  if (credential && deps.secretStore) {
+    const row = await deps.prisma.secret.findUnique({ where: { id: credential.secretId } });
+    if (row) return deps.secretStore.load(row.ciphertext);
+  }
+  return deps.deploymentModelKey;
+}
+
+function blocksToText(blocks: MessageBlock[]): string {
+  return blocks
+    .map((block) => {
+      if ("text" in block && block.text) return block.text;
+      return JSON.stringify(block);
+    })
+    .join("\n");
+}

@@ -1,0 +1,33 @@
+{
+  "name": "rakazo",
+  "private": true,
+  "version": "0.1.0",
+  "license": "Apache-2.0",
+  "packageManager": "pnpm@9.15.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "turbo dev --filter=@rakazo/api --filter=@rakazo/worker --filter=@rakazo/web --filter=@rakazo/sandbox-supervisor",
+    "build": "turbo build",
+    "check": "turbo check",
+    "lint": "biome check .",
+    "format": "biome check --write .",
+    "db:generate": "pnpm --filter @rakazo/db generate",
+    "db:migrate": "pnpm --filter @rakazo/db migrate",
+    "verify:fast": "vitest run",
+    "verify": "tsx packages/testkit/src/cli/verify.ts",
+    "verify:providers": "tsx packages/testkit/src/cli/verify.ts --providers",
+    "e2e": "pnpm --filter @rakazo/web exec playwright test",
+    "compose:up": "docker compose -f infra/compose/docker-compose.yml up --build",
+    "compose:down": "docker compose -f infra/compose/docker-compose.yml down -v"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.2.4",
+    "@types/node": "^24.3.0",
+    "tsx": "^4.20.5",
+    "turbo": "^2.5.6",
+    "typescript": "^5.9.2",
+    "vitest": "^4.1.10"
+  }
+}

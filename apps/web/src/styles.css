@@ -1,0 +1,33 @@
+@import "tailwindcss";
+@import "@rakazo/ui-tokens/css";
+
+@source "../../packages/ui-web/src/**/*.{ts,tsx}";
+@source "./src/**/*.{ts,tsx}";
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  background: #050506;
+  color: #dfdfe2;
+  font-family: Geist, ui-sans-serif, system-ui, sans-serif;
+}
+
+.rk-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+.rk-scroll::-webkit-scrollbar-thumb {
+  background: #2a2a2e;
+  border-radius: 3px;
+}
+
+@keyframes rkPulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}

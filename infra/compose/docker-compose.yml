@@ -1,0 +1,80 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: rakazo
+      POSTGRES_PASSWORD: rakazo
+      POSTGRES_DB: rakazo
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rakazo"]
+      interval: 3s
+      timeout: 5s
+      retries: 20
+
+  supervisor:
+    build:
+      context: ../sandboxes/supervisor
+      dockerfile: Dockerfile
+    environment:
+      SUPERVISOR_PORT: "7091"
+      DOCKER_SOCKET: /var/run/docker.sock
+    ports:
+      - "7091:7091"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ../../data:/data
+
+  api:
+    build:
+      context: ../..
+      dockerfile: infra/compose/Dockerfile
+    command: ["bash", "-lc", "pnpm --filter @rakazo/db generate && pnpm --filter @rakazo/db exec prisma db push && pnpm --filter @rakazo/api start"]
+    env_file:
+      - ../../.env
+    environment:
+      DATABASE_URL: postgres://rakazo:rakazo@postgres:5432/rakazo
+      SANDBOX_SUPERVISOR_URL: http://supervisor:7091
+      WAKEUP_DRIVER: graphile
+      SANDBOX_PROVIDER: docker
+      AGENT_RUNTIME: scripted
+    ports:
+      - "3100:3100"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: ../..
+      dockerfile: infra/compose/Dockerfile
+    command: ["pnpm", "--filter", "@rakazo/worker", "start"]
+    env_file:
+      - ../../.env
+    environment:
+      DATABASE_URL: postgres://rakazo:rakazo@postgres:5432/rakazo
+      SANDBOX_SUPERVISOR_URL: http://supervisor:7091
+      WAKEUP_DRIVER: graphile
+      SANDBOX_PROVIDER: docker
+      AGENT_RUNTIME: scripted
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  web:
+    build:
+      context: ../..
+      dockerfile: infra/compose/Dockerfile
+    command: ["pnpm", "--filter", "@rakazo/web", "preview", "--host", "0.0.0.0", "--port", "5173"]
+    environment:
+      API_PROXY_TARGET: http://api:3100
+    ports:
+      - "5173:5173"
+    depends_on:
+      - api
+
+volumes:
+  pgdata:
