@@ -6,10 +6,12 @@ Web, desktop, and mobile. Bring your own AI and sandbox. The product is still ea
 
 Each bot has one thread, one computer, memory, routines, and history. This repository is the complete core product — it runs without a Rakazo-operated control plane.
 
-## Screenshots
+## Demo
 
 <p align="center">
-  <img src="docs/screenshots/web-computer.png" alt="Desktop: thread and computer" width="880" />
+  <video src="https://media.githubusercontent.com/media/elie222/rakazo/main/docs/screenshots/demo.mp4" poster="docs/screenshots/web-computer.png" width="880" controls playsinline>
+    <a href="docs/screenshots/demo.mp4">Watch the demo</a>
+  </video>
 </p>
 
 ## Requirements
