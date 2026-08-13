@@ -34,9 +34,17 @@ function windowFrom(event: Electron.IpcMainInvokeEvent) {
   return BrowserWindow.fromWebContents(event.sender);
 }
 
+function developmentIcon() {
+  if (app.isPackaged) return undefined;
+  const icon = path.join(app.getAppPath(), "assets", "icon.png");
+  return existsSync(icon) ? icon : undefined;
+}
+
 function createWindow() {
+  const icon = developmentIcon();
   const win = new BrowserWindow({
     ...browserWindowOptions(process.platform),
+    ...(icon ? { icon } : {}),
     webPreferences: {
       preload: path.join(import.meta.dirname, "preload.cjs"),
       nodeIntegration: false,
@@ -48,6 +56,8 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  const icon = developmentIcon();
+  if (process.platform === "darwin" && icon) app.dock?.setIcon(icon);
   ipcMain.handle("desktop.platform", () => process.platform);
   ipcMain.handle("desktop.window.close", (event) => {
     windowFrom(event)?.close();

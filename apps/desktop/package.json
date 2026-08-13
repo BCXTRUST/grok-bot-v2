@@ -25,7 +25,8 @@
     "appId": "dev.rakazo.desktop",
     "productName": "Rakazo",
     "directories": {
-      "output": "out"
+      "output": "out",
+      "buildResources": "assets"
     },
     "files": [
       "dist/**/*",
@@ -35,6 +36,7 @@
       "main": "dist/main.js"
     },
     "mac": {
+      "icon": "assets/icon.icns",
       "category": "public.app-category.productivity",
       "target": [
         "dmg",
@@ -42,11 +44,13 @@
       ]
     },
     "win": {
+      "icon": "assets/icon.ico",
       "target": [
         "nsis"
       ]
     },
     "linux": {
+      "icon": "assets/icon.png",
       "target": [
         "AppImage"
       ]
