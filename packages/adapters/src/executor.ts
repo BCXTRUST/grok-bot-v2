@@ -5,6 +5,8 @@ import type {
   ComputerRef,
   ConnectorProvider,
   MemoryStore,
+  NotificationMessage,
+  NotificationProvider,
   SandboxProvider,
 } from "@rakazo/adapter-kit";
 import type { Actor, MessageBlock, RunStatus } from "@rakazo/contracts";
@@ -27,6 +29,7 @@ export interface ExecutorDeps {
   secretStore?: EncryptedSecretStore;
   deploymentModelKey?: string;
   dataDir?: string;
+  notifications?: NotificationProvider;
 }
 
 export function createRunExecutor(deps: ExecutorDeps) {
@@ -265,6 +268,13 @@ export function createRunExecutor(deps: ExecutorDeps) {
               where: { id: runId },
               data: { status: "waiting_input" },
             });
+            await notifyRun(deps, run, {
+              kind: "help",
+              title: `${bot.name} needs an answer`,
+              body: event.text,
+              botId: bot.id,
+              threadId: thread.id,
+            });
             return;
           } else if (event.type === "takeover") {
             if (assembled.trim()) {
@@ -288,6 +298,13 @@ export function createRunExecutor(deps: ExecutorDeps) {
             await deps.prisma.run.update({
               where: { id: runId },
               data: { status: "waiting_takeover" },
+            });
+            await notifyRun(deps, run, {
+              kind: "takeover",
+              title: `${bot.name} needs you on the screen`,
+              body: event.reason,
+              botId: bot.id,
+              threadId: thread.id,
             });
             return;
           } else if (event.type === "tool") {
@@ -359,6 +376,15 @@ export function createRunExecutor(deps: ExecutorDeps) {
           payload: {},
         });
         await deps.prisma.bot.update({ where: { id: bot.id }, data: { updatedAt: new Date() } });
+        if (bot.notifyOnFinish) {
+          await notifyRun(deps, run, {
+            kind: "completion",
+            title: `${bot.name} finished`,
+            body: text.slice(0, 180),
+            botId: bot.id,
+            threadId: thread.id,
+          });
+        }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         await deps.prisma.run.update({
@@ -373,9 +399,36 @@ export function createRunExecutor(deps: ExecutorDeps) {
           runId,
           payload: { error: message },
         });
+        if (bot.notifyOnFinish) {
+          await notifyRun(deps, run, {
+            kind: "failure",
+            title: `${bot.name} failed`,
+            body: message.slice(0, 180),
+            botId: bot.id,
+            threadId: thread.id,
+          });
+        }
       }
     },
   };
+}
+
+async function notifyRun(
+  deps: ExecutorDeps,
+  run: { workspaceId: string; userId: string; botId: string; threadId: string },
+  message: NotificationMessage,
+) {
+  if (!deps.notifications) return;
+  await deps.notifications
+    .send(message, {
+      operationId: "notify",
+      traceId: run.botId,
+      workspaceId: run.workspaceId,
+      userId: run.userId,
+      botId: run.botId,
+      signal: new AbortController().signal,
+    })
+    .catch(() => undefined);
 }
 
 async function publishMessage(

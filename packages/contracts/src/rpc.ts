@@ -117,6 +117,10 @@ export const appContract = {
       .input(z.object({ botId: Id, path: z.string() }))
       .output(z.object({ path: z.string(), content: z.string() })),
     screenUrl: oc.input(botId).output(z.object({ url: z.string().nullable() })),
+    grantFolder: oc
+      .input(z.object({ folder: z.string().min(1) }))
+      .output(z.object({ grants: z.array(z.string()) })),
+    listGrants: oc.output(z.object({ grants: z.array(z.string()) })),
   },
   memory: {
     list: oc
@@ -188,6 +192,11 @@ export const appContract = {
   },
   export: {
     bot: oc.input(botId).output(ExportManifestSchema),
+  },
+  notifications: {
+    registerPush: oc
+      .input(z.object({ token: z.string().min(8).max(512) }))
+      .output(z.object({ ok: z.literal(true) })),
   },
 };
 

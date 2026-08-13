@@ -15,13 +15,16 @@
     "@rakazo/contracts": "workspace:*",
     "@rakazo/ui-tokens": "workspace:*",
     "expo": "^53.0.20",
+    "expo-notifications": "~0.31.4",
     "expo-router": "^5.1.4",
+    "expo-secure-store": "~14.2.3",
     "expo-status-bar": "^2.2.3",
     "@react-navigation/native": "^7.1.17",
     "react": "19.0.0",
     "react-native": "0.79.5",
     "react-native-safe-area-context": "^5.4.0",
-    "react-native-screens": "^4.11.1"
+    "react-native-screens": "^4.11.1",
+    "react-native-webview": "13.13.5"
   },
   "devDependencies": {
     "@types/react": "^19.1.12",

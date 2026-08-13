@@ -3,9 +3,12 @@
   "version": "0.1.0",
   "license": "Apache-2.0",
   "type": "module",
-  "main": "src/main.ts",
+  "main": "dist/main.js",
   "scripts": {
-    "dev": "electron .",
+    "dev": "pnpm build && electron .",
+    "build": "tsc -p tsconfig.json && cp src/preload.cjs dist/preload.cjs",
+    "pack": "pnpm build && electron-builder --mac --win --linux",
+    "pack:dir": "pnpm build && electron-builder --dir",
     "check": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run --passWithNoTests"
   },
@@ -14,7 +17,32 @@
   },
   "devDependencies": {
     "electron": "^37.3.1",
+    "electron-builder": "^26.0.12",
     "typescript": "^5.9.2",
     "vitest": "^4.1.10"
+  },
+  "build": {
+    "appId": "dev.rakazo.desktop",
+    "productName": "Rakazo",
+    "directories": {
+      "output": "out"
+    },
+    "files": [
+      "dist/**/*",
+      "package.json"
+    ],
+    "extraMetadata": {
+      "main": "dist/main.js"
+    },
+    "mac": {
+      "category": "public.app-category.productivity",
+      "target": ["dmg", "zip"]
+    },
+    "win": {
+      "target": ["nsis"]
+    },
+    "linux": {
+      "target": ["AppImage"]
+    }
   }
 }

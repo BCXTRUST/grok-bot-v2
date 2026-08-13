@@ -12,7 +12,9 @@ import {
   createRunExecutor,
   createSandboxProvider,
   DestinationEmulator,
+  ExpoPushProvider,
   isComposioEnabled,
+  loadAllFolderGrants,
   PiAgentRuntime,
   ScriptedAgentRuntime,
   type ComposioConnector,
@@ -50,14 +52,17 @@ export async function createApp(overrides: Partial<AppEnv> & { prisma?: PrismaCl
     webOrigin: env.webOrigin,
     signupsEnabled: env.signupsEnabled,
     signupAllowlist: env.signupAllowlist,
+    extraOrigins: ["rakazo://", "exp://", "http://localhost:8081", "http://127.0.0.1:8081"],
   });
   const wakeupKind = process.env.WAKEUP_DRIVER ?? "memory";
   const wakeup =
     wakeupKind === "graphile" ? new GraphileWakeupDriver(env.databaseUrl) : new InMemoryWakeupDriver();
+  const desktopGrants = await loadAllFolderGrants(env.dataDir);
   const sandbox: SandboxProvider = createSandboxProvider(env.sandboxProvider, {
     supervisorUrl: env.sandboxSupervisorUrl,
     e2bApiKey: env.e2bApiKey,
     dataDir: env.dataDir,
+    desktopGrants,
   });
   const secrets = new EncryptedSecretStore(env.encryptionKey);
   const home = new LocalAgentHomeStore(env.dataDir);
@@ -67,6 +72,7 @@ export async function createApp(overrides: Partial<AppEnv> & { prisma?: PrismaCl
   await connector.start();
   const runtime =
     env.agentRuntime === "pi" ? new PiAgentRuntime() : new ScriptedAgentRuntime();
+  const notifications = new ExpoPushProvider(env.dataDir);
   const executor = createRunExecutor({
     prisma,
     runtime,
@@ -78,6 +84,7 @@ export async function createApp(overrides: Partial<AppEnv> & { prisma?: PrismaCl
     secretStore: secrets,
     deploymentModelKey: env.openRouterKey,
     dataDir: env.dataDir,
+    notifications,
   });
 
   if (wakeupKind !== "graphile") {
@@ -100,6 +107,7 @@ export async function createApp(overrides: Partial<AppEnv> & { prisma?: PrismaCl
     home,
     secrets,
     composio: stack.composio,
+    dataDir: env.dataDir,
     env: {
       defaultProvider: env.defaultProvider,
       defaultModel: env.defaultModel,
@@ -109,7 +117,16 @@ export async function createApp(overrides: Partial<AppEnv> & { prisma?: PrismaCl
   });
   const rpc = new RPCHandler(router);
   const app = new Hono();
-  app.use("*", cors({ origin: env.webOrigin, credentials: true }));
+  app.use(
+    "*",
+    cors({
+      origin: (origin) => {
+        if (!origin) return env.webOrigin;
+        return isTrustedOrigin(origin, env) ? origin : "";
+      },
+      credentials: true,
+    }),
+  );
   app.on(["GET", "POST"], "/api/auth/*", async (c) => {
     const path = new URL(c.req.url).pathname.replace("/api/auth", "");
     if (blockedAuthPaths.some((blocked) => path.startsWith(blocked))) {
@@ -118,7 +135,7 @@ export async function createApp(overrides: Partial<AppEnv> & { prisma?: PrismaCl
     return auth.handler(c.req.raw);
   });
   app.use("/rpc/*", async (c, next) => {
-    const session = await auth.api.getSession({ headers: c.req.raw.headers });
+    const session = await auth.api.getSession({ headers: sessionHeaders(c.req.raw) });
     const actor = session?.user
       ? await requireMembership(prisma, session.user.id).catch(() => null)
       : null;
@@ -153,4 +170,25 @@ export async function createApp(overrides: Partial<AppEnv> & { prisma?: PrismaCl
       await created.pool?.end().catch(() => undefined);
     },
   };
+}
+
+export function isTrustedOrigin(origin: string, env: AppEnv) {
+  if (!origin) return true;
+  if (origin === env.webOrigin || origin === env.apiUrl || origin === env.authUrl) return true;
+  if (origin.startsWith("rakazo://") || origin.startsWith("exp://")) return true;
+  try {
+    const host = new URL(origin).hostname;
+    return host === "localhost" || host === "127.0.0.1";
+  } catch {
+    return false;
+  }
+}
+
+function sessionHeaders(request: Request) {
+  const headers = new Headers(request.headers);
+  const authz = headers.get("authorization");
+  if (authz?.toLowerCase().startsWith("bearer ") && !headers.get("cookie")) {
+    headers.set("cookie", `better-auth.session_token=${authz.slice(7).trim()}`);
+  }
+  return headers;
 }

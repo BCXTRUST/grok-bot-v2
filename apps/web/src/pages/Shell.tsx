@@ -4,7 +4,9 @@ import { BotAvatar, Button } from "@rakazo/ui-web";
 import type { Bot, ComputerStatus, Routine, ThreadMessage, ThreadSnapshot } from "@rakazo/contracts";
 import { authClient } from "../lib/auth";
 import { rpc } from "../lib/rpc";
+import { desktopBridge } from "../lib/desktop";
 import { PluginsOverlay } from "./PluginsOverlay";
+import { WindowChrome } from "./WindowChrome";
 
 type Panel = "computer" | "settings" | "routine" | null;
 
@@ -129,13 +131,14 @@ export function ShellPage() {
   return (
     <div className="relative flex h-full min-w-0 overflow-hidden bg-[#050506] text-[#DFDFE2]">
       <aside className="flex w-[316px] shrink-0 flex-col border-r border-[#171719] bg-[#0B0B0C]">
-        <div className="flex items-center justify-between px-[18px] pb-3 pt-4">
-          <div className="flex gap-[7px]">
-            <span className="h-3 w-3 rounded-full bg-[#FF5F57]" />
-            <span className="h-3 w-3 rounded-full bg-[#FEBC2E]" />
-            <span className="h-3 w-3 rounded-full bg-[#28C840]" />
-          </div>
-          <button type="button" onClick={() => void createBot()} className="text-[21px] text-[#7A7A80] hover:text-[#C9C9CE]" title="New bot">
+        <div className="app-drag flex items-center justify-between px-[18px] pb-3 pt-4">
+          <WindowChrome />
+          <button
+            type="button"
+            onClick={() => void createBot()}
+            className="app-no-drag text-[21px] text-[#7A7A80] hover:text-[#C9C9CE]"
+            title="New bot"
+          >
             +
           </button>
         </div>
@@ -566,6 +569,14 @@ function BotSettings({
   const [name, setName] = useState(bot.name);
   const [title, setTitle] = useState(bot.title);
   const [description, setDescription] = useState(bot.description);
+  const desktop = desktopBridge();
+  const [grants, setGrants] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (!desktop) return;
+    void desktop.listGrants().then(setGrants).catch(() => undefined);
+  }, [desktop]);
+
   return (
     <div>
       <div className="flex justify-center">
@@ -593,6 +604,31 @@ function BotSettings({
       <button type="button" onClick={() => void onExport()} className="mt-3 text-[14px] text-[#85858A]">
         Export without secrets
       </button>
+      {desktop ? (
+        <div className="mt-8">
+          <div className="text-[14px] text-[#85858A]">Local folders</div>
+          <p className="mt-1 text-[13px] text-[#6C6C70]">
+            The desktop executor can only read folders you grant here.
+          </p>
+          <ul className="mt-2 text-[13px] text-[#C9C9CE]">
+            {grants.map((grant) => (
+              <li key={grant}>{grant}</li>
+            ))}
+          </ul>
+          <button
+            type="button"
+            className="mt-3 rounded-[11px] border border-[#26262A] px-4 py-2 text-[14px] text-[#ECECEE]"
+            onClick={async () => {
+              const folder = await desktop.grantFolder();
+              if (!folder) return;
+              await rpc.computer.grantFolder({ folder });
+              setGrants(await desktop.listGrants());
+            }}
+          >
+            Grant folder
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }

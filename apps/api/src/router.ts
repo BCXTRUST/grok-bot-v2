@@ -9,8 +9,18 @@ import {
 import { nextCronDate, projectMessages } from "@rakazo/core";
 import { appendEvent, createRepos, eventsAfter, IsolationError, requireMembership, type PrismaClient } from "@rakazo/db";
 import type { AgentHomeStore, MemoryStore, SandboxProvider, WakeupDriver } from "@rakazo/adapter-kit";
-import { EncryptedSecretStore, resolveAgentHomePath, sanitizeComposioError, type ComposioConnector } from "@rakazo/adapters";
+import {
+  addFolderGrant,
+  DesktopSandboxProvider,
+  EncryptedSecretStore,
+  loadFolderGrants,
+  resolveAgentHomePath,
+  sanitizeComposioError,
+  savePushToken,
+  type ComposioConnector,
+} from "@rakazo/adapters";
 import { mkdir } from "node:fs/promises";
+import path from "node:path";
 import type { Auth } from "@rakazo/auth";
 
 export interface RouterDeps {
@@ -22,6 +32,7 @@ export interface RouterDeps {
   home: AgentHomeStore;
   secrets: EncryptedSecretStore;
   composio?: ComposioConnector;
+  dataDir: string;
   env: {
     defaultProvider: string;
     defaultModel: string;
@@ -518,6 +529,16 @@ export function createRouter(deps: RouterDeps) {
         if (!session.url) return { url: null };
         return { url: withViewOnly(session.url, bot.computer.controlHolder !== "user") };
       }),
+      grantFolder: authed.computer.grantFolder.handler(async ({ context, input }) => {
+        const folder = path.resolve(input.folder);
+        if (!path.isAbsolute(folder)) throw new ORPCError("BAD_REQUEST", { message: "Folder path must be absolute" });
+        const grants = await addFolderGrant(deps.dataDir, context.actor.userId, folder);
+        applyDesktopGrant(deps.sandbox, folder);
+        return { grants };
+      }),
+      listGrants: authed.computer.listGrants.handler(async ({ context }) => {
+        return { grants: await loadFolderGrants(deps.dataDir, context.actor.userId) };
+      }),
     },
     memory: {
       list: authed.memory.list.handler(async ({ context, input }) => {
@@ -925,7 +946,17 @@ export function createRouter(deps: RouterDeps) {
         };
       }),
     },
+    notifications: {
+      registerPush: authed.notifications.registerPush.handler(async ({ context, input }) => {
+        await savePushToken(deps.dataDir, context.actor.userId, input.token);
+        return { ok: true as const };
+      }),
+    },
   });
+}
+
+function applyDesktopGrant(sandbox: SandboxProvider, folder: string) {
+  if (sandbox instanceof DesktopSandboxProvider) sandbox.addGrant(folder);
 }
 
 async function snapshot(

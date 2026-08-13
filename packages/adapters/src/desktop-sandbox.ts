@@ -57,6 +57,14 @@ export class DesktopSandboxProvider implements SandboxProvider {
     return ref;
   }
 
+  addGrant(folder: string) {
+    const resolved = path.resolve(folder);
+    this.opts.grants = [...new Set([...(this.opts.grants ?? []), resolved])];
+    for (const box of this.boxes.values()) {
+      if (!box.grants.includes(resolved)) box.grants.push(resolved);
+    }
+  }
+
   async *execute(
     computer: ComputerRef,
     request: CommandRequest,

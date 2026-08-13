@@ -3,7 +3,12 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     environment: "node",
-    include: ["packages/*/src/**/*.test.ts", "infra/sandboxes/supervisor/src/**/*.test.ts"],
+    include: [
+      "packages/*/src/**/*.test.ts",
+      "infra/sandboxes/supervisor/src/**/*.test.ts",
+      "apps/desktop/src/**/*.test.ts",
+      "apps/web/src/**/*.test.ts",
+    ],
     testTimeout: 30_000,
     hookTimeout: 60_000,
   },

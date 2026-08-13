@@ -60,6 +60,18 @@ describe("sandbox conformance", () => {
     expect(stderr).toMatch(/not granted/i);
     await desktop.destroy(computer);
   });
+
+  it("desktop addGrant unlocks a previously refused path", async () => {
+    const desktop = new DesktopSandboxProvider({ grants: [] });
+    const computer = await desktop.provision({ botId: "grant-add", homePath: "/tmp/grant-add" }, ctx);
+    desktop.addGrant("/etc");
+    let code = 1;
+    for await (const event of desktop.execute(computer, { argv: ["echo", "granted"], cwd: "/etc" }, ctx)) {
+      if (event.type === "exit") code = event.code;
+    }
+    expect(code).toBe(0);
+    await desktop.destroy(computer);
+  });
 });
 
 describe("docker sandbox", () => {

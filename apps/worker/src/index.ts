@@ -26,9 +26,11 @@ import {
   createRunExecutor,
   createSandboxProvider,
   EncryptedSecretStore,
+  ExpoPushProvider,
   GraphileWakeupDriver,
   InMemoryWakeupDriver,
   isComposioEnabled,
+  loadAllFolderGrants,
   LocalAgentHomeStore,
   PiAgentRuntime,
   ScriptedAgentRuntime,
@@ -42,10 +44,13 @@ async function main() {
   const { prisma } = createDb(databaseUrl);
   const runtime =
     process.env.AGENT_RUNTIME === "pi" ? new PiAgentRuntime() : new ScriptedAgentRuntime();
+  const dataDir = process.env.DATA_DIR ?? "./data";
+  const desktopGrants = await loadAllFolderGrants(dataDir);
   const sandbox = createSandboxProvider(process.env.SANDBOX_PROVIDER ?? "fake", {
     supervisorUrl: process.env.SANDBOX_SUPERVISOR_URL ?? "http://127.0.0.1:7091",
     e2bApiKey: process.env.E2B_API_KEY,
-    dataDir: process.env.DATA_DIR ?? "./data",
+    dataDir,
+    desktopGrants,
   });
   const stack = createConnectorStack(isComposioEnabled(process.env.COMPOSIO_API_KEY));
   const connector = stack.destination;
@@ -56,12 +61,13 @@ async function main() {
     runtime,
     sandbox,
     memory: new MarkdownMemoryStore(prisma),
-    home: new LocalAgentHomeStore(process.env.DATA_DIR ?? "./data"),
+    home: new LocalAgentHomeStore(dataDir),
     connector: stack.connector,
     secrets: [process.env.OPENROUTER_API_KEY ?? "", process.env.COMPOSIO_API_KEY ?? ""].filter(Boolean),
     secretStore: secrets,
     deploymentModelKey: process.env.OPENROUTER_API_KEY,
-    dataDir: process.env.DATA_DIR ?? "./data",
+    dataDir,
+    notifications: new ExpoPushProvider(dataDir),
   });
 
   const wakeup =

@@ -1,6 +1,6 @@
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
-import { organization } from "better-auth/plugins";
+import { organization, bearer } from "better-auth/plugins";
 import { emailAllowed, parseAllowlist, signupsOpen } from "@rakazo/core";
 import { APIError } from "better-auth/api";
 import type { PrismaClient } from "@rakazo/db";
@@ -12,6 +12,7 @@ export interface AuthEnv {
   webOrigin: string;
   signupsEnabled: string | undefined;
   signupAllowlist: string | undefined;
+  extraOrigins?: string[];
 }
 
 function newId(): string {
@@ -23,13 +24,14 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
     appName: "Rakazo",
     secret: env.secret,
     baseURL: env.baseURL,
-    trustedOrigins: [env.webOrigin, env.baseURL],
+    trustedOrigins: [env.webOrigin, env.baseURL, ...(env.extraOrigins ?? [])],
     database: prismaAdapter(prisma, { provider: "postgresql" }),
     emailAndPassword: {
       enabled: true,
       disableSignUp: !signupsOpen(env.signupsEnabled),
     },
     plugins: [
+      bearer(),
       organization({
         allowUserToCreateOrganization: false,
         creatorRole: "owner",
