@@ -11,7 +11,6 @@ import { BotAvatar, Button } from "@rakazo/ui-web";
 import { type Dispatch, type SetStateAction, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { authClient } from "../lib/auth";
-import { desktopBridge } from "../lib/desktop";
 import { rpc } from "../lib/rpc";
 import { PluginsOverlay } from "./PluginsOverlay";
 import { WindowChrome } from "./WindowChrome";
@@ -970,16 +969,6 @@ function BotSettings({
   const [name, setName] = useState(bot.name);
   const [title, setTitle] = useState(bot.title);
   const [description, setDescription] = useState(bot.description);
-  const desktop = desktopBridge();
-  const [grants, setGrants] = useState<string[]>([]);
-
-  useEffect(() => {
-    if (!desktop) return;
-    void desktop
-      .listGrants()
-      .then(setGrants)
-      .catch(() => undefined);
-  }, [desktop]);
 
   return (
     <div>
@@ -1011,45 +1000,22 @@ function BotSettings({
           className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
         />
       </label>
-      <button
-        type="button"
-        onClick={() => void onSave({ name, title, description, instructions: description })}
-        className="mt-5 rounded-[11px] bg-[#F1F1EF] px-4 py-2 text-[#17171A]"
-      >
-        Save
-      </button>
-      <button
-        type="button"
-        onClick={() => void onExport()}
-        className="mt-3 text-[14px] text-[#85858A]"
-      >
-        Export without secrets
-      </button>
-      {desktop ? (
-        <div className="mt-8">
-          <div className="text-[14px] text-[#85858A]">Local folders</div>
-          <p className="mt-1 text-[13px] text-[#6C6C70]">
-            The desktop executor can only read folders you grant here.
-          </p>
-          <ul className="mt-2 text-[13px] text-[#C9C9CE]">
-            {grants.map((grant) => (
-              <li key={grant}>{grant}</li>
-            ))}
-          </ul>
-          <button
-            type="button"
-            className="mt-3 rounded-[11px] border border-[#26262A] px-4 py-2 text-[14px] text-[#ECECEE]"
-            onClick={async () => {
-              const folder = await desktop.grantFolder();
-              if (!folder) return;
-              await rpc.computer.grantFolder({ folder });
-              setGrants(await desktop.listGrants());
-            }}
-          >
-            Grant folder
-          </button>
-        </div>
-      ) : null}
+      <div className="mt-5 flex flex-col items-start gap-3">
+        <button
+          type="button"
+          onClick={() => void onSave({ name, title, description, instructions: description })}
+          className="rounded-[11px] bg-[#F1F1EF] px-4 py-2 text-[#17171A]"
+        >
+          Save
+        </button>
+        <button
+          type="button"
+          onClick={() => void onExport()}
+          className="text-[14px] text-[#85858A]"
+        >
+          Export
+        </button>
+      </div>
     </div>
   );
 }

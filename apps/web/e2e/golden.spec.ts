@@ -67,7 +67,7 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }) =>
     await page.getByTitle("Agent computer").click();
   }
   await gear.click();
-  await expect(page.getByText("Export without secrets")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Export" })).toBeVisible();
 });
 
 async function completeOnboarding(page: Page, answers: string[]) {

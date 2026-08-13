@@ -71,7 +71,7 @@ The Electron shell loads the same web UI. Leave `pnpm dev` running, then:
 pnpm --filter @rakazo/desktop dev
 ```
 
-Native red / yellow / green buttons close, minimize, and zoom that window. They do nothing in the browser tab. In the bot settings panel, **Grant folder** lets the desktop executor read a directory you pick. It will not upload the folder wholesale.
+Native red / yellow / green buttons close, minimize, and zoom that window. They do nothing in the browser tab. The desktop app is a client of the same API; bot computers still run in Docker or E2B.
 
 Point Electron at a different origin with `RAKAZO_WEB_URL` (default `http://127.0.0.1:5173`).
 
