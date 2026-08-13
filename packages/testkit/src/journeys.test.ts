@@ -368,6 +368,75 @@ describeJourneys("required product journeys", () => {
     expect(existsSync(home)).toBe(false);
   });
 
+  it("12: a bot can spawn a regular bot and must confirm the name to delete it", async () => {
+    const cookie = await signup(app, `spawn-j-${stamp}@rakazo.test`, "Spawn");
+    const parent = await rpc<Bot>(app, cookie, "bots/create", {
+      name: "Chief",
+      title: "",
+      description: "",
+      instructions: "",
+      notifyOnFinish: true,
+    });
+    await sendAndWait(app, cookie, parent.id, "spawn a bot named Scout to research venues");
+    const listed = await rpc<Bot[]>(app, cookie, "bots/list");
+    const scout = listed.find((bot) => bot.name === "Scout");
+    expect(scout).toBeTruthy();
+    expect(listed.map((bot) => bot.name).sort()).toEqual(["Chief", "Scout"]);
+    await waitFor(
+      app,
+      cookie,
+      scout!.id,
+      (s) => !s.run || ["completed", "failed", "cancelled"].includes(s.run.status),
+    );
+    const snap = await rpc<Snap>(app, cookie, "threads/get", { botId: parent.id });
+    expect(JSON.stringify(snap.messages)).toMatch(/child_bot|Scout/);
+
+    await sendAndWait(app, cookie, scout!.id, "spawn a bot named Nested");
+    const afterNested = await rpc<Bot[]>(app, cookie, "bots/list");
+    const nested = afterNested.find((bot) => bot.name === "Nested");
+    expect(nested).toBeTruthy();
+    expect(afterNested.map((bot) => bot.name).sort()).toEqual(["Chief", "Nested", "Scout"]);
+    await waitFor(
+      app,
+      cookie,
+      nested!.id,
+      (s) => !s.run || ["completed", "failed", "cancelled"].includes(s.run.status),
+    );
+
+    await sendAndWait(app, cookie, parent.id, "delete the bot named Nested");
+    expect((await rpc<Bot[]>(app, cookie, "bots/list")).some((bot) => bot.id === nested!.id)).toBe(
+      true,
+    );
+
+    await sendAndWait(app, cookie, parent.id, "delete the bot named WrongName");
+    expect((await rpc<Bot[]>(app, cookie, "bots/list")).some((bot) => bot.id === scout!.id)).toBe(
+      true,
+    );
+
+    await sendAndWait(app, cookie, parent.id, "delete the bot named Scout");
+    const afterScout = await rpc<Bot[]>(app, cookie, "bots/list");
+    expect(afterScout.some((bot) => bot.id === scout!.id)).toBe(false);
+    expect(afterScout.some((bot) => bot.id === nested!.id)).toBe(true);
+
+    await rpc(app, cookie, "bots/remove", { botId: parent.id });
+    expect((await rpc<Bot[]>(app, cookie, "bots/list")).map((bot) => bot.name)).toEqual(["Nested"]);
+  });
+
+  it("13: a subagent shows up in the parent thread without creating a bot", async () => {
+    const cookie = await signup(app, `subagent-j-${stamp}@rakazo.test`, "Subagent");
+    const bot = await rpc<Bot>(app, cookie, "bots/create", {
+      name: "Chief",
+      title: "",
+      description: "",
+      instructions: "",
+      notifyOnFinish: true,
+    });
+    const before = (await rpc<Bot[]>(app, cookie, "bots/list")).length;
+    const snap = await sendAndWait(app, cookie, bot.id, "run a subagent to summarize the notes");
+    expect(JSON.stringify(snap.messages)).toMatch(/subagent|helper/);
+    expect(await rpc<Bot[]>(app, cookie, "bots/list")).toHaveLength(before);
+  });
+
   it("11: compose backup docs and dump tooling exist", async () => {
     expect(existsSync(path.resolve("docs/self-host.md"))).toBe(true);
     expect(existsSync(path.resolve("infra/compose/docker-compose.yml"))).toBe(true);
@@ -380,7 +449,7 @@ describeJourneys("required product journeys", () => {
 });
 
 type Me = { workspaceId: string; userId: string };
-type Bot = { id: string; name: string };
+type Bot = { id: string; name: string; parentBotId?: string | null };
 type Snap = {
   messages: Array<{ seq: number; blocks: unknown[] }>;
   run: { status: string } | null;

@@ -14,6 +14,7 @@ import type { Actor, MessageBlock, RunStatus } from "@rakazo/contracts";
 import { assertTransition, containsSecret, nextCronDate, redactSecrets } from "@rakazo/core";
 import { appendEvent, type PrismaClient } from "@rakazo/db";
 import { builtinAgentTools } from "./builtin-tools.js";
+import { deleteSpawnedBot, spawnBot } from "./child-bots.js";
 import { collectLogIds } from "./composio-connector.js";
 import { scheduleComputerSleep } from "./computer-idle.js";
 import { resolveAgentHomePath } from "./home.js";
@@ -217,6 +218,83 @@ export function createRunExecutor(deps: ExecutorDeps) {
           return { ok: true };
         }
         if (name === "request_takeover") return { ok: true };
+        if (name === "run_subagent") {
+          return {
+            ok: true,
+            result: String(args.task ?? "done."),
+          };
+        }
+        if (name === "spawn_bot") {
+          const spawned = await spawnBot(deps, {
+            spawnedBy: {
+              id: bot.id,
+              name: bot.name,
+              workspaceId: bot.workspaceId,
+              userId: run.userId,
+            },
+            runId,
+            name: String(args.name ?? ""),
+            title: args.title ? String(args.title) : undefined,
+            instructions: args.instructions ? String(args.instructions) : undefined,
+            prompt: args.prompt ? String(args.prompt) : undefined,
+          });
+          if ("error" in spawned) return spawned;
+          await publishMessage(deps, actor, thread.id, bot.id, runId, "bot", [
+            {
+              kind: "child_bot",
+              botId: spawned.botId,
+              name: spawned.name,
+              title: spawned.title,
+              status: "created",
+            },
+          ]);
+          await appendEvent(deps.prisma, {
+            workspaceId: run.workspaceId,
+            threadId: thread.id,
+            botId: bot.id,
+            runId: run.id,
+            type: "bot.spawned",
+            payload: { childBotId: spawned.botId, name: spawned.name },
+          });
+          await completeEffect(deps, applied.effect.id, spawned);
+          return spawned;
+        }
+        if (name === "delete_bot") {
+          const removed = await deleteSpawnedBot(
+            deps,
+            {
+              spawnedByBotId: bot.id,
+              userId: run.userId,
+              workspaceId: run.workspaceId,
+              confirmName: String(args.confirm_name ?? args.confirmName ?? ""),
+              botId: args.bot_id
+                ? String(args.bot_id)
+                : args.botId
+                  ? String(args.botId)
+                  : undefined,
+            },
+            context,
+          );
+          if ("error" in removed) return removed;
+          await publishMessage(deps, actor, thread.id, bot.id, runId, "bot", [
+            {
+              kind: "child_bot",
+              botId: removed.botId,
+              name: removed.name,
+              status: "deleted",
+            },
+          ]);
+          await appendEvent(deps.prisma, {
+            workspaceId: run.workspaceId,
+            threadId: thread.id,
+            botId: bot.id,
+            runId: run.id,
+            type: "bot.deleted",
+            payload: { childBotId: removed.botId, name: removed.name },
+          });
+          await completeEffect(deps, applied.effect.id, removed);
+          return removed;
+        }
         if (deps.connector) {
           let result: unknown = { error: `unknown tool ${name}` };
           for await (const event of deps.connector.execute(
@@ -259,6 +337,10 @@ export function createRunExecutor(deps: ExecutorDeps) {
             instructions: [
               bot.instructions || `${bot.name}: ${bot.title}\n${bot.description}`,
               "You have a persistent computer. Use write_file to save files into your home (they appear in Files). Use shell to run commands in that computer. Use remember for durable facts. Use request_takeover when the user must type on the screen. Use destination.write only for connected destination records.",
+              "A bot and a subagent are different. Never use both for the same request.",
+              "spawn_bot creates a lasting regular bot (own chat, computer, memory) that appears in the user's bot list. If the user asked to create a bot, call spawn_bot once and stop. Do not run_subagent to demo it.",
+              "run_subagent is a short helper inside this turn only. It is not a bot, has no thread, and does not show in the list. Use it for parallel work you will summarize here.",
+              "delete_bot permanently destroys a bot this bot created, and only that bot. Only delete when the user asked or that bot is finished and unused. confirm_name must exactly match its name.",
               pluginLine,
               "Never print API keys, access tokens, or secret values. Prefer tools over claiming you already did the work.",
             ].join("\n\n"),
@@ -352,6 +434,35 @@ export function createRunExecutor(deps: ExecutorDeps) {
             return;
           } else if (event.type === "tool") {
             if (scripted) await applyTool(event.name, event.args, event.executionId);
+          } else if (event.type === "subagent") {
+            await appendEvent(deps.prisma, {
+              workspaceId: run.workspaceId,
+              threadId: thread.id,
+              botId: bot.id,
+              type: "thread.subagent",
+              runId,
+              payload: {
+                agentId: event.agentId,
+                name: event.name,
+                task: event.task,
+                status: event.status,
+                progress: event.progress,
+                result: event.result,
+              },
+            });
+            if (event.status === "completed" || event.status === "failed") {
+              await publishMessage(deps, actor, thread.id, bot.id, runId, "bot", [
+                {
+                  kind: "subagent",
+                  agentId: event.agentId,
+                  name: event.name,
+                  task: event.task,
+                  status: event.status,
+                  progress: event.progress,
+                  result: event.result,
+                },
+              ]);
+            }
           } else if (event.type === "usage") {
             await deps.prisma.usageRecord.create({
               data: {
@@ -541,6 +652,13 @@ async function recordEffect(
     data: { status: "completed", result: { ok: true } },
   });
   return { duplicate: false, effect };
+}
+
+async function completeEffect(deps: ExecutorDeps, effectId: string, result: unknown) {
+  await deps.prisma.externalEffect.update({
+    where: { id: effectId },
+    data: { result: result as never },
+  });
 }
 
 async function ensureComputer(

@@ -13,6 +13,8 @@ export function projectMessages(
 ): ThreadMessage[] {
   const messages: ThreadMessage[] = [];
   let streaming: ThreadMessage | null = null;
+  const liveSubagents = new Map<string, ThreadMessage>();
+  const durableSubagents = new Set<string>();
   for (const event of events) {
     const payload = asRecord(event.payload);
     const createdAt =
@@ -21,6 +23,12 @@ export function projectMessages(
       streaming = null;
       const role = (payload.role as ThreadMessage["role"]) ?? "bot";
       const blocks = (payload.blocks as MessageBlock[]) ?? [];
+      for (const block of blocks) {
+        if (block.kind === "subagent") {
+          durableSubagents.add(block.agentId);
+          liveSubagents.delete(block.agentId);
+        }
+      }
       messages.push({
         id: (payload.messageId as string) ?? event.id,
         threadId: event.threadId,
@@ -45,6 +53,20 @@ export function projectMessages(
       };
       continue;
     }
+    if (event.type === "thread.subagent") {
+      const block = subagentBlockFromPayload(payload);
+      if (durableSubagents.has(block.agentId)) continue;
+      liveSubagents.set(block.agentId, {
+        id: `subagent:${block.agentId}`,
+        threadId: event.threadId,
+        seq: event.seq,
+        role: "bot",
+        blocks: [block],
+        runId: event.runId ?? undefined,
+        createdAt,
+      });
+      continue;
+    }
     if (
       event.type === "run.completed" ||
       event.type === "run.failed" ||
@@ -53,8 +75,24 @@ export function projectMessages(
       streaming = null;
     }
   }
+  for (const live of liveSubagents.values()) messages.push(live);
   if (streaming) messages.push(streaming);
   return messages;
+}
+
+export function subagentBlockFromPayload(
+  payload: Record<string, unknown>,
+): Extract<MessageBlock, { kind: "subagent" }> {
+  const status = payload.status;
+  return {
+    kind: "subagent",
+    agentId: String(payload.agentId ?? ""),
+    name: String(payload.name ?? "subagent"),
+    task: String(payload.task ?? ""),
+    status: status === "completed" || status === "failed" ? status : "running",
+    progress: payload.progress ? String(payload.progress) : undefined,
+    result: payload.result ? String(payload.result) : undefined,
+  };
 }
 
 export function redactSecrets(value: string, secrets: string[]): string {

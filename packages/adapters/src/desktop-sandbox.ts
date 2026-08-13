@@ -17,7 +17,6 @@ import type {
 interface DesktopBox {
   ref: ComputerRef;
   home: string;
-  grants: string[];
   running: boolean;
   screen: string;
 }
@@ -25,7 +24,7 @@ interface DesktopBox {
 export class DesktopSandboxProvider implements SandboxProvider {
   readonly boxes = new Map<string, DesktopBox>();
 
-  constructor(private readonly opts: { root?: string; grants?: string[] } = {}) {}
+  constructor(private readonly opts: { root?: string } = {}) {}
 
   describe() {
     return {
@@ -57,19 +56,10 @@ export class DesktopSandboxProvider implements SandboxProvider {
     this.boxes.set(id, {
       ref,
       home,
-      grants: [...(this.opts.grants ?? []), home],
       running: true,
       screen: "ready",
     });
     return ref;
-  }
-
-  addGrant(folder: string) {
-    const resolved = path.resolve(folder);
-    this.opts.grants = [...new Set([...(this.opts.grants ?? []), resolved])];
-    for (const box of this.boxes.values()) {
-      if (!box.grants.includes(resolved)) box.grants.push(resolved);
-    }
   }
 
   async *execute(
@@ -84,8 +74,8 @@ export class DesktopSandboxProvider implements SandboxProvider {
       return;
     }
     const cwd = request.cwd ? path.resolve(box.home, request.cwd) : box.home;
-    if (!allowedPath(cwd, box.grants)) {
-      yield { type: "stderr", data: "path is not granted" };
+    if (!allowedPath(cwd, box.home)) {
+      yield { type: "stderr", data: "path is outside this computer's home" };
       yield { type: "exit", code: 1 };
       return;
     }
@@ -142,12 +132,10 @@ export class DesktopSandboxProvider implements SandboxProvider {
   }
 }
 
-function allowedPath(target: string, grants: string[]) {
+function allowedPath(target: string, home: string) {
   const resolved = path.resolve(target);
-  return grants.some((grant) => {
-    const root = path.resolve(grant);
-    return resolved === root || resolved.startsWith(root + path.sep);
-  });
+  const root = path.resolve(home);
+  return resolved === root || resolved.startsWith(root + path.sep);
 }
 
 function runCommand(

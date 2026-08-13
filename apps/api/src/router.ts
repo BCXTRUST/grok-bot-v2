@@ -1,5 +1,4 @@
-import { mkdir, rm } from "node:fs/promises";
-import path from "node:path";
+import { mkdir } from "node:fs/promises";
 import { implement, ORPCError } from "@orpc/server";
 import type {
   AgentHomeStore,
@@ -8,12 +7,10 @@ import type {
   WakeupDriver,
 } from "@rakazo/adapter-kit";
 import {
-  addFolderGrant,
   type ComposioConnector,
-  DesktopSandboxProvider,
+  destroyBot,
   type EncryptedSecretStore,
   listPiCatalog,
-  loadFolderGrants,
   type PiOAuthLogins,
   resolveAgentHomePath,
   sanitizeComposioError,
@@ -210,37 +207,22 @@ export function createRouter(deps: RouterDeps) {
       }),
       remove: authed.bots.remove.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);
-        await deps.prisma.run.updateMany({
-          where: {
-            botId: bot.id,
-            status: { in: ["queued", "leased", "running", "waiting_input", "waiting_takeover"] },
+        await destroyBot(
+          {
+            prisma: deps.prisma,
+            sandbox: deps.sandbox,
+            home: deps.home,
+            dataDir: deps.dataDir,
           },
-          data: { status: "cancelled", completedAt: new Date() },
-        });
-        if (bot.computer?.providerRef) {
-          await deps.sandbox
-            .destroy(
-              {
-                id: bot.computer.providerRef,
-                botId: bot.id,
-                kind: bot.computer.kind as never,
-                providerRef: bot.computer.providerRef,
-              },
-              {
-                operationId: "destroy",
-                traceId: "destroy",
-                workspaceId: context.actor.workspaceId,
-                userId: context.actor.userId,
-                signal: new AbortController().signal,
-              },
-            )
-            .catch(() => undefined);
-        }
-        await deps.prisma.bot.delete({ where: { id: input.botId } });
-        await rm(resolveAgentHomePath(deps.home, bot.id, deps.dataDir), {
-          recursive: true,
-          force: true,
-        }).catch(() => undefined);
+          bot.id,
+          {
+            operationId: "destroy",
+            traceId: "destroy",
+            workspaceId: context.actor.workspaceId,
+            userId: context.actor.userId,
+            signal: new AbortController().signal,
+          },
+        );
         return { ok: true as const };
       }),
     },
@@ -606,17 +588,6 @@ export function createRouter(deps: RouterDeps) {
           ).catch(() => undefined);
         }
         return { ok: true as const };
-      }),
-      grantFolder: authed.computer.grantFolder.handler(async ({ context, input }) => {
-        const folder = path.resolve(input.folder);
-        if (!path.isAbsolute(folder))
-          throw new ORPCError("BAD_REQUEST", { message: "Folder path must be absolute" });
-        const grants = await addFolderGrant(deps.dataDir, context.actor.userId, folder);
-        applyDesktopGrant(deps.sandbox, folder);
-        return { grants };
-      }),
-      listGrants: authed.computer.listGrants.handler(async ({ context }) => {
-        return { grants: await loadFolderGrants(deps.dataDir, context.actor.userId) };
       }),
     },
     memory: {
@@ -1062,10 +1033,6 @@ export function createRouter(deps: RouterDeps) {
   });
 }
 
-function applyDesktopGrant(sandbox: SandboxProvider, folder: string) {
-  if (sandbox instanceof DesktopSandboxProvider) sandbox.addGrant(folder);
-}
-
 async function snapshot(
   deps: RouterDeps,
   actor: Actor,
@@ -1089,12 +1056,16 @@ async function snapshot(
     runId: row.runId ?? undefined,
     createdAt: row.createdAt.toISOString(),
   }));
-  const streaming = projected.at(-1);
-  const messages = streaming?.blocks.some((block) => block.kind === "progress")
-    ? [...persisted, streaming]
-    : persisted.length
-      ? persisted
-      : projected;
+  const live = projected.filter((message) => {
+    if (message.blocks.some((block) => block.kind === "progress")) return true;
+    if (!message.id.startsWith("subagent:")) return false;
+    return !persisted.some((row) =>
+      row.blocks.some(
+        (block) => block.kind === "subagent" && message.id === `subagent:${block.agentId}`,
+      ),
+    );
+  });
+  const messages = persisted.length || live.length ? [...persisted, ...live] : projected;
   const run = await deps.prisma.run.findFirst({
     where: {
       botId,

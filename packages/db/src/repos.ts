@@ -12,6 +12,7 @@ function mapBot(
     instructions: string;
     color: string;
     notifyOnFinish: boolean;
+    parentBotId: string | null;
     createdAt: Date;
     updatedAt: Date;
     thread: { id: string } | null;
@@ -31,6 +32,7 @@ function mapBot(
     instructions: bot.instructions,
     color: bot.color,
     notifyOnFinish: bot.notifyOnFinish,
+    parentBotId: bot.parentBotId,
     threadId: bot.thread.id,
     preview,
     status,
@@ -90,12 +92,23 @@ export function createRepos(prisma: PrismaClient) {
         instructions: string;
         notifyOnFinish: boolean;
         color?: string;
+        parentBotId?: string | null;
       },
     ): Promise<Bot> {
       const count = await prisma.bot.count({
         where: { workspaceId: actor.workspaceId, userId: actor.userId },
       });
       const color = input.color ?? BOT_COLORS[count % BOT_COLORS.length] ?? BOT_COLORS[0];
+      if (input.parentBotId) {
+        const parent = await prisma.bot.findFirst({
+          where: {
+            id: input.parentBotId,
+            workspaceId: actor.workspaceId,
+            userId: actor.userId,
+          },
+        });
+        if (!parent) throw new IsolationError();
+      }
       const bot = await prisma.$transaction(async (tx) => {
         const created = await tx.bot.create({
           data: {
@@ -107,6 +120,7 @@ export function createRepos(prisma: PrismaClient) {
             instructions: input.instructions,
             notifyOnFinish: input.notifyOnFinish,
             color,
+            parentBotId: input.parentBotId ?? null,
           },
         });
         await tx.thread.create({

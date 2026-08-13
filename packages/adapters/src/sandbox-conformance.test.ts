@@ -54,8 +54,8 @@ describe("sandbox conformance", () => {
     await desktop.destroy(c, ctx);
   });
 
-  it("desktop executor refuses paths outside granted folders", async () => {
-    const desktop = new DesktopSandboxProvider({ grants: [] });
+  it("desktop executor refuses paths outside the computer home", async () => {
+    const desktop = new DesktopSandboxProvider();
     const computer = await desktop.provision({ botId: "grant", homePath: "/tmp/grant" }, ctx);
     let stderr = "";
     let code = 0;
@@ -68,26 +68,7 @@ describe("sandbox conformance", () => {
       if (event.type === "exit") code = event.code;
     }
     expect(code).toBe(1);
-    expect(stderr).toMatch(/not granted/i);
-    await desktop.destroy(computer, ctx);
-  });
-
-  it("desktop addGrant unlocks a previously refused path", async () => {
-    const desktop = new DesktopSandboxProvider({ grants: [] });
-    const computer = await desktop.provision(
-      { botId: "grant-add", homePath: "/tmp/grant-add" },
-      ctx,
-    );
-    desktop.addGrant("/etc");
-    let code = 1;
-    for await (const event of desktop.execute(
-      computer,
-      { argv: ["echo", "granted"], cwd: "/etc" },
-      ctx,
-    )) {
-      if (event.type === "exit") code = event.code;
-    }
-    expect(code).toBe(0);
+    expect(stderr).toMatch(/outside this computer's home/i);
     await desktop.destroy(computer, ctx);
   });
 });

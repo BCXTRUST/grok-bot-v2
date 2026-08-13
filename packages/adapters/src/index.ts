@@ -1,5 +1,6 @@
 export * from "./artifacts.js";
 export * from "./builtin-tools.js";
+export * from "./child-bots.js";
 export * from "./composio-catalog-cache.js";
 export * from "./composio-connector.js";
 export * from "./computer-idle.js";
@@ -11,7 +12,6 @@ export * from "./e2b-sandbox.js";
 export * from "./executor.js";
 export * from "./expo-push.js";
 export * from "./fake-sandbox.js";
-export * from "./folder-grants.js";
 export * from "./home.js";
 export * from "./mcp-emulator.js";
 export * from "./pi-models.js";

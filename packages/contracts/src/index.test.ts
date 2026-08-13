@@ -14,8 +14,9 @@ describe("contracts", () => {
     expect(appContract.bots.create).toBeTruthy();
     expect(appContract.bots.remove).toBeTruthy();
     expect(appContract.threads.subscribe).toBeTruthy();
-    expect(appContract.computer.grantFolder).toBeTruthy();
     expect(appContract.notifications.registerPush).toBeTruthy();
     expect(ProductEventType.options).toContain("thread.message.created");
+    expect(ProductEventType.options).toContain("thread.subagent");
+    expect(ProductEventType.options).toContain("bot.spawned");
   });
 });

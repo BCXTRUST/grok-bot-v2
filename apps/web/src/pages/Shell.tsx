@@ -7,7 +7,13 @@ import type {
   ThreadMessage,
   ThreadSnapshot,
 } from "@rakazo/contracts";
-import { cronFromPreset, defaultCronPreset, formatCron, presetFromCron } from "@rakazo/core";
+import {
+  cronFromPreset,
+  defaultCronPreset,
+  formatCron,
+  presetFromCron,
+  subagentBlockFromPayload,
+} from "@rakazo/core";
 import { BotAvatar, Button } from "@rakazo/ui-web";
 import { type Dispatch, type SetStateAction, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
@@ -76,6 +82,8 @@ export function ShellPage() {
 
   useEffect(() => {
     void refreshBots();
+    const poll = window.setInterval(() => void refreshBots().catch(() => undefined), 4000);
+    return () => window.clearInterval(poll);
   }, []);
 
   useEffect(() => {
@@ -93,6 +101,19 @@ export function ShellPage() {
         for await (const event of events) {
           if (abort.signal.aborted) break;
           applyThreadEvent(event, setSnapshot, setComputer);
+          if (
+            event.type === "bot.spawned" ||
+            event.type === "bot.deleted" ||
+            event.type === "run.completed"
+          ) {
+            void refreshBots().catch(() => undefined);
+          }
+          if (event.type === "thread.message.created") {
+            const blocks = (event.payload.blocks as Array<{ kind?: string }>) ?? [];
+            if (blocks.some((block) => block.kind === "child_bot")) {
+              void refreshBots().catch(() => undefined);
+            }
+          }
           if (
             event.type === "thread.message.created" ||
             event.type === "run.completed" ||
@@ -259,9 +280,11 @@ export function ShellPage() {
               type="button"
               onClick={() => navigate(`/app/${bot.id}`)}
               className="flex gap-3 rounded-xl px-2.5 py-[11px] text-left"
-              style={{ background: active?.id === bot.id ? "#161618" : "transparent" }}
+              style={{
+                background: active?.id === bot.id ? "#161618" : "transparent",
+              }}
             >
-              <BotAvatar color={bot.color} />
+              <BotAvatar color={bot.color} size={38} />
               <div className="min-w-0 flex-1">
                 <div className="flex items-baseline justify-between gap-2">
                   <span className="text-[15px] font-medium text-[#ECECEE]">{bot.name}</span>
@@ -344,11 +367,13 @@ export function ShellPage() {
           <button
             type="button"
             onClick={() => setPanel("settings")}
-            className="flex items-center gap-3"
+            className="flex min-w-0 items-center gap-3"
           >
             {active ? <BotAvatar color={active.color} size={26} /> : null}
-            <span className="text-[16px] font-medium text-[#ECECEE]">
-              {active?.name ?? "Select a bot"}
+            <span className="min-w-0">
+              <span className="block truncate text-[16px] font-medium text-[#ECECEE]">
+                {active?.name ?? "Select a bot"}
+              </span>
             </span>
           </button>
           <button
@@ -376,6 +401,7 @@ export function ShellPage() {
             <MessageView
               key={message.id}
               message={message}
+              onOpenBot={(id) => navigate(`/app/${id}`)}
               onAnswer={(text) =>
                 active &&
                 rpc.threads.answer({ botId: active.id, runId: message.runId ?? "", answer: text })
@@ -764,6 +790,27 @@ function applyThreadEvent(
     });
     return;
   }
+  if (event.type === "thread.subagent") {
+    const block = subagentBlockFromPayload(event.payload);
+    const next: ThreadMessage = {
+      id: `subagent:${block.agentId}`,
+      threadId: event.threadId,
+      seq: event.seq,
+      role: "bot",
+      blocks: [block],
+      runId: event.runId,
+      createdAt: event.createdAt,
+    };
+    setSnapshot((prev) => {
+      if (!prev) return prev;
+      const without = prev.messages.filter(
+        (message) => message.id !== next.id && !message.id.startsWith("progress:"),
+      );
+      const progress = prev.messages.filter((message) => message.id.startsWith("progress:"));
+      return { ...prev, cursor: event.seq, messages: [...without, next, ...progress] };
+    });
+    return;
+  }
   if (event.type === "thread.message.created") {
     const role = (event.payload.role as ThreadMessage["role"]) ?? "bot";
     const blocks = (event.payload.blocks as ThreadMessage["blocks"]) ?? [];
@@ -779,7 +826,10 @@ function applyThreadEvent(
     setSnapshot((prev) => {
       if (!prev) return prev;
       const without = prev.messages.filter(
-        (message) => message.id !== next.id && !message.id.startsWith("progress:"),
+        (message) =>
+          message.id !== next.id &&
+          !message.id.startsWith("progress:") &&
+          !replacedSubagent(message, blocks),
       );
       return { ...prev, cursor: event.seq, messages: [...without, next] };
     });
@@ -803,12 +853,22 @@ function applyThreadEvent(
   }
 }
 
+function replacedSubagent(message: ThreadMessage, blocks: ThreadMessage["blocks"]) {
+  const agentIds = new Set(
+    blocks.filter((block) => block.kind === "subagent").map((block) => block.agentId),
+  );
+  if (agentIds.size === 0) return false;
+  return message.blocks.some((block) => block.kind === "subagent" && agentIds.has(block.agentId));
+}
+
 function MessageView({
   message,
   onAnswer,
+  onOpenBot,
 }: {
   message: ThreadMessage;
   onAnswer: (text: string) => void;
+  onOpenBot: (botId: string) => void;
 }) {
   return (
     <>
@@ -831,6 +891,72 @@ function MessageView({
                 <ChatMarkdown streaming>{block.text}</ChatMarkdown>
               </div>
             </div>
+          );
+        }
+        if (block.kind === "subagent") {
+          const running = block.status === "running";
+          const failed = block.status === "failed";
+          return (
+            <div
+              key={i}
+              className="w-[min(420px,90%)] rounded-[18px] border border-[#232326] bg-[#17171A] px-[18px] py-4"
+            >
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-[15px] font-medium text-[#ECECEE]">{block.name}</span>
+                <span
+                  className="rounded-full px-[11px] py-1 text-[13px]"
+                  style={{
+                    background: failed
+                      ? "rgba(230,87,7,.14)"
+                      : running
+                        ? "rgba(245,160,60,.14)"
+                        : "rgba(48,162,75,.14)",
+                    color: failed ? "#E65707" : running ? "#F5A03C" : "#4ECB71",
+                    animation: running ? "rkPulse 1.2s ease-in-out infinite" : undefined,
+                  }}
+                >
+                  {running ? "subagent" : block.status}
+                </span>
+              </div>
+              <div className="mt-2 text-[13.5px] text-[#85858A]">{block.task}</div>
+              {block.progress || block.result ? (
+                <div className="mt-2.5 text-[14.5px] leading-[1.5] text-[#A8A8AD]">
+                  <ChatMarkdown streaming={running}>
+                    {block.result || block.progress || ""}
+                  </ChatMarkdown>
+                </div>
+              ) : null}
+            </div>
+          );
+        }
+        if (block.kind === "child_bot") {
+          const deleted = block.status === "deleted";
+          return (
+            <button
+              key={i}
+              type="button"
+              disabled={deleted}
+              onClick={() => onOpenBot(block.botId)}
+              className="w-[min(340px,90%)] rounded-[18px] border border-[#232326] bg-[#17171A] px-[18px] py-4 text-left disabled:opacity-60"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-[15px] font-medium text-[#ECECEE]">{block.name}</span>
+                <span
+                  className="rounded-full px-[11px] py-1 text-[13px]"
+                  style={{
+                    background: deleted ? "rgba(230,87,7,.14)" : "rgba(48,162,75,.14)",
+                    color: deleted ? "#E65707" : "#4ECB71",
+                  }}
+                >
+                  {deleted ? "deleted" : "bot"}
+                </span>
+              </div>
+              <div className="mt-2 text-[14.5px] leading-[1.5] text-[#A8A8AD]">
+                {deleted
+                  ? "Removed this bot, including its chat, computer, and memory."
+                  : block.title || "Opened its own thread. Tap to switch."}
+              </div>
+            </button>
           );
         }
         if (block.kind === "text" && message.role === "user") {
@@ -1053,8 +1179,8 @@ function BotSettings({
         {confirming ? (
           <div className="w-full rounded-[11px] border border-[#3A1F14] bg-[#1A100C] px-3.5 py-3">
             <p className="text-[13.5px] leading-[1.45] text-[#C9C9CE]">
-              This permanently deletes {bot.name}, including its thread, computer, memory, and
-              routines.
+              This permanently deletes {bot.name}, including thread, computer, memory, and routines.
+              Bots it created stay in your list.
             </p>
             <div className="mt-3 flex items-center gap-3">
               <button

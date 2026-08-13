@@ -60,4 +60,71 @@ describe("projectMessages", () => {
     expect(messages).toHaveLength(1);
     expect(messages[0]?.blocks[0]).toEqual({ kind: "text", text: "Lisbon" });
   });
+
+  it("keeps live subagent cards until a durable subagent message arrives", () => {
+    const live = projectMessages([
+      {
+        id: "e1",
+        threadId: "t1",
+        seq: 0,
+        type: "thread.subagent",
+        runId: "r1",
+        payload: {
+          agentId: "a1",
+          name: "helper",
+          task: "summarize",
+          status: "running",
+          progress: "working…",
+        },
+        createdAt: "2026-01-01T00:00:01.000Z",
+      },
+    ]);
+    expect(live).toHaveLength(1);
+    expect(live[0]?.blocks[0]).toMatchObject({
+      kind: "subagent",
+      name: "helper",
+      status: "running",
+    });
+
+    const durable = projectMessages([
+      {
+        id: "e1",
+        threadId: "t1",
+        seq: 0,
+        type: "thread.subagent",
+        runId: "r1",
+        payload: {
+          agentId: "a1",
+          name: "helper",
+          task: "summarize",
+          status: "running",
+        },
+        createdAt: "2026-01-01T00:00:01.000Z",
+      },
+      {
+        id: "e2",
+        threadId: "t1",
+        seq: 1,
+        type: "thread.message.created",
+        runId: "r1",
+        payload: {
+          messageId: "m1",
+          role: "bot",
+          blocks: [
+            {
+              kind: "subagent",
+              agentId: "a1",
+              name: "helper",
+              task: "summarize",
+              status: "completed",
+              result: "ok",
+            },
+          ],
+        },
+        createdAt: "2026-01-01T00:00:02.000Z",
+      },
+    ]);
+    expect(durable).toHaveLength(1);
+    expect(durable[0]?.blocks[0]).toMatchObject({ status: "completed", result: "ok" });
+  });
 });

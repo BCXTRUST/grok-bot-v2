@@ -8,10 +8,11 @@ import type {
   AgentRuntimeEvent,
   ConnectorTool,
 } from "@rakazo/adapter-kit";
-import { builtinAgentTools } from "./builtin-tools.js";
+import { builtinAgentTools, DELEGATION_TOOL_NAMES } from "./builtin-tools.js";
 
 const running = new Map<string, AbortController>();
 const models = builtinModels();
+const MAX_PARALLEL_SUBAGENTS = 4;
 
 export class PiAgentRuntime implements AgentRuntime {
   describe() {
@@ -50,7 +51,18 @@ export class PiAgentRuntime implements AgentRuntime {
 
         const apiKey = request.model.apiKey ?? process.env.OPENROUTER_API_KEY;
         const toolDefs = request.tools.length ? request.tools : builtinAgentTools;
-        const tools = toolDefs.map((tool) => toAgentTool(tool, queue, request));
+        const nestedAgents = new Set<Agent>();
+        const host: ToolHost = {
+          queue,
+          request,
+          model,
+          apiKey,
+          nestedAgents,
+          subagentGate: createGate(MAX_PARALLEL_SUBAGENTS),
+          signal,
+          depth: 0,
+        };
+        const tools = toolDefs.map((tool) => toAgentTool(tool, host));
         const history = toHistory(request.history, request.prompt);
 
         const agent = new Agent({
@@ -71,7 +83,10 @@ export class PiAgentRuntime implements AgentRuntime {
           queue.push({ type: "done", text: "stopped" });
           return;
         }
-        const onAbort = () => agent.abort();
+        const onAbort = () => {
+          agent.abort();
+          for (const nested of nestedAgents) nested.abort();
+        };
         signal.addEventListener("abort", onAbort);
 
         let streamed = "";
@@ -151,7 +166,7 @@ function toHistory(history: AgentRunRequest["history"], prompt: string) {
     );
 }
 
-function toAgentTool(tool: ConnectorTool, queue: EventQueue, request: AgentRunRequest): AgentTool {
+function toAgentTool(tool: ConnectorTool, host: ToolHost): AgentTool {
   return {
     name: tool.name,
     label: tool.name,
@@ -181,14 +196,35 @@ function toAgentTool(tool: ConnectorTool, queue: EventQueue, request: AgentRunRe
           cwd: raw.cwd ? String(raw.cwd) : "/home/rakazo",
         };
       }
+      if (tool.name === "run_subagent") {
+        return {
+          name: String(raw.name ?? "helper"),
+          task: String(raw.task ?? ""),
+          instructions: raw.instructions ? String(raw.instructions) : "",
+        };
+      }
+      if (tool.name === "spawn_bot") {
+        return {
+          name: String(raw.name ?? ""),
+          title: raw.title ? String(raw.title) : "",
+          instructions: raw.instructions ? String(raw.instructions) : "",
+          prompt: raw.prompt ? String(raw.prompt) : "",
+        };
+      }
+      if (tool.name === "delete_bot") {
+        return {
+          confirm_name: String(raw.confirm_name ?? raw.confirmName ?? ""),
+          bot_id: raw.bot_id ? String(raw.bot_id) : raw.botId ? String(raw.botId) : "",
+        };
+      }
       return raw as never;
     },
     execute: async (toolCallId, params) => {
       const args = (params ?? {}) as Record<string, unknown>;
-      const executionId = toolCallId || `${request.runId}:${tool.name}`;
-      queue.push({ type: "tool", name: tool.name, args, executionId });
+      const executionId = toolCallId || `${host.request.runId}:${tool.name}`;
+      host.queue.push({ type: "tool", name: tool.name, args, executionId });
       if (tool.name === "request_takeover") {
-        queue.push({
+        host.queue.push({
           type: "takeover",
           reason: String(args.reason ?? "I need you on the screen."),
         });
@@ -198,8 +234,15 @@ function toAgentTool(tool: ConnectorTool, queue: EventQueue, request: AgentRunRe
           terminate: true,
         };
       }
-      if (request.executeTool) {
-        const result = await request.executeTool(tool.name, args, executionId);
+      if (tool.name === "run_subagent") {
+        const result = await executeSubagent(host, executionId, args);
+        return {
+          content: [{ type: "text", text: result }],
+          details: { result },
+        };
+      }
+      if (host.request.executeTool) {
+        const result = await host.request.executeTool(tool.name, args, executionId);
         return {
           content: [{ type: "text", text: summarizeToolResult(result) }],
           details: result,
@@ -211,6 +254,140 @@ function toAgentTool(tool: ConnectorTool, queue: EventQueue, request: AgentRunRe
       };
     },
   };
+}
+
+async function executeSubagent(host: ToolHost, executionId: string, args: Record<string, unknown>) {
+  if (host.depth > 0) return "Subagents cannot nest further.";
+  await host.subagentGate.acquire();
+  const agentId = executionId;
+  const name =
+    String(args.name ?? "helper")
+      .trim()
+      .slice(0, 80) || "helper";
+  const task = String(args.task ?? "").trim();
+  const extra = args.instructions ? String(args.instructions).trim() : "";
+  host.queue.push({
+    type: "subagent",
+    agentId,
+    name,
+    task,
+    status: "running",
+    progress: "starting…",
+  });
+
+  const childDefs = (host.request.tools.length ? host.request.tools : builtinAgentTools).filter(
+    (tool) => !DELEGATION_TOOL_NAMES.has(tool.name),
+  );
+  const nestedHost: ToolHost = { ...host, depth: 1 };
+  const nested = new Agent({
+    streamFn: (m, ctx, options) => models.streamSimple(m, ctx, options),
+    getApiKey: async () => host.apiKey,
+    initialState: {
+      systemPrompt: [
+        `You are a Rakazo subagent named "${name}".`,
+        "You run inside the parent bot's turn — you are not a separate bot chat.",
+        "Complete the task and return a concise result. Do not spawn bots or further subagents.",
+        extra,
+      ]
+        .filter(Boolean)
+        .join(" "),
+      model: host.model,
+      thinkingLevel: "off",
+      tools: childDefs.map((tool) => toAgentTool(tool, nestedHost)),
+      messages: [],
+    },
+  });
+  host.nestedAgents.add(nested);
+
+  let streamed = "";
+  let lastPush = 0;
+  nested.subscribe((event) => {
+    if (event.type === "tool_execution_start") {
+      const toolName = "toolName" in event && event.toolName ? String(event.toolName) : "a tool";
+      host.queue.push({
+        type: "subagent",
+        agentId,
+        name,
+        task,
+        status: "running",
+        progress: `using ${toolName}…`,
+      });
+    }
+    if (event.type === "message_update" && event.assistantMessageEvent.type === "text_delta") {
+      const delta = event.assistantMessageEvent.delta;
+      if (delta) {
+        streamed += delta;
+        const now = Date.now();
+        if (now - lastPush >= 80) {
+          lastPush = now;
+          host.queue.push({
+            type: "subagent",
+            agentId,
+            name,
+            task,
+            status: "running",
+            progress: streamed.slice(-800),
+          });
+        }
+      }
+    }
+    if (event.type === "message_end" && event.message.role === "assistant") {
+      const text = assistantText(event.message);
+      if (text && !streamed) streamed = text;
+      if ("usage" in event.message && event.message.usage) {
+        host.queue.push({
+          type: "usage",
+          inputTokens: event.message.usage.input ?? 0,
+          outputTokens: event.message.usage.output ?? 0,
+          provider: host.model.provider,
+          model: host.model.id,
+        });
+      }
+    }
+  });
+
+  try {
+    if (host.signal.aborted) {
+      host.queue.push({
+        type: "subagent",
+        agentId,
+        name,
+        task,
+        status: "failed",
+        result: "stopped",
+      });
+      return "stopped";
+    }
+    const onAbort = () => nested.abort();
+    host.signal.addEventListener("abort", onAbort);
+    await nested.prompt(task || "Complete the delegated task.");
+    await nested.waitForIdle();
+    host.signal.removeEventListener("abort", onAbort);
+    const error = nested.state.errorMessage;
+    if (error) {
+      const message = sanitizeError(error);
+      host.queue.push({ type: "subagent", agentId, name, task, status: "failed", result: message });
+      return `Subagent failed: ${message}`;
+    }
+    const result = streamed || assistantText(nested.state.messages.at(-1)) || "done.";
+    const clipped = result.length > 12_000 ? `${result.slice(0, 12_000)}…` : result;
+    host.queue.push({
+      type: "subagent",
+      agentId,
+      name,
+      task,
+      status: "completed",
+      result: clipped,
+    });
+    return clipped;
+  } catch (error) {
+    const message = sanitizeError(error instanceof Error ? error.message : String(error));
+    host.queue.push({ type: "subagent", agentId, name, task, status: "failed", result: message });
+    return `Subagent failed: ${message}`;
+  } finally {
+    host.nestedAgents.delete(nested);
+    host.subagentGate.release();
+  }
 }
 
 function parametersFor(tool: ConnectorTool) {
@@ -234,6 +411,27 @@ function parametersFor(tool: ConnectorTool) {
     return Type.Object({
       command: Type.String(),
       cwd: Type.String(),
+    });
+  }
+  if (tool.name === "run_subagent") {
+    return Type.Object({
+      name: Type.String(),
+      task: Type.String(),
+      instructions: Type.Optional(Type.String()),
+    });
+  }
+  if (tool.name === "spawn_bot") {
+    return Type.Object({
+      name: Type.String(),
+      title: Type.Optional(Type.String()),
+      instructions: Type.Optional(Type.String()),
+      prompt: Type.Optional(Type.String()),
+    });
+  }
+  if (tool.name === "delete_bot") {
+    return Type.Object({
+      confirm_name: Type.String(),
+      bot_id: Type.Optional(Type.String()),
     });
   }
   return jsonSchemaParameters(tool.inputSchema);
@@ -301,6 +499,36 @@ interface EventQueue {
   push(event: AgentRuntimeEvent): void;
   close(): void;
   iterate(): AsyncIterable<AgentRuntimeEvent>;
+}
+
+interface ToolHost {
+  queue: EventQueue;
+  request: AgentRunRequest;
+  model: NonNullable<ReturnType<typeof models.getModel>>;
+  apiKey: string | undefined;
+  nestedAgents: Set<Agent>;
+  subagentGate: { acquire(): Promise<void>; release(): void };
+  signal: AbortSignal;
+  depth: number;
+}
+
+function createGate(max: number) {
+  let active = 0;
+  const waiters: Array<() => void> = [];
+  return {
+    async acquire() {
+      if (active >= max) {
+        await new Promise<void>((resolve) => {
+          waiters.push(resolve);
+        });
+      }
+      active += 1;
+    },
+    release() {
+      active = Math.max(0, active - 1);
+      waiters.shift()?.();
+    },
+  };
 }
 
 function createQueue(): EventQueue {

@@ -12,7 +12,6 @@ export function createSandboxProvider(
     supervisorToken?: string;
     e2bApiKey?: string;
     dataDir?: string;
-    desktopGrants?: string[];
   },
 ): SandboxProvider {
   switch (kind) {
@@ -29,7 +28,6 @@ export function createSandboxProvider(
     case "desktop":
       return new DesktopSandboxProvider({
         root: opts.dataDir,
-        grants: opts.desktopGrants ?? (process.env.DESKTOP_GRANTS ?? "").split(":").filter(Boolean),
       });
     case "fake":
       return new FakeSandboxProvider();

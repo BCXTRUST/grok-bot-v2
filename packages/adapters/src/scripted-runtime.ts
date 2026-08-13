@@ -37,6 +37,34 @@ export class ScriptedAgentRuntime implements AgentRuntime {
           yield { type: "text", text: turn.assistant };
         }
         for (const call of turn.toolCalls ?? []) {
+          if (call.name === "run_subagent") {
+            const agentId = `${request.runId}:subagent`;
+            const name = String(call.args.name ?? "helper");
+            const task = String(call.args.task ?? request.prompt);
+            yield {
+              type: "subagent",
+              agentId,
+              name,
+              task,
+              status: "running",
+              progress: "working…",
+            };
+            yield {
+              type: "tool",
+              name: call.name,
+              args: call.args,
+              executionId: `${request.runId}:${call.name}`,
+            };
+            yield {
+              type: "subagent",
+              agentId,
+              name,
+              task,
+              status: "completed",
+              result: `done. i handled: ${task.slice(0, 180)}`,
+            };
+            continue;
+          }
           yield {
             type: "tool",
             name: call.name,
@@ -96,6 +124,54 @@ export function inferScript(
       { takeover: { reason: "Sign in to continue. Protected input stays off the thread." } },
     ];
   }
+  if (
+    lower.includes("delete the bot named") ||
+    lower.includes("delete the child bot") ||
+    lower.includes("delete child")
+  ) {
+    const name = namedBot(prompt) ?? "Scout";
+    return [
+      {
+        assistant: "removing that bot permanently.",
+        toolCalls: [{ name: "delete_bot", args: { confirm_name: name } }],
+        complete: true,
+      },
+    ];
+  }
+  if (
+    lower.includes("spawn a bot") ||
+    lower.includes("spawn a child") ||
+    lower.includes("create a bot named") ||
+    lower.includes("create a child bot")
+  ) {
+    const name = namedBot(prompt) ?? "Helper";
+    return [
+      {
+        assistant: "creating a bot for that.",
+        toolCalls: [
+          {
+            name: "spawn_bot",
+            args: {
+              name,
+              title: `${name} specialist`,
+              instructions: `You are ${name}.`,
+              prompt: "Start on the assigned work.",
+            },
+          },
+        ],
+        complete: true,
+      },
+    ];
+  }
+  if (lower.includes("subagent") || lower.includes("delegate to a helper")) {
+    return [
+      {
+        assistant: "spinning up a helper for that.",
+        toolCalls: [{ name: "run_subagent", args: { name: "helper", task: prompt } }],
+        complete: true,
+      },
+    ];
+  }
   if (lower.includes("connector") || lower.includes("crm") || lower.includes("destination")) {
     return [
       {
@@ -143,6 +219,10 @@ export function inferScript(
       complete: true,
     },
   ];
+}
+
+function namedBot(prompt: string) {
+  return /named\s+([A-Za-z0-9][A-Za-z0-9_-]{0,39})/i.exec(prompt)?.[1];
 }
 
 function summarize(prompt: string): string {

@@ -12,7 +12,6 @@ import {
   InMemoryWakeupDriver,
   isComposioEnabled,
   LocalAgentHomeStore,
-  loadAllFolderGrants,
   PiAgentRuntime,
   PiOAuthLogins,
   ScriptedAgentRuntime,
@@ -73,13 +72,11 @@ export async function createApp(
     wakeupKind === "memory"
       ? new InMemoryWakeupDriver()
       : new GraphileWakeupDriver(env.databaseUrl);
-  const desktopGrants = await loadAllFolderGrants(env.dataDir);
   const sandbox: SandboxProvider = createSandboxProvider(env.sandboxProvider, {
     supervisorUrl: env.sandboxSupervisorUrl,
     supervisorToken: env.sandboxSupervisorToken,
     e2bApiKey: env.e2bApiKey,
     dataDir: env.dataDir,
-    desktopGrants,
   });
   const secrets = new EncryptedSecretStore(env.encryptionKey);
   const oauthLogins = new PiOAuthLogins();

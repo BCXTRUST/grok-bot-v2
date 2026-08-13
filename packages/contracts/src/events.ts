@@ -9,6 +9,7 @@ export const ProductEventType = z.enum([
   "thread.choice",
   "thread.meta",
   "thread.computer",
+  "thread.subagent",
   "run.started",
   "run.checkpointed",
   "run.completed",
@@ -25,6 +26,8 @@ export const ProductEventType = z.enum([
   "effect.recorded",
   "effect.reconciled",
   "usage.recorded",
+  "bot.spawned",
+  "bot.deleted",
 ]);
 export type ProductEventType = z.infer<typeof ProductEventType>;
 
@@ -62,6 +65,22 @@ export const MessageBlock = z.discriminatedUnion("kind", [
   }),
   z.object({ kind: z.literal("meta"), text: z.string() }),
   z.object({ kind: z.literal("progress"), text: z.string() }),
+  z.object({
+    kind: z.literal("subagent"),
+    agentId: z.string(),
+    name: z.string(),
+    task: z.string(),
+    status: z.enum(["running", "completed", "failed"]),
+    progress: z.string().optional(),
+    result: z.string().optional(),
+  }),
+  z.object({
+    kind: z.literal("child_bot"),
+    botId: z.string(),
+    name: z.string(),
+    title: z.string().optional(),
+    status: z.enum(["created", "deleted"]),
+  }),
 ]);
 export type MessageBlock = z.infer<typeof MessageBlock>;
 

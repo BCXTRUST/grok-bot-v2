@@ -192,6 +192,15 @@ export type AgentRuntimeEvent =
   | { type: "takeover"; reason: string }
   | { type: "usage"; inputTokens: number; outputTokens: number; provider: string; model: string }
   | { type: "checkpoint"; blob: string }
+  | {
+      type: "subagent";
+      agentId: string;
+      name: string;
+      task: string;
+      status: "running" | "completed" | "failed";
+      progress?: string;
+      result?: string;
+    }
   | { type: "done"; text?: string };
 
 export interface AgentRuntimeCapabilities {

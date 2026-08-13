@@ -36,13 +36,41 @@ describe("scripted runtime", () => {
       true,
     );
   });
+
+  it("spawns a named bot", () => {
+    const script = inferScript("spawn a bot named Scout to research venues");
+    expect(script?.some((t) => t.toolCalls?.some((c) => c.name === "spawn_bot"))).toBe(true);
+    expect(script?.some((t) => t.toolCalls?.some((c) => c.args.name === "Scout"))).toBe(true);
+  });
+
+  it("runs an in-thread subagent", () => {
+    const script = inferScript("run a subagent to summarize the notes");
+    expect(script?.some((t) => t.toolCalls?.some((c) => c.name === "run_subagent"))).toBe(true);
+  });
+
+  it("deletes a spawned bot by exact name", () => {
+    const script = inferScript("delete the bot named Scout");
+    expect(
+      script?.some((t) =>
+        t.toolCalls?.some((c) => c.name === "delete_bot" && c.args.confirm_name === "Scout"),
+      ),
+    ).toBe(true);
+  });
 });
 
 describe("builtin tools", () => {
   it("exposes the tools the executor actually applies", async () => {
     const { builtinAgentTools } = await import("./builtin-tools.js");
     expect(builtinAgentTools.map((t) => t.name)).toEqual(
-      expect.arrayContaining(["write_file", "shell", "remember", "request_takeover"]),
+      expect.arrayContaining([
+        "write_file",
+        "shell",
+        "remember",
+        "request_takeover",
+        "run_subagent",
+        "spawn_bot",
+        "delete_bot",
+      ]),
     );
   });
 });
