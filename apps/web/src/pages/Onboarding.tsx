@@ -35,6 +35,7 @@ type CatalogEntry = {
   auth?: "api-key" | "oauth" | "both";
   oauthLabel?: string;
   subscription?: boolean;
+  signIn?: "chatgpt-device";
 };
 
 export function OnboardingPage() {
@@ -50,6 +51,11 @@ export function OnboardingPage() {
   const [description, setDescription] = useState("");
   const [answers, setAnswers] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [oauth, setOauth] = useState<{
+    verificationUri: string;
+    userCode: string;
+  } | null>(null);
+  const [oauthPending, setOauthPending] = useState(false);
 
   useEffect(() => {
     void Promise.all([rpc.me(), rpc.models.list().catch(() => [])])
@@ -99,6 +105,7 @@ export function OnboardingPage() {
   );
 
   const selected = modelsForProvider.find((entry) => entry.id === modelId) ?? modelsForProvider[0];
+  const chatgptSignIn = selected?.signIn === "chatgpt-device";
   const acceptsKey = selected?.auth !== "oauth";
 
   async function saveModel() {
@@ -116,6 +123,45 @@ export function OnboardingPage() {
       setStep("bot");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save model");
+    }
+  }
+
+  async function startChatgptSignIn() {
+    setError(null);
+    setOauthPending(true);
+    try {
+      const started = await rpc.models.beginOAuth({
+        provider,
+        modelId,
+        label: selected?.providerName ?? "ChatGPT Plus/Pro",
+      });
+      setOauth({
+        verificationUri: started.verificationUri,
+        userCode: started.userCode,
+      });
+      window.open(started.verificationUri, "_blank", "noopener,noreferrer");
+      for (let i = 0; i < 180; i += 1) {
+        const row = await rpc.models.completeOAuth({ loginId: started.loginId });
+        if (row.status === "connected") {
+          await rpc.models.setDefault({ provider, modelId });
+          setOauth(null);
+          setStep("bot");
+          return;
+        }
+        if (row.status === "error") {
+          setError(row.error);
+          setOauth(null);
+          return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 5000));
+      }
+      setError("ChatGPT sign-in timed out. Try again.");
+      setOauth(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not start ChatGPT sign-in");
+      setOauth(null);
+    } finally {
+      setOauthPending(false);
     }
   }
 
@@ -143,8 +189,8 @@ export function OnboardingPage() {
           <div>
             <h1 className="text-[32px] font-medium text-[#F1F1F2]">Connect a model</h1>
             <p className="mt-2 text-[#85858A]">
-              Rakazo does not pay for model usage. Pick a provider from the Pi catalog, then an API
-              key or subscription sign-in where the provider supports it.
+              Rakazo does not pay for model usage. Paste an API key, sign in with ChatGPT Plus/Pro,
+              or skip if this deployment already has a key.
             </p>
             <input
               value={query}
@@ -161,6 +207,8 @@ export function OnboardingPage() {
                     setProvider(entry.provider);
                     const first = catalog.find((item) => item.provider === entry.provider);
                     if (first) setModelId(first.id);
+                    setOauth(null);
+                    setError(null);
                   }}
                   className={`flex w-full items-center justify-between border-b border-[#202023] px-3.5 py-2.5 text-left last:border-0 ${
                     entry.provider === provider ? "bg-[#1A1A1D]" : "hover:bg-[#161618]"
@@ -170,10 +218,10 @@ export function OnboardingPage() {
                     {entry.providerName ?? entry.provider}
                   </span>
                   <span className="text-[12px] text-[#85858A]">
-                    {entry.subscription
-                      ? "Subscription"
+                    {entry.signIn === "chatgpt-device"
+                      ? "ChatGPT Plus/Pro"
                       : entry.auth === "oauth"
-                        ? "OAuth"
+                        ? "Skip or deploy key"
                         : "API key"}
                   </span>
                 </button>
@@ -194,7 +242,38 @@ export function OnboardingPage() {
               </select>
             </label>
             <p className="mt-2 text-[13px] text-[#85858A]">{selected?.billing}</p>
-            {acceptsKey ? (
+            {chatgptSignIn ? (
+              <div className="mt-4">
+                {oauth ? (
+                  <div className="rounded-[11px] border border-[#26262A] px-3.5 py-3">
+                    <p className="text-sm text-[#85858A]">
+                      Enter this code at{" "}
+                      <a
+                        href={oauth.verificationUri}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-[#ECECEE] underline"
+                      >
+                        {oauth.verificationUri.replace(/^https:\/\//, "")}
+                      </a>
+                    </p>
+                    <p className="mt-2 font-mono text-[22px] tracking-[0.2em] text-[#F1F1F2]">
+                      {oauth.userCode}
+                    </p>
+                    <p className="mt-2 text-sm text-[#85858A]">Waiting for ChatGPT…</p>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={oauthPending}
+                    onClick={() => void startChatgptSignIn()}
+                    className="rounded-[11px] bg-[#F1F1EF] px-5 py-2.5 text-[#17171A] disabled:opacity-40"
+                  >
+                    {oauthPending ? "Starting…" : "Sign in with ChatGPT Plus/Pro"}
+                  </button>
+                )}
+              </div>
+            ) : acceptsKey ? (
               <label className="mt-4 block text-sm text-[#85858A]">
                 API key
                 <input
@@ -207,16 +286,17 @@ export function OnboardingPage() {
               </label>
             ) : (
               <p className="mt-4 text-sm text-[#85858A]">
-                {selected?.oauthLabel ?? selected?.providerName ?? provider} uses OAuth or a
-                subscription. Pi owns that sign-in. Skip if this deployment already has credentials.
+                This provider cannot paste a key here. Skip if this deployment already has
+                credentials.
               </p>
             )}
             {error ? <p className="mt-3 text-sm text-[#E65707]">{error}</p> : null}
             <div className="mt-6 flex gap-3">
               <button
                 type="button"
+                disabled={oauthPending}
                 onClick={() => void saveModel()}
-                className="rounded-[11px] bg-[#F1F1EF] px-5 py-2.5 text-[#17171A]"
+                className="rounded-[11px] bg-[#F1F1EF] px-5 py-2.5 text-[#17171A] disabled:opacity-40"
               >
                 Continue
               </button>

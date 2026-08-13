@@ -50,6 +50,7 @@ export const appContract = {
           auth: z.enum(["api-key", "oauth", "both"]).optional(),
           oauthLabel: z.string().optional(),
           subscription: z.boolean().optional(),
+          signIn: z.enum(["chatgpt-device"]).optional(),
         }),
       ),
     ),
@@ -64,6 +65,31 @@ export const appContract = {
         }),
       )
       .output(ModelCredentialSchema),
+    beginOAuth: oc
+      .input(
+        z.object({
+          provider: z.string(),
+          label: z.string().optional(),
+          modelId: z.string().optional(),
+        }),
+      )
+      .output(
+        z.object({
+          loginId: z.string(),
+          verificationUri: z.string().url(),
+          userCode: z.string(),
+          expiresInSeconds: z.number().int(),
+        }),
+      ),
+    completeOAuth: oc
+      .input(z.object({ loginId: z.string() }))
+      .output(
+        z.discriminatedUnion("status", [
+          z.object({ status: z.literal("pending") }),
+          z.object({ status: z.literal("connected"), credential: ModelCredentialSchema }),
+          z.object({ status: z.literal("error"), error: z.string() }),
+        ]),
+      ),
     setDefault: oc
       .input(z.object({ provider: z.string(), modelId: z.string() }))
       .output(z.object({ ok: z.literal(true) })),

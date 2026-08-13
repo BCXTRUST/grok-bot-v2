@@ -14,11 +14,13 @@ import {
   type EncryptedSecretStore,
   listPiCatalog,
   loadFolderGrants,
+  type PiOAuthLogins,
   resolveAgentHomePath,
   sanitizeComposioError,
   savePushToken,
   scheduleComputerSleep,
   scriptedCatalogEntry,
+  serializeModelSecret,
   touchRunningComputer,
 } from "@rakazo/adapters";
 import type { Auth } from "@rakazo/auth";
@@ -51,6 +53,7 @@ export interface RouterDeps {
   memory: MemoryStore;
   home: AgentHomeStore;
   secrets: EncryptedSecretStore;
+  oauthLogins: PiOAuthLogins;
   composio?: ComposioConnector;
   dataDir: string;
   pool?: Pool;
@@ -136,44 +139,36 @@ export function createRouter(deps: RouterDeps) {
         }));
       }),
       connect: authed.models.connect.handler(async ({ context, input }) => {
-        const stored = await deps.secrets.put(input.apiKey, {
-          operationId: "cred",
-          traceId: "cred",
-          workspaceId: context.actor.workspaceId,
+        return persistModelCredential(deps, context.actor, {
+          provider: input.provider,
+          plaintext: input.apiKey,
+          label: input.label,
+          modelId: input.modelId,
+        });
+      }),
+      beginOAuth: authed.models.beginOAuth.handler(async ({ context, input }) => {
+        return deps.oauthLogins.begin({
           userId: context.actor.userId,
-          signal: new AbortController().signal,
+          workspaceId: context.actor.workspaceId,
+          provider: input.provider,
+          modelId: input.modelId,
+          label: input.label,
         });
-        const secret = await deps.prisma.secret.create({
-          data: {
-            id: stored.id,
-            userId: context.actor.userId,
-            workspaceId: context.actor.workspaceId,
-            kind: "model",
-            ciphertext: stored.ciphertext,
-          },
+      }),
+      completeOAuth: authed.models.completeOAuth.handler(async ({ context, input }) => {
+        const result = await deps.oauthLogins.complete(input.loginId, {
+          userId: context.actor.userId,
+          workspaceId: context.actor.workspaceId,
         });
-        await deps.prisma.userModelCredential.updateMany({
-          where: { userId: context.actor.userId },
-          data: { isDefault: false },
+        if (result.status !== "connected") return result;
+        const credential = await persistModelCredential(deps, context.actor, {
+          provider: result.provider,
+          plaintext: serializeModelSecret({ kind: "oauth", credential: result.credential }),
+          label: result.label ?? "ChatGPT Plus/Pro",
+          modelId: result.modelId,
         });
-        const cred = await deps.prisma.userModelCredential.create({
-          data: {
-            userId: context.actor.userId,
-            workspaceId: context.actor.workspaceId,
-            provider: input.provider,
-            label: input.label ?? input.provider,
-            secretId: secret.id,
-            isDefault: true,
-            defaultModel: input.modelId ?? deps.env.defaultModel,
-          },
-        });
-        return {
-          id: cred.id,
-          provider: cred.provider,
-          label: cred.label,
-          hasKey: true,
-          isDefault: true,
-        };
+        deps.oauthLogins.consume(input.loginId);
+        return { status: "connected" as const, credential };
       }),
       setDefault: authed.models.setDefault.handler(async ({ context, input }) => {
         await deps.prisma.userModelCredential.updateMany({
@@ -1164,6 +1159,51 @@ async function deploymentDto(prisma: PrismaClient) {
     hasDeploymentModelCredential: Boolean(settings?.deploymentModelCredentialCipher),
     defaultProvider: settings?.defaultModelProvider ?? null,
     defaultModel: settings?.defaultModelId ?? null,
+  };
+}
+
+async function persistModelCredential(
+  deps: RouterDeps,
+  actor: Actor,
+  input: { provider: string; plaintext: string; label?: string; modelId?: string },
+) {
+  const stored = await deps.secrets.put(input.plaintext, {
+    operationId: "cred",
+    traceId: "cred",
+    workspaceId: actor.workspaceId,
+    userId: actor.userId,
+    signal: new AbortController().signal,
+  });
+  const secret = await deps.prisma.secret.create({
+    data: {
+      id: stored.id,
+      userId: actor.userId,
+      workspaceId: actor.workspaceId,
+      kind: "model",
+      ciphertext: stored.ciphertext,
+    },
+  });
+  await deps.prisma.userModelCredential.updateMany({
+    where: { userId: actor.userId },
+    data: { isDefault: false },
+  });
+  const cred = await deps.prisma.userModelCredential.create({
+    data: {
+      userId: actor.userId,
+      workspaceId: actor.workspaceId,
+      provider: input.provider,
+      label: input.label ?? input.provider,
+      secretId: secret.id,
+      isDefault: true,
+      defaultModel: input.modelId ?? deps.env.defaultModel,
+    },
+  });
+  return {
+    id: cred.id,
+    provider: cred.provider,
+    label: cred.label,
+    hasKey: true,
+    isDefault: true,
   };
 }
 

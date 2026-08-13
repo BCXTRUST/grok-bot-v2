@@ -17,6 +17,7 @@ import { builtinAgentTools } from "./builtin-tools.js";
 import { collectLogIds } from "./composio-connector.js";
 import { scheduleComputerSleep } from "./computer-idle.js";
 import { resolveAgentHomePath } from "./home.js";
+import { parseModelSecret, resolveModelApiKey, secretValuesToRedact } from "./pi-oauth.js";
 import { inferScript } from "./scripted-runtime.js";
 import type { EncryptedSecretStore } from "./secrets.js";
 
@@ -171,7 +172,9 @@ export function createRunExecutor(deps: ExecutorDeps) {
           | "system",
         content: blocksToText(m.blocks as MessageBlock[]),
       }));
-      const apiKey = await resolveModelKey(deps, run.userId, run.workspaceId, credential);
+      const resolved = await resolveModelKey(deps, run.userId, run.workspaceId, credential);
+      const apiKey = resolved.apiKey;
+      const runSecrets = [...deps.secrets, ...resolved.redact];
       const computer = await ensureComputer(deps, bot.id, context);
 
       let assembled = "";
@@ -394,8 +397,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
           }
         }
 
-        const text = redactSecrets(assembled || "done.", deps.secrets);
-        if (containsSecret(text, deps.secrets)) {
+        const text = redactSecrets(assembled || "done.", runSecrets);
+        if (containsSecret(text, runSecrets)) {
           throw new Error("refusing to persist a secret in the thread");
         }
         await publishMessage(deps, actor, thread.id, bot.id, runId, "bot", [
@@ -613,15 +616,34 @@ async function runSandboxCommand(
 
 async function resolveModelKey(
   deps: ExecutorDeps,
-  _userId: string,
-  _workspaceId: string,
-  credential: { secretId: string } | null,
-): Promise<string | undefined> {
+  userId: string,
+  workspaceId: string,
+  credential: { secretId: string; provider: string } | null,
+): Promise<{ apiKey?: string; redact: string[] }> {
   if (credential && deps.secretStore) {
     const row = await deps.prisma.secret.findUnique({ where: { id: credential.secretId } });
-    if (row) return deps.secretStore.load(row.ciphertext);
+    if (row) {
+      const plaintext = deps.secretStore.load(row.ciphertext);
+      const parsed = parseModelSecret(plaintext);
+      const apiKey = await resolveModelApiKey(plaintext, credential.provider, {
+        persist: async (next) => {
+          const stored = await deps.secretStore!.put(next, {
+            operationId: "cred",
+            traceId: "cred-refresh",
+            workspaceId,
+            userId,
+            signal: new AbortController().signal,
+          });
+          await deps.prisma.secret.update({
+            where: { id: row.id },
+            data: { ciphertext: stored.ciphertext },
+          });
+        },
+      });
+      return { apiKey, redact: [...secretValuesToRedact(parsed), apiKey] };
+    }
   }
-  return deps.deploymentModelKey;
+  return { apiKey: deps.deploymentModelKey, redact: [] };
 }
 
 function blocksToText(blocks: MessageBlock[]): string {

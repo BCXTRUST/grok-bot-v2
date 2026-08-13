@@ -15,6 +15,7 @@ export * from "./folder-grants.js";
 export * from "./home.js";
 export * from "./mcp-emulator.js";
 export * from "./pi-models.js";
+export * from "./pi-oauth.js";
 export * from "./pi-runtime.js";
 export * from "./realtime.js";
 export * from "./sandbox-factory.js";

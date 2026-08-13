@@ -1,6 +1,8 @@
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
+import { CHATGPT_OAUTH_PROVIDER, CHATGPT_SIGN_IN } from "./pi-oauth.js";
 
 export type PiCatalogAuth = "api-key" | "oauth" | "both";
+export type PiCatalogSignIn = typeof CHATGPT_SIGN_IN;
 
 export type PiCatalogEntry = {
   provider: string;
@@ -11,6 +13,7 @@ export type PiCatalogEntry = {
   auth: PiCatalogAuth;
   oauthLabel?: string;
   subscription: boolean;
+  signIn?: PiCatalogSignIn;
 };
 
 export function listPiCatalog(): PiCatalogEntry[] {
@@ -29,7 +32,11 @@ function buildPiCatalog(): PiCatalogEntry[] {
     const auth: PiCatalogAuth = apiKey && oauth ? "both" : oauth ? "oauth" : "api-key";
     const oauthLabel = provider.auth.oauth?.loginLabel ?? provider.auth.oauth?.name;
     const subscription = Boolean(provider.auth.oauth?.isSubscription);
-    const billing = catalogBilling(provider.name, { apiKey, oauth, oauthLabel, subscription });
+    const signIn = provider.id === CHATGPT_OAUTH_PROVIDER ? CHATGPT_SIGN_IN : undefined;
+    const billing = catalogBilling(provider.id, provider.name, {
+      apiKey,
+      oauth,
+    });
     for (const model of provider.getModels()) {
       entries.push({
         provider: provider.id,
@@ -40,6 +47,7 @@ function buildPiCatalog(): PiCatalogEntry[] {
         auth,
         oauthLabel,
         subscription,
+        signIn,
       });
     }
   }
@@ -47,17 +55,18 @@ function buildPiCatalog(): PiCatalogEntry[] {
 }
 
 function catalogBilling(
+  providerId: string,
   name: string,
-  opts: { apiKey: boolean; oauth: boolean; oauthLabel?: string; subscription: boolean },
+  opts: { apiKey: boolean; oauth: boolean },
 ) {
-  if (opts.subscription) {
-    return `Uses a ${name} subscription when you sign in. Rakazo does not pay.`;
+  if (providerId === CHATGPT_OAUTH_PROVIDER) {
+    return "Sign in with ChatGPT Plus or Pro. Uses your OpenAI subscription. Rakazo does not pay.";
   }
   if (opts.oauth && !opts.apiKey) {
-    return `Sign in with ${opts.oauthLabel ?? name}. Rakazo does not pay.`;
+    return `${name} subscription login is not in the Rakazo UI yet. Skip if this deployment already has credentials.`;
   }
-  if (opts.oauth && opts.apiKey) {
-    return `API key or ${opts.oauthLabel ?? `${name} sign-in`}. Rakazo does not pay.`;
+  if (opts.apiKey) {
+    return `Uses your ${name} API key. Rakazo does not pay for model usage.`;
   }
   return `Uses your ${name} key. Rakazo does not pay for model usage.`;
 }

@@ -41,6 +41,8 @@ export class EncryptedSecretStore implements SecretStore {
   }
 
   redact(value: string): string {
-    return value.replace(/sk-[a-zA-Z0-9-_]{8,}/g, "[redacted]");
+    return value
+      .replace(/sk-[a-zA-Z0-9-_]{8,}/g, "[redacted]")
+      .replace(/eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+/g, "[redacted]");
   }
 }

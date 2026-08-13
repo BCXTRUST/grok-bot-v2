@@ -14,6 +14,7 @@ import {
   LocalAgentHomeStore,
   loadAllFolderGrants,
   PiAgentRuntime,
+  PiOAuthLogins,
   ScriptedAgentRuntime,
   sleepComputerIfIdle,
 } from "@rakazo/adapters";
@@ -81,6 +82,7 @@ export async function createApp(
     desktopGrants,
   });
   const secrets = new EncryptedSecretStore(env.encryptionKey);
+  const oauthLogins = new PiOAuthLogins();
   const home = new LocalAgentHomeStore(env.dataDir);
   const memory = new MarkdownMemoryStore(prisma);
   const stack = createConnectorStack(isComposioEnabled(env.composioApiKey));
@@ -127,6 +129,7 @@ export async function createApp(
     memory,
     home,
     secrets,
+    oauthLogins,
     composio: stack.composio,
     dataDir: env.dataDir,
     pool: created.pool,
@@ -188,6 +191,7 @@ export async function createApp(
     composio: stack.composio,
     executor,
     stop: async () => {
+      oauthLogins.abortAll();
       await wakeup.stop();
       await connector.stop();
       await prisma.$disconnect().catch(() => undefined);

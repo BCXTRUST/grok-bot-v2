@@ -13,6 +13,9 @@ describe("Pi model catalog", () => {
         (entry) => entry.auth === "oauth" || entry.auth === "both" || entry.subscription,
       ),
     ).toBe(true);
+    const chatgpt = catalog.find((entry) => entry.provider === "openai-codex");
+    expect(chatgpt?.signIn).toBe("chatgpt-device");
+    expect(chatgpt?.billing).toMatch(/ChatGPT Plus or Pro/);
     expect(scriptedCatalogEntry.provider).toBe("scripted");
   });
 });
