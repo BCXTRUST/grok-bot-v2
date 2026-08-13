@@ -1,7 +1,5 @@
 export interface RakazoDesktop {
   platform: string;
-  grantFolder: () => Promise<string | null>;
-  listGrants: () => Promise<string[]>;
   window: {
     close: () => Promise<void>;
     minimize: () => Promise<void>;

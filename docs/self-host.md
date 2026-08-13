@@ -50,7 +50,7 @@ The Electron desktop app is only a client and works with either Docker or E2B. `
 
 - **Docker** is the default for local use and the quickest self-hosted setup. Each bot gets a container and persistent home. Keep the supervisor private, as the included Compose file does. A public single-machine Docker deployment still shares one Docker host between its bot containers.
 - **E2B** runs bot computers away from the Rakazo host and is the recommended choice for public or multi-user production deployments.
-- **Desktop provider** is for a trusted user deliberately allowing their local agent to operate in granted host folders. It has less isolation: model shell commands execute with the API/worker process's OS permissions. Do not enable it on a public or shared service.
+- **Desktop provider** runs commands on the API/worker host, limited to each bot's home directory. It has less isolation: model shell commands execute with the process's OS permissions. Do not enable it on a public or shared service.
 - **Fake** is only an emulator for verification.
 
 ## Backup

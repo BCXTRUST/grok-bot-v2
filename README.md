@@ -78,7 +78,7 @@ The app you open and the computer provider are separate choices. The web, Electr
 | --- | --- | --- | --- |
 | `docker` (default) | A per-bot Docker container on your machine | Quick local setup and trusted single-machine self-hosting | Good local isolation and persistent bot homes. The supervisor controls the local Docker daemon, so keep its port private; Rakazo does this by default. |
 | `e2b` | A remote E2B sandbox | Public or multi-user deployments | Stronger separation from the Rakazo application host. Requires `E2B_API_KEY`. |
-| `desktop` | Directly on the API/worker host | A trusted person intentionally giving their own local agent access to host folders | Least isolated. Model-initiated shell commands run with the Rakazo process's OS permissions. Do not use it on a public or shared server. This is different from merely running the Electron client. |
+| `desktop` | Directly on the API/worker host, limited to each bot's home directory | A trusted single-user local process | Least isolated. Model-initiated shell commands run with the Rakazo process's OS permissions. Do not use it on a public or shared server. This is different from merely running the Electron client. |
 | `fake` | An in-process emulator | Tests only | Does not run a real computer. |
 
 Docker remains the recommended quick start for someone running Rakazo on their own machine. E2B is the safer boundary when untrusted users or public traffic share a deployment.

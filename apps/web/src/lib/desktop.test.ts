@@ -7,8 +7,6 @@ import { type RakazoDesktop, windowChromeKind } from "./desktop.js";
 function desktop(platform: string): RakazoDesktop {
   return {
     platform,
-    grantFolder: async () => null,
-    listGrants: async () => [],
     window: {
       close: async () => undefined,
       minimize: async () => undefined,
