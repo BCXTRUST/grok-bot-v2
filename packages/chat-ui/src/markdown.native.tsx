@@ -1,4 +1,7 @@
-import Markdown, { MarkdownStream, type RenderRules } from "@ronradtke/react-native-markdown-display";
+import Markdown, {
+  MarkdownStream,
+  type RenderRules,
+} from "@ronradtke/react-native-markdown-display";
 import { memo } from "react";
 import { Linking, StyleSheet, Text, View } from "react-native";
 import type { ChatMarkdownProps } from "./markdown";

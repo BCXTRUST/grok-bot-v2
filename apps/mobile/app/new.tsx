@@ -1,6 +1,6 @@
 import { useRouter } from "expo-router";
 import { useState } from "react";
-import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { Pressable, ScrollView, Text, TextInput } from "react-native";
 import { type MobileBot, rpc } from "../lib/api";
 
 export default function NewBot() {
@@ -32,7 +32,10 @@ export default function NewBot() {
   }
 
   return (
-    <ScrollView style={{ flex: 1, backgroundColor: "#050506" }} contentContainerStyle={{ padding: 24 }}>
+    <ScrollView
+      style={{ flex: 1, backgroundColor: "#050506" }}
+      contentContainerStyle={{ padding: 24 }}
+    >
       <Text style={{ color: "#ECECEE", fontSize: 28, fontWeight: "500" }}>New bot</Text>
       <Text style={{ color: "#85858A", marginTop: 24, fontSize: 14 }}>Name</Text>
       <TextInput

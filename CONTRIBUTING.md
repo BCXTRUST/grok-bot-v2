@@ -27,7 +27,7 @@ pnpm dev
 | `pnpm check` | TypeScript (`tsc`) across the monorepo. |
 | `pnpm lint` | Biome lint and format check. |
 
-CI runs `pnpm verify:fast` on every PR.
+CI runs `pnpm lint`, `pnpm check`, and `pnpm verify:fast` on every PR.
 
 ## Secrets and configuration
 
