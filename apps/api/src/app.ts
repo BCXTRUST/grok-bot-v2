@@ -52,7 +52,15 @@ export async function createApp(overrides: Partial<AppEnv> & { prisma?: PrismaCl
     webOrigin: env.webOrigin,
     signupsEnabled: env.signupsEnabled,
     signupAllowlist: env.signupAllowlist,
-    extraOrigins: ["rakazo://", "exp://", "http://localhost:8081", "http://127.0.0.1:8081"],
+    extraOrigins: [
+      "rakazo://",
+      "exp://",
+      "exp://*",
+      "http://localhost:8081",
+      "http://127.0.0.1:8081",
+      "http://localhost:19006",
+      "http://127.0.0.1:19006",
+    ],
   });
   const wakeupKind = process.env.WAKEUP_DRIVER ?? "memory";
   const wakeup =
