@@ -7,6 +7,11 @@ import type {
   ConnectorProvider,
   ConnectorTool,
 } from "@rakazo/adapter-kit";
+import {
+  composioToolkitDirectory,
+  mergeCatalogWithConnected,
+  type ToolkitDirectoryEntry,
+} from "./composio-catalog-cache.js";
 import { DestinationEmulator } from "./destination-emulator.js";
 
 type ComposioSession = Awaited<ReturnType<Composio["create"]>>;
@@ -149,21 +154,38 @@ export class ComposioConnector implements ConnectorProvider, ConnectionAuthProvi
   }
 
   async catalog(userId: string, query?: string): Promise<ComposioCatalogItem[]> {
-    const session = await this.sessionFor(userId);
-    const toolkits = await collectPages((cursor) =>
-      session.toolkits({
-        limit: 50,
-        cursor,
-        ...(query?.trim() ? { search: query.trim() } : {}),
-      }),
-    );
+    const [directory, connected] = await Promise.all([
+      this.directory(),
+      this.connectedSlugs(userId),
+    ]);
+    return filterCatalog(mergeCatalogWithConnected(directory, connected), query ?? "");
+  }
+
+  async warmDirectory(): Promise<void> {
+    await this.directory();
+  }
+
+  private async directory(): Promise<ToolkitDirectoryEntry[]> {
+    return composioToolkitDirectory.get(() => this.loadDirectory());
+  }
+
+  private async loadDirectory(): Promise<ToolkitDirectoryEntry[]> {
+    const session = await this.sessionFor("__rakazo_catalog__");
+    const toolkits = await collectPages((cursor) => session.toolkits({ limit: 100, cursor }));
     return toolkits.map((toolkit) => ({
       slug: toolkit.slug,
       name: toolkit.name,
       logo: toolkit.logo ?? null,
-      connected: Boolean(toolkit.connection?.isActive),
       noAuth: Boolean(toolkit.isNoAuth),
     }));
+  }
+
+  private async connectedSlugs(userId: string): Promise<string[]> {
+    const session = await this.sessionFor(userId);
+    const connected = await collectPages((cursor) =>
+      session.toolkits({ isConnected: true, limit: 100, cursor }),
+    );
+    return connected.map((toolkit) => toolkit.slug);
   }
 
   async discoverTools(context: AdapterContext): Promise<ConnectorTool[]> {
@@ -232,11 +254,9 @@ export class ComposioConnector implements ConnectorProvider, ConnectionAuthProvi
 
   async complete(
     request: { state: string; code?: string },
-    context: AdapterContext,
+    _context: AdapterContext,
   ): Promise<{ connectionRef: string }> {
-    const catalog = await this.catalog(context.userId);
-    const connected = catalog.find((item) => item.connected);
-    return { connectionRef: connected?.slug ?? request.state };
+    return { connectionRef: request.state };
   }
 
   async revoke(connectionRef: string, context: AdapterContext): Promise<void> {

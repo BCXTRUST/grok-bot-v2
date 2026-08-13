@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@orpc/client": "^1.15.0",
+    "@rakazo/chat-ui": "workspace:*",
     "@rakazo/contracts": "workspace:*",
     "@rakazo/ui-tokens": "workspace:*",
     "expo": "^53.0.20",

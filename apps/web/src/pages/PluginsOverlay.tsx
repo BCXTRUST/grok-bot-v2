@@ -3,15 +3,22 @@ import { Button } from "@rakazo/ui-web";
 import { useEffect, useMemo, useState } from "react";
 import { rpc } from "../lib/rpc";
 
+let cachedCatalog: ConnectionCatalogItem[] = [];
+
+function markConnected(items: ConnectionCatalogItem[], slug: string) {
+  return items.map((entry) => (entry.slug === slug ? { ...entry, connected: true } : entry));
+}
+
 export function PluginsOverlay({ onClose }: { onClose: () => void }) {
   const [query, setQuery] = useState("");
-  const [catalog, setCatalog] = useState<ConnectionCatalogItem[]>([]);
+  const [catalog, setCatalog] = useState<ConnectionCatalogItem[]>(cachedCatalog);
   const [pending, setPending] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(cachedCatalog.length === 0);
 
-  async function refresh(search?: string) {
-    const items = await rpc.connections.catalog({ query: search || undefined });
+  async function refresh() {
+    const items = await rpc.connections.catalog({});
+    cachedCatalog = items;
     setCatalog(items);
     return items;
   }
@@ -33,16 +40,10 @@ export function PluginsOverlay({ onClose }: { onClose: () => void }) {
     );
   }, [catalog, query]);
 
-  useEffect(() => {
-    if (!pending) return;
-    const timer = setInterval(() => {
-      void refresh().then((items) => {
-        const match = items.find((item) => item.slug === pending);
-        if (match?.connected) setPending(null);
-      });
-    }, 2000);
-    return () => clearInterval(timer);
-  }, [pending]);
+  function setItemConnected(slug: string) {
+    cachedCatalog = markConnected(cachedCatalog, slug);
+    setCatalog((prev) => markConnected(prev, slug));
+  }
 
   async function connect(item: ConnectionCatalogItem) {
     setError(null);
@@ -52,18 +53,17 @@ export function PluginsOverlay({ onClose }: { onClose: () => void }) {
       if (started.authorizationUrl)
         window.open(started.authorizationUrl, "_blank", "noopener,noreferrer");
       if (item.noAuth && !started.authorizationUrl) {
-        setCatalog((prev) =>
-          prev.map((entry) => (entry.slug === item.slug ? { ...entry, connected: true } : entry)),
-        );
+        setItemConnected(item.slug);
         return;
       }
       for (let i = 0; i < 45; i += 1) {
-        await rpc.connections
+        const row = await rpc.connections
           .complete({ connectionId: started.connectionId })
           .catch(() => undefined);
-        const items = await refresh();
-        const match = items.find((entry) => entry.slug === item.slug);
-        if (match?.connected) return;
+        if (row?.status === "connected") {
+          setItemConnected(item.slug);
+          return;
+        }
         await new Promise((resolve) => setTimeout(resolve, 2000));
       }
     } catch (err) {

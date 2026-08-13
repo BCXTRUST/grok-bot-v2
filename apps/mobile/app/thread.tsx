@@ -1,3 +1,4 @@
+import { ChatMarkdown } from "@rakazo/chat-ui/native";
 import { Link, useLocalSearchParams } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
@@ -88,9 +89,15 @@ export default function Thread() {
               maxWidth: "85%",
             }}
           >
-            <Text style={{ color: message.role === "user" ? "#1A1A1A" : "#DFDFE2" }}>
-              {blockText(message)}
-            </Text>
+            {message.role === "user" ? (
+              <Text style={{ color: "#1A1A1A", fontSize: 15.5, lineHeight: 23 }}>
+                {blockText(message)}
+              </Text>
+            ) : (
+              <ChatMarkdown streaming={message.id.startsWith("progress:")}>
+                {blockText(message)}
+              </ChatMarkdown>
+            )}
           </View>
         ))}
       </ScrollView>

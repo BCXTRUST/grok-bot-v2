@@ -8,7 +8,7 @@ export default defineConfig({
       "packages/*/src/**/*.test.ts",
       "infra/sandboxes/supervisor/src/**/*.test.ts",
       "apps/desktop/src/**/*.test.ts",
-      "apps/web/src/**/*.test.ts",
+      "apps/web/src/**/*.test.{ts,tsx}",
       "apps/api/src/**/*.test.ts",
     ],
     testTimeout: 30_000,

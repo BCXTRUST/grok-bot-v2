@@ -8,12 +8,14 @@ import type {
   NotificationMessage,
   NotificationProvider,
   SandboxProvider,
+  WakeupDriver,
 } from "@rakazo/adapter-kit";
 import type { Actor, MessageBlock, RunStatus } from "@rakazo/contracts";
 import { assertTransition, containsSecret, nextCronDate, redactSecrets } from "@rakazo/core";
 import { appendEvent, type PrismaClient } from "@rakazo/db";
 import { builtinAgentTools } from "./builtin-tools.js";
 import { collectLogIds } from "./composio-connector.js";
+import { scheduleComputerSleep } from "./computer-idle.js";
 import { resolveAgentHomePath } from "./home.js";
 import { inferScript } from "./scripted-runtime.js";
 import type { EncryptedSecretStore } from "./secrets.js";
@@ -30,6 +32,7 @@ export interface ExecutorDeps {
   deploymentModelKey?: string;
   dataDir?: string;
   notifications?: NotificationProvider;
+  wakeup?: WakeupDriver;
 }
 
 export function createRunExecutor(deps: ExecutorDeps) {
@@ -552,12 +555,16 @@ async function ensureComputer(
 ): Promise<ComputerRef> {
   const homePath = resolveAgentHomePath(deps.home, botId, deps.dataDir ?? "./data");
   await mkdir(homePath, { recursive: true });
+  const existing = await deps.prisma.computer.findUnique({ where: { botId } });
   await deps.prisma.computer.updateMany({
     where: { botId },
     data: { state: "booting" },
   });
   try {
-    const ref = await deps.sandbox.provision({ botId, homePath }, context);
+    const ref = await deps.sandbox.provision(
+      { botId, homePath, providerRef: existing?.providerRef ?? undefined },
+      context,
+    );
     await deps.prisma.computer.updateMany({
       where: { botId },
       data: {
@@ -567,6 +574,7 @@ async function ensureComputer(
         controlHolder: "bot",
       },
     });
+    scheduleComputerSleep(deps.wakeup, botId);
     return ref;
   } catch (error) {
     await deps.prisma.computer.updateMany({

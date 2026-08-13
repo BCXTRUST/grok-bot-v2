@@ -35,7 +35,7 @@ import type {
 export interface SandboxProvider {
   describe(): AdapterDescriptor<SandboxCapabilities>;
   provision(
-    request: { botId: string; homePath: string },
+    request: { botId: string; homePath: string; providerRef?: string },
     context: AdapterContext,
   ): Promise<ComputerRef>;
   execute(

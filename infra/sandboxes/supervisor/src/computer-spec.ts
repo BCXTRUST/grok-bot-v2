@@ -44,7 +44,7 @@ export function containerCreateOptions(input: ComputerCreateInput) {
       PortBindings: {
         "6080/tcp": [{ HostIp: "127.0.0.1", HostPort: "0" }],
       },
-      ShmSize: 64 * 1024 * 1024,
+      ShmSize: 256 * 1024 * 1024,
       AutoRemove: false,
       NetworkMode: "bridge",
     },

@@ -1,22 +1,44 @@
 # Self-hosting Rakazo
 
-## Install
+The signed-in product is a long-running API, a Graphile Worker, Postgres, and a computer provider (Docker supervisor or E2B). It is not a static site. The marketing site in `apps/www` can be hosted separately.
+
+## Local (source checkout)
+
+Same as the README quick start: `.env` from `.env.example`, Postgres via Compose, `pnpm sandbox:build`, `pnpm dev`, then [http://127.0.0.1:5173](http://127.0.0.1:5173). Electron: `pnpm --filter @rakazo/desktop dev` while that stack is up.
+
+## Docker Compose (single machine)
 
 1. Copy `.env.example` to `.env` and set `BETTER_AUTH_SECRET` and `ENCRYPTION_KEY`.
-2. `pnpm sandbox:build` (or `docker compose -f infra/compose/docker-compose.yml up --build`) so `rakazo/computer:local` exists.
-3. `docker compose -f infra/compose/docker-compose.yml up --build`
-4. Open the web origin and create the first user. That user becomes the deployment owner.
+2. Set `OPENROUTER_API_KEY` (and `COMPOSIO_API_KEY` if you want Plugins).
+3. Build the computer image: `pnpm sandbox:build` (Compose also builds it via the `computer` service).
+4. `docker compose -f infra/compose/docker-compose.yml up --build`
+5. Open the web origin (`http://127.0.0.1:5173` by default). The first registered user becomes the deployment owner.
+
+Compose runs Postgres, the sandbox supervisor (Docker socket), API, worker, and a Vite preview of the web app. Bot computers are sibling containers (`rakazo/computer:local`). The API process does not get an unrestricted Docker socket; the supervisor owns lifecycle.
+
+On a VPS, put TLS in front of `:5173` (or serve the web build behind your proxy) and set:
+
+```env
+BETTER_AUTH_URL=https://app.example.com
+WEB_ORIGIN=https://app.example.com
+API_URL=https://app.example.com
+```
+
+Cookies and CORS follow those origins. Keep `SIGNUPS_ENABLED` / `SIGNUP_ALLOWLIST` tight on a public host.
 
 Optional:
 
 ```env
 SIGNUPS_ENABLED=true
 SIGNUP_ALLOWLIST=you@example.com,@company.com
-OPENROUTER_API_KEY=
-E2B_API_KEY=
-SANDBOX_PROVIDER=docker   # or fake | e2b | e2b-emulator. Product path is docker (or e2b). Keep fake only for pnpm verify:fast.
-AGENT_RUNTIME=pi          # or scripted. Product path is pi. Keep scripted only for pnpm verify:fast.
+SANDBOX_PROVIDER=docker   # or e2b. Keep fake only for pnpm verify:fast.
+AGENT_RUNTIME=pi          # Keep scripted only for pnpm verify:fast.
+WAKEUP_DRIVER=graphile
+SANDBOX_IDLE_MS=600000    # pause the bot computer after 10 minutes idle
+E2B_API_KEY=              # when SANDBOX_PROVIDER=e2b
 ```
+
+Do not commit `.env`. Never put `COMPOSIO_API_KEY`, OpenRouter keys, or provider tokens in git, logs, or chat.
 
 ## Backup
 
@@ -34,4 +56,25 @@ This dumps Postgres (`pg_dump`) and archives `data/` into `backups/<stamp>/`.
 
 ## Upgrade
 
-Pull the new image/source, run `pnpm --filter @rakazo/db migrate`, then restart API and worker. Product contracts stay compatible across cloud and self-hosted.
+Pull the new source, run `pnpm --filter @rakazo/db migrate`, then restart API and worker. Product contracts stay compatible across cloud and self-hosted.
+
+## What “Rakazo Cloud” still needs
+
+`apps/www` (Astro, `output: "static"`, `site: https://rakazo.com`) can go live today on Vercel, Cloudflare Pages, or any static host. The waitlist link is `mailto:hello@rakazo.com`. That is the marketing site, not the product.
+
+The product cannot be “pushed live” as a Vercel serverless app. Graphile Worker, Postgres `LISTEN`, Pi runs, and Docker computers need durable processes and a sandbox host.
+
+To run a hosted product (same codebase):
+
+1. Push `main` (this checkout may be ahead of GitHub).
+2. Provision managed Postgres 16 and run `pnpm db:migrate`.
+3. Run **API** and **worker** as always-on Node 22 services (Fly machines, a VM, ECS, k8s). Not lambda-style request handlers.
+4. Persist `DATA_DIR` (bot homes, artifacts). Today that is a local filesystem (`LocalAgentHomeStore`), so attach a volume. Object-storage-backed homes are not wired yet.
+5. Choose computers: **`SANDBOX_PROVIDER=e2b`** with `E2B_API_KEY` in production. Each bot keeps one sandbox id (`providerRef`) and a graphical desktop with a browser. Take control, sign in, then release — the bot keeps that session. Idle boxes pause after `SANDBOX_IDLE_MS` (default 10 minutes) and resume on the next message or Take control. Docker remains the local default.
+6. A Hetzner CX22 (2 vCPU / 4 GB) is enough for API + worker + Postgres when E2B owns the desktops. 2 GB works for a quiet box; 8 GB is only needed if you also run Docker computers on that same machine.
+7. Set public HTTPS `WEB_ORIGIN` / `BETTER_AUTH_URL` / `API_URL`, secrets, and an OpenRouter (or other Pi) deployment key if you want to skip per-user model keys.
+8. Put the web app behind the same origin as `/api` and `/rpc` (Vite preview proxy, or a reverse proxy). noVNC is proxied at `/novnc/*` from the web origin.
+9. Deploy `apps/www` to `rakazo.com` and point `app.rakazo.com` (or similar) at the product origin.
+10. Turn on `SIGNUP_ALLOWLIST` until you want open registration. There is no Rakazo-managed model billing in version 1 — users bring keys.
+
+Expo / desktop installers are clients of that origin (`EXPO_PUBLIC_API_URL`, `RAKAZO_WEB_URL`). They are not a Cloud control plane.

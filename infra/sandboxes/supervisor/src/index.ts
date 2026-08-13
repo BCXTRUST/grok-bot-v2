@@ -37,10 +37,16 @@ app.post("/computers", async (c) => {
     const existing = await findBotContainer(body.botId);
     if (existing) {
       const info = await existing.inspect();
-      if (!info.State.Running) await existing.start();
-      const screenUrl = await publishedScreenUrl(existing);
-      boxes.set(existing.id, { containerId: existing.id, botId: body.botId, screenUrl });
-      return c.json({ id: existing.id, image: COMPUTER_IMAGE, screenUrl, resumed: true });
+      const desired = await docker.getImage(COMPUTER_IMAGE).inspect();
+      if (info.Image !== desired.Id) {
+        await existing.remove({ force: true }).catch(() => undefined);
+        boxes.delete(existing.id);
+      } else {
+        if (!info.State.Running) await existing.start();
+        const screenUrl = await publishedScreenUrl(existing);
+        boxes.set(existing.id, { containerId: existing.id, botId: body.botId, screenUrl });
+        return c.json({ id: existing.id, image: COMPUTER_IMAGE, screenUrl, resumed: true });
+      }
     }
     const name = containerNameFor(body.botId);
     const container = await docker.createContainer(
@@ -216,7 +222,18 @@ async function ensureComputerImage() {
         );
       }
       const stream = await docker.buildImage(
-        { context: computerContext, src: ["Dockerfile", "start.sh", "embed.html", "fluxbox.init"] },
+        {
+          context: computerContext,
+          src: [
+            "Dockerfile",
+            "start.sh",
+            "rakazo-browser",
+            "embed.html",
+            "fluxbox.init",
+            "fluxbox.apps",
+            "fluxbox.menu",
+          ],
+        },
         { t: COMPUTER_IMAGE },
       );
       await new Promise<void>((resolve, reject) => {

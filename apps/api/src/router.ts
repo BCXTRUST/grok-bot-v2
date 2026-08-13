@@ -17,7 +17,9 @@ import {
   resolveAgentHomePath,
   sanitizeComposioError,
   savePushToken,
+  scheduleComputerSleep,
   scriptedCatalogEntry,
+  touchRunningComputer,
 } from "@rakazo/adapters";
 import type { Auth } from "@rakazo/auth";
 import {
@@ -397,11 +399,19 @@ export function createRouter(deps: RouterDeps) {
         await mkdir(homePath, { recursive: true });
         await deps.prisma.computer.update({ where: { botId: bot.id }, data: { state: "booting" } });
         try {
-          const ref = await deps.sandbox.provision({ botId: bot.id, homePath }, ctx);
+          const ref = await deps.sandbox.provision(
+            {
+              botId: bot.id,
+              homePath,
+              providerRef: bot.computer?.providerRef ?? undefined,
+            },
+            ctx,
+          );
           await deps.prisma.computer.update({
             where: { botId: bot.id },
             data: { state: "running", providerRef: ref.providerRef, kind: ref.kind },
           });
+          scheduleComputerSleep(deps.wakeup, bot.id);
         } catch (error) {
           await deps.prisma.computer.update({ where: { botId: bot.id }, data: { state: "error" } });
           throw error;
@@ -455,6 +465,7 @@ export function createRouter(deps: RouterDeps) {
         });
         if (waiting)
           await deps.wakeup.enqueue({ name: "run.continue", payload: { runId: waiting.id } });
+        scheduleComputerSleep(deps.wakeup, bot.id);
         return { leaseId, expiresAt: new Date(Date.now() + 15 * 60_000).toISOString() };
       }),
       release: authed.computer.release.handler(async ({ context, input }) => {
@@ -463,6 +474,7 @@ export function createRouter(deps: RouterDeps) {
           where: { botId: bot.id },
           data: { controlHolder: "bot", controlLeaseId: null },
         });
+        scheduleComputerSleep(deps.wakeup, bot.id);
         return { ok: true as const };
       }),
       input: authed.computer.input.handler(async ({ context, input }) => {
@@ -499,6 +511,7 @@ export function createRouter(deps: RouterDeps) {
             signal: new AbortController().signal,
           },
         );
+        scheduleComputerSleep(deps.wakeup, bot.id);
         return { ok: true as const };
       }),
       files: authed.computer.files.handler(async ({ context, input }) => {
@@ -547,7 +560,22 @@ export function createRouter(deps: RouterDeps) {
           },
         );
         if (!session.url) return { url: null };
+        scheduleComputerSleep(deps.wakeup, bot.id);
         return { url: withViewOnly(session.url, bot.computer.controlHolder !== "user") };
+      }),
+      heartbeat: authed.computer.heartbeat.handler(async ({ context, input }) => {
+        const bot = await repos.getBot(context.actor, input.botId);
+        if (bot.computer?.state === "running" && bot.computer.providerRef) {
+          await touchRunningComputer(
+            { sandbox: deps.sandbox, wakeup: deps.wakeup },
+            {
+              botId: bot.id,
+              providerRef: bot.computer.providerRef,
+              kind: bot.computer.kind,
+            },
+          ).catch(() => undefined);
+        }
+        return { ok: true as const };
       }),
       grantFolder: authed.computer.grantFolder.handler(async ({ context, input }) => {
         const folder = path.resolve(input.folder);

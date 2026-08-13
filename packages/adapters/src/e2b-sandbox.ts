@@ -10,6 +10,41 @@ import type {
   ScreenRequest,
   ScreenSession,
 } from "@rakazo/adapter-kit";
+import { sandboxIdleMs } from "./computer-idle.js";
+
+export function e2bCreateOptions(botId: string, apiKey: string) {
+  return {
+    apiKey,
+    timeoutMs: sandboxIdleMs(),
+    metadata: { botId, rakazo: "computer" },
+    resolution: [1280, 800] as [number, number],
+    lifecycle: { onTimeout: "pause" as const, autoResume: false },
+  };
+}
+
+export function isUnrecoverableSandboxError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /not found|does not exist|404|not_found|killed|doesn't exist|sandbox not found/i.test(
+    message,
+  );
+}
+
+export const E2B_BROWSER_APPS = ["google-chrome", "firefox", "chromium"] as const;
+
+export async function openDesktopBrowser(desktop: {
+  launch: (application: string, uri?: string) => Promise<void>;
+  open: (fileOrUrl: string) => Promise<void>;
+}): Promise<void> {
+  for (const app of E2B_BROWSER_APPS) {
+    try {
+      await desktop.launch(app);
+      return;
+    } catch {
+      // try the next installed browser
+    }
+  }
+  await desktop.open("https://www.google.com").catch(() => undefined);
+}
 
 export class E2BSandboxProvider implements SandboxProvider {
   private readonly boxes = new Map<string, Sandbox>();
@@ -32,24 +67,52 @@ export class E2BSandboxProvider implements SandboxProvider {
   }
 
   private async box(computer: ComputerRef): Promise<Sandbox> {
-    const existing = this.boxes.get(computer.id);
-    if (existing) return existing;
-    const connected = await Sandbox.connect(computer.id, { apiKey: this.apiKey });
-    this.boxes.set(computer.id, connected);
+    const id = computer.providerRef || computer.id;
+    const existing = this.boxes.get(id);
+    if (existing) {
+      await existing.setTimeout(sandboxIdleMs()).catch(() => undefined);
+      return existing;
+    }
+    const connected = await Sandbox.connect(id, {
+      apiKey: this.apiKey,
+      timeoutMs: sandboxIdleMs(),
+    });
+    await this.startStream(connected);
+    this.boxes.set(connected.sandboxId, connected);
     return connected;
   }
 
+  private async startStream(desktop: Sandbox) {
+    await desktop.stream.start({ requireAuth: true }).catch(() => desktop.stream.start());
+  }
+
   async provision(
-    request: { botId: string; homePath: string },
+    request: { botId: string; homePath: string; providerRef?: string },
     _context: AdapterContext,
   ): Promise<ComputerRef> {
-    const desktop = await Sandbox.create({
-      apiKey: this.apiKey,
-      timeoutMs: 15 * 60_000,
-      metadata: { botId: request.botId },
-    });
+    if (request.providerRef) {
+      try {
+        const desktop = await Sandbox.connect(request.providerRef, {
+          apiKey: this.apiKey,
+          timeoutMs: sandboxIdleMs(),
+        });
+        await this.startStream(desktop);
+        this.boxes.set(desktop.sandboxId, desktop);
+        return {
+          id: desktop.sandboxId,
+          botId: request.botId,
+          kind: "e2b",
+          providerRef: desktop.sandboxId,
+        };
+      } catch (error) {
+        this.boxes.delete(request.providerRef);
+        if (!isUnrecoverableSandboxError(error)) throw error;
+      }
+    }
+    const desktop = await Sandbox.create(e2bCreateOptions(request.botId, this.apiKey));
     await desktop.files.makeDir("/home/user/rakazo-home").catch(() => undefined);
-    await desktop.stream.start({ requireAuth: true }).catch(() => desktop.stream.start());
+    await this.startStream(desktop);
+    await openDesktopBrowser(desktop);
     this.boxes.set(desktop.sandboxId, desktop);
     return {
       id: desktop.sandboxId,
@@ -78,12 +141,19 @@ export class E2BSandboxProvider implements SandboxProvider {
     _context: AdapterContext,
   ): Promise<ScreenSession> {
     const desktop = await this.box(computer);
-    const authKey = await Promise.resolve(
-      desktop.stream.getAuthKey?.() as string | Promise<string> | undefined,
-    ).catch(() => undefined);
+    let authKey: string | undefined;
+    try {
+      authKey = desktop.stream.getAuthKey();
+    } catch {
+      authKey = undefined;
+    }
     const url =
       typeof desktop.stream.getUrl === "function"
-        ? desktop.stream.getUrl(authKey ? { authKey } : undefined)
+        ? desktop.stream.getUrl({
+            autoConnect: true,
+            resize: "scale",
+            ...(authKey ? { authKey } : {}),
+          })
         : null;
     return {
       url,
@@ -120,14 +190,24 @@ export class E2BSandboxProvider implements SandboxProvider {
     return { id: `e2b-${computer.id}-${Date.now()}`, createdAt: new Date().toISOString() };
   }
 
+  async keepAlive(computer: ComputerRef): Promise<void> {
+    await this.box(computer);
+  }
+
   async stop(computer: ComputerRef, _context: AdapterContext): Promise<void> {
-    const desktop = this.boxes.get(computer.id);
-    if (desktop) await desktop.betaPause?.().catch(() => desktop.kill());
+    const id = computer.providerRef || computer.id;
+    const desktop = this.boxes.get(id);
+    this.boxes.delete(id);
+    if (desktop) {
+      await desktop.pause().catch(() => undefined);
+      return;
+    }
+    await Sandbox.pause(id, { apiKey: this.apiKey }).catch(() => undefined);
   }
 
   async destroy(computer: ComputerRef, _context: AdapterContext): Promise<void> {
     const desktop = await this.box(computer).catch(() => undefined);
     await desktop?.kill();
-    this.boxes.delete(computer.id);
+    this.boxes.delete(computer.providerRef || computer.id);
   }
 }

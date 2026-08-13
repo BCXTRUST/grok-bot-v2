@@ -123,6 +123,7 @@ export const appContract = {
       .input(z.object({ botId: Id, path: z.string() }))
       .output(z.object({ path: z.string(), content: z.string() })),
     screenUrl: oc.input(botId).output(z.object({ url: z.string().nullable() })),
+    heartbeat: oc.input(botId).output(z.object({ ok: z.literal(true) })),
     grantFolder: oc
       .input(z.object({ folder: z.string().min(1) }))
       .output(z.object({ grants: z.array(z.string()) })),

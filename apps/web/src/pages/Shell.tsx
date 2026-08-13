@@ -360,9 +360,14 @@ export function ShellPage() {
         </div>
       </main>
 
-      {panel && active ? (
-        <aside className="rk-scroll absolute inset-y-0 right-0 z-20 w-[min(384px,100%)] overflow-y-auto border-l border-[#141416] bg-[#0A0A0B] px-5 py-[17px] shadow-[-24px_0_48px_rgba(0,0,0,.35)]">
-          {panel !== "routine" ? (
+      <aside
+        className={`flex h-full min-h-0 shrink-0 flex-col overflow-hidden bg-[#0A0A0B] transition-[width] duration-200 ease-out ${
+          panel && active ? "w-[384px] border-l border-[#141416]" : "w-0"
+        }`}
+      >
+        {panel && active ? (
+          <div className="rk-scroll h-full w-[384px] overflow-y-auto px-5 py-[17px]">
+            {panel !== "routine" ? (
             <div className="mb-4 flex items-center justify-between">
               <span className="text-[13.5px] text-[#85858A]">
                 {computer?.state ?? active.status}
@@ -544,8 +549,9 @@ export function ShellPage() {
               </Button>
             </div>
           ) : null}
-        </aside>
-      ) : null}
+          </div>
+        ) : null}
+      </aside>
 
       {pluginsOpen ? <PluginsOverlay onClose={() => setPluginsOpen(false)} /> : null}
 

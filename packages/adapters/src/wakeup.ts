@@ -19,6 +19,7 @@ export class GraphileWakeupDriver implements WakeupDriver {
     await quickAddJob({ connectionString: this.connectionString }, job.name, job.payload, {
       runAt: job.runAt,
       jobKey: job.jobKey,
+      jobKeyMode: job.jobKey ? "replace" : undefined,
     });
   }
 
@@ -47,6 +48,7 @@ export class GraphileWakeupDriver implements WakeupDriver {
 export class InMemoryWakeupDriver implements WakeupDriver {
   private handlers: Record<string, (payload: Record<string, unknown>) => Promise<void>> = {};
   private timers: NodeJS.Timeout[] = [];
+  private keyed = new Map<string, NodeJS.Timeout>();
 
   describe() {
     return {
@@ -59,7 +61,15 @@ export class InMemoryWakeupDriver implements WakeupDriver {
 
   async enqueue(job: WakeupJob, _context?: AdapterContext): Promise<void> {
     const delay = job.runAt ? Math.max(0, job.runAt.getTime() - Date.now()) : 0;
+    if (job.jobKey) {
+      const existing = this.keyed.get(job.jobKey);
+      if (existing) {
+        clearTimeout(existing);
+        this.timers = this.timers.filter((timer) => timer !== existing);
+      }
+    }
     const timer = setTimeout(() => {
+      if (job.jobKey) this.keyed.delete(job.jobKey);
       const handler = this.handlers[job.name];
       if (!handler) {
         console.error(`No wakeup handler for ${job.name}`);
@@ -68,6 +78,7 @@ export class InMemoryWakeupDriver implements WakeupDriver {
       void handler(job.payload).catch((error) => console.error(job.name, error));
     }, delay);
     this.timers.push(timer);
+    if (job.jobKey) this.keyed.set(job.jobKey, timer);
   }
 
   async start(
@@ -79,5 +90,6 @@ export class InMemoryWakeupDriver implements WakeupDriver {
   async stop(): Promise<void> {
     for (const timer of this.timers) clearTimeout(timer);
     this.timers = [];
+    this.keyed.clear();
   }
 }

@@ -34,6 +34,7 @@ import {
   loadAllFolderGrants,
   PiAgentRuntime,
   ScriptedAgentRuntime,
+  sleepComputerIfIdle,
 } from "@rakazo/adapters";
 import { createDb } from "@rakazo/db";
 import { MarkdownMemoryStore } from "@rakazo/memory";
@@ -56,6 +57,10 @@ async function main() {
   const connector = stack.destination;
   await connector.start();
   const secrets = new EncryptedSecretStore(process.env.ENCRYPTION_KEY ?? "dev-encryption-key");
+  const wakeup =
+    process.env.WAKEUP_DRIVER === "memory"
+      ? new InMemoryWakeupDriver()
+      : new GraphileWakeupDriver(databaseUrl);
   const executor = createRunExecutor({
     prisma,
     runtime,
@@ -70,12 +75,8 @@ async function main() {
     deploymentModelKey: process.env.OPENROUTER_API_KEY,
     dataDir,
     notifications: new ExpoPushProvider(dataDir),
+    wakeup,
   });
-
-  const wakeup =
-    process.env.WAKEUP_DRIVER === "memory"
-      ? new InMemoryWakeupDriver()
-      : new GraphileWakeupDriver(databaseUrl);
 
   await wakeup.start({
     "run.continue": async (payload) => {
@@ -83,6 +84,9 @@ async function main() {
     },
     "routine.wakeup": async (payload) => {
       await executor.wakeRoutine(String(payload.routineId), process.pid.toString());
+    },
+    "computer.sleep": async (payload) => {
+      await sleepComputerIfIdle({ prisma, sandbox, wakeup }, String(payload.botId));
     },
   });
 

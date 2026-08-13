@@ -15,6 +15,7 @@ import {
   loadAllFolderGrants,
   PiAgentRuntime,
   ScriptedAgentRuntime,
+  sleepComputerIfIdle,
 } from "@rakazo/adapters";
 import { blockedAuthPaths, createAuth } from "@rakazo/auth";
 import { createDb, type PrismaClient, requireMembership } from "@rakazo/db";
@@ -84,6 +85,7 @@ export async function createApp(
   const stack = createConnectorStack(isComposioEnabled(env.composioApiKey));
   const connector = stack.destination;
   await connector.start();
+  void stack.composio?.warmDirectory().catch(() => undefined);
   const runtime =
     env.agentRuntime === "scripted" ? new ScriptedAgentRuntime() : new PiAgentRuntime();
   const notifications = new ExpoPushProvider(env.dataDir);
@@ -99,6 +101,7 @@ export async function createApp(
     deploymentModelKey: env.openRouterKey,
     dataDir: env.dataDir,
     notifications,
+    wakeup,
   });
 
   if (wakeupKind !== "graphile") {
@@ -108,6 +111,9 @@ export async function createApp(
       },
       "routine.wakeup": async (payload) => {
         await executor.wakeRoutine(String(payload.routineId), "api");
+      },
+      "computer.sleep": async (payload) => {
+        await sleepComputerIfIdle({ prisma, sandbox, wakeup }, String(payload.botId));
       },
     });
   }
