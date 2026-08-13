@@ -8,11 +8,7 @@ Each bot has one thread, one computer, memory, routines, and history. This repos
 
 ## Demo
 
-<p align="center">
-  <video src="https://media.githubusercontent.com/media/elie222/rakazo/main/docs/screenshots/demo.mp4" poster="docs/screenshots/web-computer.png" width="880" controls playsinline>
-    <a href="docs/screenshots/demo.mp4">Watch the demo</a>
-  </video>
-</p>
+https://github.com/user-attachments/assets/dccdeddb-2134-4a56-8eed-b2e591736b1c
 
 ## Requirements
 
