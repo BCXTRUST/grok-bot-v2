@@ -90,6 +90,7 @@ async function completeOnboarding(page: Page, answers: string[]) {
       .isVisible()
       .catch(() => false)
   ) {
+    await page.locator("label:has-text('Name') input").fill("Chief");
     await page.getByRole("button", { name: "Continue" }).click();
     for (const answer of answers) {
       await page.getByText(answer, { exact: true }).click();

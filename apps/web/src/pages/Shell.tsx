@@ -1,3 +1,4 @@
+import { ChatMarkdown } from "@rakazo/chat-ui/web";
 import type {
   Bot,
   ComputerStatus,
@@ -15,7 +16,7 @@ import { rpc } from "../lib/rpc";
 import { PluginsOverlay } from "./PluginsOverlay";
 import { WindowChrome } from "./WindowChrome";
 
-type Panel = "computer" | "settings" | "routine" | null;
+type Panel = "computer" | "settings" | "routine" | "create" | null;
 
 export function ShellPage() {
   const { botId } = useParams();
@@ -33,6 +34,7 @@ export function ShellPage() {
   const [booting, setBooting] = useState(false);
   const [routineDraft, setRoutineDraft] = useState({ name: "", prompt: "", cron: "0 9 * * 1" });
   const [screenUrl, setScreenUrl] = useState<string | null>(null);
+  const [computerOpen, setComputerOpen] = useState(false);
   const [usage, setUsage] = useState<{
     inputTokens: number;
     outputTokens: number;
@@ -58,8 +60,10 @@ export function ShellPage() {
     setComputer(snap.computer);
     const r = await rpc.routines.list({ botId: id });
     setRoutines(r);
-    const screen = await rpc.computer.screenUrl({ botId: id }).catch(() => ({ url: null }));
-    setScreenUrl(screen.url);
+    if (panel === "computer" || computerOpen) {
+      const screen = await rpc.computer.screenUrl({ botId: id }).catch(() => ({ url: null }));
+      setScreenUrl(screen.url);
+    }
     return snap;
   }
 
@@ -119,28 +123,30 @@ export function ShellPage() {
     await refreshThread(active.id);
   }
 
-  async function createBot() {
+  async function createBot(input: { name: string; title: string; description: string }) {
     const bot = await rpc.bots.create({
-      name: "New Bot",
-      title: "",
-      description: "",
-      instructions: "",
+      name: input.name.trim(),
+      title: input.title,
+      description: input.description,
+      instructions: input.description,
       notifyOnFinish: true,
     });
     await refreshBots();
     navigate(`/app/${bot.id}`);
-    setPanel("settings");
+    setPanel(null);
   }
 
   async function bootComputer({
     takeControl,
     overlay,
+    force = false,
   }: {
     takeControl: boolean;
     overlay: boolean;
+    force?: boolean;
   }) {
     if (!active) return;
-    const needsBoot = computer?.state !== "running" || !screenUrl;
+    const needsBoot = force || computer?.state !== "running" || !screenUrl;
     if (overlay && needsBoot) setBooting(true);
     try {
       if (needsBoot) await rpc.computer.boot({ botId: active.id });
@@ -152,13 +158,59 @@ export function ShellPage() {
   }
 
   useEffect(() => {
-    if (panel !== "computer" || !active) return;
-    if (computer?.state === "booting") return;
-    if (computer?.state === "running" && screenUrl) return;
-    if (autoBooted.current === active.id) return;
+    if (panel !== "computer") {
+      autoBooted.current = null;
+      return;
+    }
+    if (!active) return;
+    if (computer?.state === "booting" || computer?.state === "suspended") return;
+    if (autoBooted.current === active.id && computer?.state === "running" && screenUrl) return;
     autoBooted.current = active.id;
-    void bootComputer({ takeControl: false, overlay: false });
+    void bootComputer({
+      takeControl: false,
+      overlay: computer?.state !== "running",
+      force: true,
+    });
   }, [panel, active?.id, computer?.state, screenUrl]);
+
+  useEffect(() => {
+    setComputerOpen(false);
+  }, [active?.id]);
+
+  useEffect(() => {
+    if (!computerOpen) return;
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") setComputerOpen(false);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [computerOpen]);
+
+  useEffect(() => {
+    if ((panel !== "computer" && !computerOpen) || !active || computer?.state !== "running") return;
+    const ping = () => void rpc.computer.heartbeat({ botId: active.id }).catch(() => undefined);
+    ping();
+    const timer = window.setInterval(ping, 60_000);
+    return () => window.clearInterval(timer);
+  }, [panel, computerOpen, active?.id, computer?.state]);
+
+  async function openComputer() {
+    if (!active) return;
+    const needsTakeover = computer?.controlHolder !== "user";
+    await bootComputer({
+      takeControl: needsTakeover,
+      overlay: needsTakeover || computer?.state !== "running",
+      force: computer?.state !== "running",
+    });
+    setComputerOpen(true);
+  }
+
+  async function releaseComputer() {
+    if (!active) return;
+    await rpc.computer.release({ botId: active.id }).catch(() => undefined);
+    setComputerOpen(false);
+    await refreshThread(active.id);
+  }
 
   const embeddedScreenUrl = embeddableScreenUrl(screenUrl);
 
@@ -177,7 +229,7 @@ export function ShellPage() {
           <WindowChrome />
           <button
             type="button"
-            onClick={() => void createBot()}
+            onClick={() => setPanel("create")}
             className="app-no-drag text-[21px] text-[#7A7A80] hover:text-[#C9C9CE]"
             title="New bot"
           >
@@ -367,7 +419,7 @@ export function ShellPage() {
       >
         {panel && active ? (
           <div className="rk-scroll h-full w-[384px] overflow-y-auto px-5 py-[17px]">
-            {panel !== "routine" ? (
+            {panel !== "routine" && panel !== "create" ? (
             <div className="mb-4 flex items-center justify-between">
               <span className="text-[13.5px] text-[#85858A]">
                 {computer?.state ?? active.status}
@@ -385,13 +437,17 @@ export function ShellPage() {
           {panel === "computer" ? (
             <div>
               <div className="relative aspect-[16/10] overflow-hidden rounded-[14px] bg-[#0E0E10]">
-                {embeddedScreenUrl ? (
+                {computerOpen ? (
+                  <div className="grid h-full place-items-center text-sm text-[#6C6C70]">
+                    Open in full window
+                  </div>
+                ) : computer?.state === "running" && embeddedScreenUrl ? (
                   <iframe
-                    title="Bot screen"
+                    title="Bot screen preview"
                     src={embeddedScreenUrl}
                     className="h-full w-full border-0 bg-black"
-                    allow="clipboard-read; clipboard-write; fullscreen"
-                    style={{ pointerEvents: computer?.controlHolder === "user" ? "auto" : "none" }}
+                    allow="clipboard-read; clipboard-write"
+                    style={{ pointerEvents: "none" }}
                   />
                 ) : (
                   <div className="grid h-full place-items-center text-sm text-[#6C6C70]">
@@ -399,26 +455,47 @@ export function ShellPage() {
                       ? "Booting live desktop…"
                       : computer?.state === "running"
                         ? `${active.name}’s screen`
-                        : computer?.state === "error"
-                          ? "Computer failed to boot"
-                          : "Computer is stopped"}
+                        : computer?.state === "suspended"
+                          ? "Computer is asleep — take control to wake it"
+                          : computer?.state === "error"
+                            ? "Computer failed to boot"
+                            : "Computer is stopped"}
                   </div>
                 )}
+                <button
+                  type="button"
+                  className="absolute inset-0 cursor-pointer"
+                  aria-label="Open computer"
+                  onClick={() => void openComputer()}
+                />
               </div>
               <div className="mt-3 flex items-center justify-between">
                 <span className="text-[13.5px] text-[#85858A]">
                   {computer?.controlHolder === "user"
                     ? "You have control"
-                    : `${active.name}’s screen`}
+                    : computer?.state === "suspended"
+                      ? "Asleep"
+                      : `${active.name}’s screen`}
                 </span>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => void bootComputer({ takeControl: true, overlay: true })}
-                >
-                  Take control
-                </Button>
+                {computer?.controlHolder === "user" ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => void releaseComputer()}
+                  >
+                    Release
+                  </Button>
+                ) : (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => void openComputer()}
+                  >
+                    Take control
+                  </Button>
+                )}
               </div>
               <div className="mt-[30px] mb-3 text-[14px] text-[#85858A]">Routines</div>
               {routines.map((routine) => (
@@ -465,6 +542,12 @@ export function ShellPage() {
                 + New routine
               </button>
             </div>
+          ) : null}
+          {panel === "create" ? (
+            <CreateBotForm
+              onCancel={() => setPanel(null)}
+              onCreate={(input) => void createBot(input)}
+            />
           ) : null}
           {panel === "settings" ? (
             <BotSettings
@@ -556,12 +639,72 @@ export function ShellPage() {
       {pluginsOpen ? <PluginsOverlay onClose={() => setPluginsOpen(false)} /> : null}
 
       {booting ? (
-        <div className="absolute inset-0 flex flex-col items-center justify-center gap-[22px] bg-[rgba(4,4,5,.88)]">
+        <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-[22px] bg-[rgba(4,4,5,.96)]">
           <div className="text-[19px] font-medium text-[#F1F1F2]">
             Booting up {active?.name}’s computer
           </div>
-          <div className="h-[5px] w-[420px] overflow-hidden rounded-full bg-[#232327]">
+          <div className="h-[5px] w-[min(420px,70%)] overflow-hidden rounded-full bg-[#232327]">
             <div className="h-full w-2/3 rounded-full bg-[#F1F1EF]" />
+          </div>
+        </div>
+      ) : computerOpen && active ? (
+        <div className="absolute inset-0 z-30 flex flex-col bg-[#050506]">
+          <div className="flex items-center justify-between gap-4 border-b border-[#171719] px-[18px] py-3.5">
+            <div className="flex min-w-0 items-center gap-3">
+              <BotAvatar color={active.color} size={28} />
+              <span className="truncate text-[15.5px] font-medium text-[#ECECEE]">
+                {active.name}’s computer
+              </span>
+              {computer?.controlHolder === "user" ? (
+                <span className="rounded-full bg-[rgba(48,162,75,.14)] px-[11px] py-1 text-[13px] text-[#4ECB71]">
+                  You have control
+                </span>
+              ) : null}
+            </div>
+            <div className="flex items-center gap-3">
+              {computer?.controlHolder === "user" ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void releaseComputer()}
+                >
+                  Release
+                </Button>
+              ) : (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void bootComputer({ takeControl: true, overlay: false })}
+                >
+                  Take control
+                </Button>
+              )}
+              <button
+                type="button"
+                className="text-[16px] text-[#85858A] hover:text-[#ECECEE]"
+                aria-label="Close computer"
+                onClick={() => setComputerOpen(false)}
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+          <div className="min-h-0 flex-1 bg-[#0E0E10]">
+            {computer?.state === "running" && embeddedScreenUrl ? (
+              <iframe
+                title="Bot screen"
+                src={embeddedScreenUrl}
+                className="h-full w-full border-0 bg-black"
+                allow="clipboard-read; clipboard-write; fullscreen"
+                style={{ pointerEvents: computer?.controlHolder === "user" ? "auto" : "none" }}
+              />
+            ) : (
+              <div className="grid h-full place-items-center text-sm text-[#6C6C70]">
+                {computer?.state === "suspended" ? "Computer is asleep" : `${active.name}’s screen`}
+              </div>
+            )}
           </div>
         </div>
       ) : null}
@@ -613,11 +756,18 @@ function applyThreadEvent(
     });
   }
   if (event.type === "computer.status" || event.type === "computer.takeover.granted") {
+    const status = String(event.payload.status ?? "");
     setComputer((prev) =>
       prev
         ? {
             ...prev,
             controlHolder: event.type === "computer.takeover.granted" ? "user" : prev.controlHolder,
+            state:
+              event.type === "computer.status" &&
+              ["stopped", "booting", "running", "suspended", "error"].includes(status)
+                ? (status as ComputerStatus["state"])
+                : prev.state,
+            screenAvailable: status === "running" || status === "booting" || prev.screenAvailable,
           }
         : prev,
     );
@@ -649,8 +799,7 @@ function MessageView({
           return (
             <div key={i} className="flex justify-start">
               <div className="max-w-[74%] rounded-[20px] bg-[#1A1A1D] px-[18px] py-3 text-[15.5px] leading-[1.5] text-[#DFDFE2]">
-                {block.text}
-                <span className="ml-1 inline-block animate-pulse text-[#85858A]">▍</span>
+                <ChatMarkdown streaming>{block.text}</ChatMarkdown>
               </div>
             </div>
           );
@@ -668,7 +817,7 @@ function MessageView({
           return (
             <div key={i} className="flex justify-start">
               <div className="max-w-[74%] rounded-[20px] bg-[#1A1A1D] px-[18px] py-3 text-[15.5px] leading-[1.5] text-[#DFDFE2]">
-                {block.text}
+                <ChatMarkdown>{block.text}</ChatMarkdown>
               </div>
             </div>
           );
@@ -695,7 +844,9 @@ function MessageView({
               key={i}
               className="max-w-[74%] rounded-[20px] border border-[#242428] bg-[#141417] px-5 py-[17px]"
             >
-              <div className="text-[15.5px] leading-[1.5] text-[#ECECEE]">{block.text}</div>
+              <div className="text-[15.5px] leading-[1.5] text-[#ECECEE]">
+                <ChatMarkdown>{block.text}</ChatMarkdown>
+              </div>
               {block.detail ? (
                 <pre className="mt-3 rounded-xl bg-[#0E0E10] px-3.5 py-3 font-mono text-[12.5px] leading-[1.7] text-[#85858A]">
                   {block.detail}
@@ -731,13 +882,74 @@ function MessageView({
                   {block.state}
                 </span>
               </div>
-              <p className="my-2.5 text-[14.5px] leading-[1.5] text-[#A8A8AD]">{block.text}</p>
+              <div className="my-2.5 text-[14.5px] leading-[1.5] text-[#A8A8AD]">
+                <ChatMarkdown>{block.text}</ChatMarkdown>
+              </div>
             </div>
           );
         }
         return null;
       })}
     </>
+  );
+}
+
+function CreateBotForm({
+  onCreate,
+  onCancel,
+}: {
+  onCreate: (input: { name: string; title: string; description: string }) => void;
+  onCancel: () => void;
+}) {
+  const [name, setName] = useState("");
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+
+  return (
+    <div>
+      <div className="mb-4 flex items-center justify-between">
+        <span className="text-[13.5px] text-[#85858A]">New bot</span>
+        <button type="button" onClick={onCancel}>
+          ✕
+        </button>
+      </div>
+      <label className="mt-6 block text-[14px] text-[#85858A]">
+        Name
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Name this bot"
+          className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
+        />
+      </label>
+      <label className="mt-4 block text-[14px] text-[#85858A]">
+        Title
+        <input
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          placeholder="Describe what this bot does"
+          className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
+        />
+      </label>
+      <label className="mt-4 block text-[14px] text-[#85858A]">
+        Description
+        <textarea
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          placeholder="What this bot is for"
+          rows={4}
+          className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
+        />
+      </label>
+      <button
+        type="button"
+        disabled={!name.trim()}
+        onClick={() => onCreate({ name, title, description })}
+        className="mt-5 rounded-[11px] bg-[#F1F1EF] px-4 py-2 text-[#17171A] disabled:opacity-40"
+      >
+        Create
+      </button>
+    </div>
   );
 }
 

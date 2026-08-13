@@ -36,7 +36,14 @@ export default function Home() {
 
   return (
     <View style={{ flex: 1, backgroundColor: "#050506", padding: 24 }}>
-      <Text style={{ color: "#ECECEE", fontSize: 28, fontWeight: "500" }}>Bots</Text>
+      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+        <Text style={{ color: "#ECECEE", fontSize: 28, fontWeight: "500" }}>Bots</Text>
+        <Link href="/new" asChild>
+          <Pressable>
+            <Text style={{ color: "#7A7A80", fontSize: 28 }}>+</Text>
+          </Pressable>
+        </Link>
+      </View>
       <Text style={{ color: "#85858A", marginTop: 8 }}>Open a thread, then the computer.</Text>
       {error ? <Text style={{ color: "#85858A", marginTop: 16 }}>{error}</Text> : null}
       {bots.map((bot) => (

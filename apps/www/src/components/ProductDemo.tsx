@@ -512,7 +512,7 @@ export function ProductDemo() {
     const color = BOT_COLORS[bots.length % BOT_COLORS.length] ?? "#3EC5A8";
     const bot: LiveBot = {
       id: `bot-${Date.now()}`,
-      name: "New Bot",
+      name: "",
       color,
       time: "Now",
       preview: "Say what you want this bot doing",

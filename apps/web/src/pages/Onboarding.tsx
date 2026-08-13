@@ -45,9 +45,9 @@ export function OnboardingPage() {
   const [provider, setProvider] = useState("openrouter");
   const [modelId, setModelId] = useState("deepseek/deepseek-v4-flash-0731");
   const [apiKey, setApiKey] = useState("");
-  const [name, setName] = useState("Chief");
-  const [title, setTitle] = useState("Chief of staff");
-  const [description, setDescription] = useState("Keeps work moving and comes back with results.");
+  const [name, setName] = useState("");
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
   const [answers, setAnswers] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
 
@@ -124,7 +124,7 @@ export function OnboardingPage() {
       ? `User setup:\n${answers.map((a) => `- ${a}`).join("\n")}`
       : description;
     const bot = await rpc.bots.create({
-      name,
+      name: name.trim(),
       title,
       description,
       instructions,
@@ -234,6 +234,7 @@ export function OnboardingPage() {
               <input
                 value={name}
                 onChange={(e) => setName(e.target.value)}
+                placeholder="Name this bot"
                 className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
               />
             </label>
@@ -242,6 +243,7 @@ export function OnboardingPage() {
               <input
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
+                placeholder="Describe what this bot does"
                 className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
               />
             </label>
@@ -250,14 +252,16 @@ export function OnboardingPage() {
               <textarea
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
+                placeholder="What this bot is for"
                 rows={4}
                 className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
               />
             </label>
             <button
               type="button"
+              disabled={!name.trim()}
               onClick={() => setStep("questions")}
-              className="mt-6 rounded-[11px] bg-[#F1F1EF] px-5 py-2.5 text-[#17171A]"
+              className="mt-6 rounded-[11px] bg-[#F1F1EF] px-5 py-2.5 text-[#17171A] disabled:opacity-40"
             >
               Continue
             </button>

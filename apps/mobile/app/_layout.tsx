@@ -11,6 +11,7 @@ export default function Layout() {
       >
         <Stack.Screen name="index" options={{ title: "Rakazo" }} />
         <Stack.Screen name="sign-in" options={{ headerShown: false }} />
+        <Stack.Screen name="new" options={{ title: "New bot" }} />
         <Stack.Screen name="thread" options={{ title: "Thread" }} />
         <Stack.Screen name="computer" options={{ title: "Computer" }} />
       </Stack>
