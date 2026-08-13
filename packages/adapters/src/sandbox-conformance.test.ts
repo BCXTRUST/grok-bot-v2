@@ -1,4 +1,6 @@
 import { execSync, spawn } from "node:child_process";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import type { SandboxProvider } from "@rakazo/adapter-kit";
 import { afterAll, describe, expect, it } from "vitest";
@@ -92,9 +94,11 @@ describe("sandbox conformance", () => {
 
 describe("docker sandbox", () => {
   let spawned: ReturnType<typeof spawn> | undefined;
+  const dataDir = mkdtempSync(path.join(tmpdir(), "rakazo-docker-conformance-"));
 
   afterAll(async () => {
     spawned?.kill("SIGTERM");
+    rmSync(dataDir, { recursive: true, force: true });
   });
 
   it("runs the same graphical command through the supervisor", async ({ skip }) => {
@@ -102,26 +106,29 @@ describe("docker sandbox", () => {
       skip();
       return;
     }
-    let url = process.env.SANDBOX_SUPERVISOR_URL ?? "http://127.0.0.1:7091";
-    const healthy = await ping(`${url}/health`);
-    if (!healthy) {
-      const port = 17991;
-      url = `http://127.0.0.1:${port}`;
-      const root = path.resolve(import.meta.dirname, "../../..");
-      spawned = spawn("pnpm", ["--filter", "@rakazo/sandbox-supervisor", "start"], {
-        cwd: root,
-        env: { ...process.env, SUPERVISOR_PORT: String(port) },
-        stdio: "ignore",
-      });
-      const up = await waitForHealth(`${url}/health`, 20_000);
-      if (!up) {
-        skip();
-        return;
-      }
+    const port = 17991;
+    const token = "sandbox-conformance-token";
+    const url = `http://127.0.0.1:${port}`;
+    const root = path.resolve(import.meta.dirname, "../../..");
+    spawned = spawn("pnpm", ["--filter", "@rakazo/sandbox-supervisor", "start"], {
+      cwd: root,
+      env: {
+        ...process.env,
+        DATA_DIR: dataDir,
+        SANDBOX_SUPERVISOR_TOKEN: token,
+        SUPERVISOR_PORT: String(port),
+      },
+      stdio: "ignore",
+    });
+    const up = await waitForHealth(`${url}/health`, 20_000);
+    if (!up) {
+      skip();
+      return;
     }
-    const provider = new DockerSandboxProvider(url);
+    const provider = new DockerSandboxProvider(url, token);
+    const botId = `conf-${Date.now()}`;
     const computer = await provider.provision(
-      { botId: `conf-${Date.now()}`, homePath: "/tmp/rakazo-docker" },
+      { botId, homePath: path.join(dataDir, "homes", botId) },
       ctx,
     );
     const out = await drain(provider, computer);

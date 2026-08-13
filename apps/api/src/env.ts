@@ -9,6 +9,7 @@ export interface AppEnv {
   encryptionKey: string;
   dataDir: string;
   sandboxSupervisorUrl: string;
+  sandboxSupervisorToken: string;
   sandboxProvider: string;
   agentRuntime: string;
   openRouterKey: string | undefined;
@@ -21,9 +22,10 @@ export interface AppEnv {
 }
 
 export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
+  const authSecret = source.BETTER_AUTH_SECRET || "dev-secret-change-me-please-32chars";
   return {
     databaseUrl: required(source, "DATABASE_URL"),
-    authSecret: source.BETTER_AUTH_SECRET ?? "dev-secret-change-me-please-32chars",
+    authSecret,
     authUrl: source.BETTER_AUTH_URL ?? source.WEB_ORIGIN ?? "http://127.0.0.1:5173",
     webOrigin: source.WEB_ORIGIN ?? "http://127.0.0.1:5173",
     apiUrl: source.API_URL ?? "http://127.0.0.1:3100",
@@ -32,6 +34,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     encryptionKey: source.ENCRYPTION_KEY ?? "dev-encryption-key",
     dataDir: source.DATA_DIR ?? "./data",
     sandboxSupervisorUrl: source.SANDBOX_SUPERVISOR_URL ?? "http://127.0.0.1:7091",
+    sandboxSupervisorToken: source.SANDBOX_SUPERVISOR_TOKEN || authSecret,
     sandboxProvider: source.SANDBOX_PROVIDER ?? "docker",
     agentRuntime: source.AGENT_RUNTIME ?? "pi",
     openRouterKey: source.OPENROUTER_API_KEY,

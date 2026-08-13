@@ -462,6 +462,7 @@ export function ShellPage() {
                   <iframe
                     title="Bot screen preview"
                     src={embeddedScreenUrl}
+                    sandbox={screenIframeSandbox(embeddedScreenUrl)}
                     className="h-full w-full border-0 bg-black"
                     allow="clipboard-read; clipboard-write"
                     style={{ pointerEvents: "none" }}
@@ -715,6 +716,7 @@ export function ShellPage() {
               <iframe
                 title="Bot screen"
                 src={embeddedScreenUrl}
+                sandbox={screenIframeSandbox(embeddedScreenUrl)}
                 className="h-full w-full border-0 bg-black"
                 allow="clipboard-read; clipboard-write; fullscreen"
                 style={{ pointerEvents: computer?.controlHolder === "user" ? "auto" : "none" }}
@@ -1048,10 +1050,21 @@ function embeddableScreenUrl(url: string | null): string | null {
     const local = parsed.hostname === "127.0.0.1" || parsed.hostname === "localhost";
     const pagePort = page.port || (page.protocol === "https:" ? "443" : "80");
     if (local && parsed.port && parsed.port !== pagePort) {
-      return `${page.origin}/novnc/${parsed.port}${parsed.pathname}${parsed.search}`;
+      return null;
     }
     return parsed.toString();
   } catch {
     return url;
+  }
+}
+
+function screenIframeSandbox(url: string | null) {
+  if (!url) return undefined;
+  try {
+    return new URL(url, window.location.href).pathname.startsWith("/novnc/")
+      ? "allow-scripts allow-pointer-lock"
+      : undefined;
+  } catch {
+    return undefined;
   }
 }

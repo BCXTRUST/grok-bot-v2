@@ -333,7 +333,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             });
             await deps.prisma.computer.updateMany({
               where: { botId: bot.id },
-              data: { state: "running", controlHolder: "user" },
+              data: { state: "running", controlHolder: "none" },
             });
             await deps.prisma.run.update({
               where: { id: runId },

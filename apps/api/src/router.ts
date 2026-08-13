@@ -41,6 +41,7 @@ import {
   type PrismaClient,
   requireMembership,
 } from "@rakazo/db";
+import { addScreenProxyCapability } from "./screen-proxy.js";
 
 export interface RouterDeps {
   prisma: PrismaClient;
@@ -58,6 +59,7 @@ export interface RouterDeps {
     defaultModel: string;
     openRouterKey?: string;
     webOrigin: string;
+    screenProxySecret: string;
   };
 }
 
@@ -561,7 +563,10 @@ export function createRouter(deps: RouterDeps) {
         );
         if (!session.url) return { url: null };
         scheduleComputerSleep(deps.wakeup, bot.id);
-        return { url: withViewOnly(session.url, bot.computer.controlHolder !== "user") };
+        const viewUrl = withViewOnly(session.url, bot.computer.controlHolder !== "user");
+        return {
+          url: addScreenProxyCapability(viewUrl, deps.env.screenProxySecret, deps.env.webOrigin),
+        };
       }),
       heartbeat: authed.computer.heartbeat.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);

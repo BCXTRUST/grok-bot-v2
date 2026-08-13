@@ -17,6 +17,7 @@ describe("graphical computer spec", () => {
       botId: "abc",
       workspaceId: "ws",
       homePath: "/var/rakazo/homes/abc",
+      networkMode: "rakazo_default",
     });
     expect(options.Image).toBe("rakazo/computer:local");
     expect(options.Image).not.toMatch(/alpine/);
@@ -30,6 +31,8 @@ describe("graphical computer spec", () => {
     expect(options.ExposedPorts).toEqual({ "6080/tcp": {} });
     expect(options.HostConfig.PortBindings["6080/tcp"]?.[0]?.HostIp).toBe("127.0.0.1");
     expect(options.HostConfig.ShmSize).toBeGreaterThanOrEqual(256 * 1024 * 1024);
+    expect(options.HostConfig.ReadonlyPaths).toContain("/usr/share/novnc");
+    expect(options.HostConfig.NetworkMode).toBe("rakazo_default");
   });
 
   it("ships a browser desktop, not a fullscreen terminal", () => {

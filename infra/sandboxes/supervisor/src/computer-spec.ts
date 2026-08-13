@@ -7,6 +7,7 @@ export interface ComputerCreateInput {
   botId: string;
   workspaceId: string;
   homePath: string;
+  networkMode?: string;
 }
 
 export interface PointerInput {
@@ -35,6 +36,7 @@ export function containerCreateOptions(input: ComputerCreateInput) {
       "PIP_USER=1",
     ],
     Labels: {
+      "rakazo.managed": "true",
       "rakazo.botId": input.botId,
       "rakazo.workspaceId": input.workspaceId,
     },
@@ -45,8 +47,9 @@ export function containerCreateOptions(input: ComputerCreateInput) {
         "6080/tcp": [{ HostIp: "127.0.0.1", HostPort: "0" }],
       },
       ShmSize: 256 * 1024 * 1024,
+      ReadonlyPaths: ["/usr/share/novnc"],
       AutoRemove: false,
-      NetworkMode: "bridge",
+      NetworkMode: input.networkMode ?? "bridge",
     },
     WorkingDir: "/home/rakazo",
   };

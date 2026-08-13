@@ -57,6 +57,19 @@ You want `"runtime":"pi"`, `"sandbox":"docker"`, `"wakeup":"graphile"`. `"compos
 
 Product defaults are Pi + Docker + Graphile. `pnpm verify:fast` pins the emulators (`AGENT_RUNTIME=scripted`, `SANDBOX_PROVIDER=fake`, `WAKEUP_DRIVER=memory`) so default tests never call live models or Composio.
 
+### Computer and app modes
+
+The app you open and the computer provider are separate choices. The web, Electron, and mobile apps are clients of the same API; using Electron does not make agent commands run directly on your Mac or PC.
+
+| `SANDBOX_PROVIDER` | Where agent commands run | Best fit | Isolation notes |
+| --- | --- | --- | --- |
+| `docker` (default) | A per-bot Docker container on your machine | Quick local setup and trusted single-machine self-hosting | Good local isolation and persistent bot homes. The supervisor controls the local Docker daemon, so keep its port private; Rakazo does this by default. |
+| `e2b` | A remote E2B sandbox | Public or multi-user deployments | Stronger separation from the Rakazo application host. Requires `E2B_API_KEY`. |
+| `desktop` | Directly on the API/worker host | A trusted person intentionally giving their own local agent access to host folders | Least isolated. Model-initiated shell commands run with the Rakazo process's OS permissions. Do not use it on a public or shared server. This is different from merely running the Electron client. |
+| `fake` | An in-process emulator | Tests only | Does not run a real computer. |
+
+Docker remains the recommended quick start for someone running Rakazo on their own machine. E2B is the safer boundary when untrusted users or public traffic share a deployment.
+
 If this Postgres was created with `prisma db push` before checked-in migrations existed, mark the baseline once:
 
 ```bash

@@ -75,6 +75,7 @@ export async function createApp(
   const desktopGrants = await loadAllFolderGrants(env.dataDir);
   const sandbox: SandboxProvider = createSandboxProvider(env.sandboxProvider, {
     supervisorUrl: env.sandboxSupervisorUrl,
+    supervisorToken: env.sandboxSupervisorToken,
     e2bApiKey: env.e2bApiKey,
     dataDir: env.dataDir,
     desktopGrants,
@@ -134,6 +135,7 @@ export async function createApp(
       defaultModel: env.defaultModel,
       openRouterKey: env.openRouterKey,
       webOrigin: env.webOrigin,
+      screenProxySecret: env.authSecret,
     },
   });
   const rpc = new RPCHandler(router);

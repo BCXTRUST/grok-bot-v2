@@ -11,7 +11,12 @@ import type {
 } from "@rakazo/adapter-kit";
 
 export class DockerSandboxProvider implements SandboxProvider {
-  constructor(private readonly supervisorUrl: string) {}
+  constructor(
+    private readonly supervisorUrl: string,
+    private readonly supervisorToken = process.env.SANDBOX_SUPERVISOR_TOKEN ||
+      process.env.BETTER_AUTH_SECRET ||
+      "dev-secret-change-me-please-32chars",
+  ) {}
 
   describe() {
     return {
@@ -32,13 +37,21 @@ export class DockerSandboxProvider implements SandboxProvider {
     return `${this.supervisorUrl.replace(/\/$/, "")}${path}`;
   }
 
+  private headers(context: AdapterContext, botId?: string) {
+    return {
+      authorization: `Bearer ${this.supervisorToken}`,
+      "x-rakazo-workspace-id": context.workspaceId,
+      ...(botId ? { "x-rakazo-bot-id": botId } : {}),
+    };
+  }
+
   async provision(
     request: { botId: string; homePath: string },
     context: AdapterContext,
   ): Promise<ComputerRef> {
     const res = await fetch(this.url("/computers"), {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { ...this.headers(context, request.botId), "content-type": "application/json" },
       body: JSON.stringify({
         botId: request.botId,
         homePath: request.homePath,
@@ -61,7 +74,7 @@ export class DockerSandboxProvider implements SandboxProvider {
   ): AsyncIterable<ProcessEvent> {
     const res = await fetch(this.url(`/computers/${computer.id}/exec`), {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { ...this.headers(context, computer.botId), "content-type": "application/json" },
       body: JSON.stringify({ ...request, cwd: request.cwd ?? "/home/rakazo" }),
       signal: context.signal,
     });
@@ -81,7 +94,10 @@ export class DockerSandboxProvider implements SandboxProvider {
     _request: ScreenRequest,
     context: AdapterContext,
   ): Promise<ScreenSession> {
-    const res = await fetch(this.url(`/computers/${computer.id}`), { signal: context.signal });
+    const res = await fetch(this.url(`/computers/${computer.id}`), {
+      headers: this.headers(context, computer.botId),
+      signal: context.signal,
+    });
     if (!res.ok) {
       return { url: null, mimeType: "text/html", close: async () => undefined };
     }
@@ -101,7 +117,7 @@ export class DockerSandboxProvider implements SandboxProvider {
   ): Promise<void> {
     const res = await fetch(this.url(`/computers/${computer.id}/input`), {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { ...this.headers(context, computer.botId), "content-type": "application/json" },
       body: JSON.stringify({ input, leaseId: lease.leaseId }),
       signal: context.signal,
     });
@@ -118,6 +134,7 @@ export class DockerSandboxProvider implements SandboxProvider {
   async stop(computer: ComputerRef, context: AdapterContext): Promise<void> {
     await fetch(this.url(`/computers/${computer.id}/stop`), {
       method: "POST",
+      headers: this.headers(context, computer.botId),
       signal: context.signal,
     });
   }
@@ -125,6 +142,7 @@ export class DockerSandboxProvider implements SandboxProvider {
   async destroy(computer: ComputerRef, context: AdapterContext): Promise<void> {
     await fetch(this.url(`/computers/${computer.id}`), {
       method: "DELETE",
+      headers: this.headers(context, computer.botId),
       signal: context.signal,
     });
   }

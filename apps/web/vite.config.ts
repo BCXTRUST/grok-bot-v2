@@ -1,26 +1,47 @@
 import http from "node:http";
 import net from "node:net";
+import path from "node:path";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
-import { defineConfig, type PreviewServer, type ViteDevServer } from "vite";
+import { defineConfig, loadEnv, type PreviewServer, type ViteDevServer } from "vite";
+import {
+  resolveNovncTarget,
+  safeProxyHeaders,
+  safeProxyResponseHeaders,
+  stripSensitiveHandshakeHeaders,
+} from "./src/screen-proxy.js";
 
-const api = process.env.API_PROXY_TARGET ?? "http://127.0.0.1:3100";
 const webPort = Number(process.env.WEB_PORT ?? 5173);
 
-function attachNovncProxy(server: ViteDevServer | PreviewServer) {
+function attachNovncProxy(server: ViteDevServer | PreviewServer, secret: string) {
   server.middlewares.use((req, res, next) => {
-    const match = req.url?.match(/^\/novnc\/(\d+)(\/.*)?$/);
-    if (!match) {
+    if (!req.url?.startsWith("/novnc/")) {
       next();
       return;
     }
-    const port = match[1]!;
-    const rest = match[2] && match[2].length > 0 ? match[2] : "/";
-    const headers = { ...req.headers, host: `127.0.0.1:${port}` };
+    const target = resolveNovncTarget(req.url, secret);
+    if (!target) {
+      res.statusCode = 403;
+      res.end("Invalid or expired screen capability");
+      return;
+    }
+    const headers = {
+      ...safeProxyHeaders(req.headers),
+      host: `${target.hostname}:${target.port}`,
+    };
     const upstream = http.request(
-      { hostname: "127.0.0.1", port: Number(port), path: rest, method: req.method, headers },
+      {
+        hostname: target.hostname,
+        port: target.port,
+        path: target.path,
+        method: req.method,
+        headers,
+      },
       (incoming) => {
-        res.writeHead(incoming.statusCode ?? 502, incoming.headers);
+        res.writeHead(incoming.statusCode ?? 502, {
+          ...safeProxyResponseHeaders(incoming.headers),
+          "access-control-allow-origin": "*",
+        });
         incoming.pipe(res);
       },
     );
@@ -32,51 +53,90 @@ function attachNovncProxy(server: ViteDevServer | PreviewServer) {
   });
 
   server.httpServer?.on("upgrade", (req, socket, head) => {
-    const match = req.url?.match(/^\/novnc\/(\d+)(\/.*)?$/);
-    if (!match) return;
-    const port = match[1]!;
-    const rest = match[2] && match[2].length > 0 ? match[2] : "/";
-    const upstream = net.connect(Number(port), "127.0.0.1", () => {
-      const headerLines = [`${req.method ?? "GET"} ${rest} HTTP/1.1`, `Host: 127.0.0.1:${port}`];
-      for (const [key, value] of Object.entries(req.headers)) {
-        if (key.toLowerCase() === "host" || value == null) continue;
+    if (!req.url?.startsWith("/novnc/")) return;
+    const target = resolveNovncTarget(req.url, secret);
+    if (!target) {
+      socket.destroy();
+      return;
+    }
+    const upstream = net.connect(target.port, target.hostname, () => {
+      const headerLines = [
+        `${req.method ?? "GET"} ${target.path} HTTP/1.1`,
+        `Host: ${target.hostname}:${target.port}`,
+      ];
+      for (const [key, value] of Object.entries(safeProxyHeaders(req.headers))) {
         headerLines.push(`${key}: ${Array.isArray(value) ? value.join(",") : value}`);
       }
       upstream.write(`${headerLines.join("\r\n")}\r\n\r\n`);
       if (head.length) upstream.write(head);
       socket.pipe(upstream);
-      upstream.pipe(socket);
+      const responseChunks: Buffer[] = [];
+      let responseSize = 0;
+      let responseTail = Buffer.alloc(0);
+      const forwardHandshake = (chunk: Buffer) => {
+        responseChunks.push(chunk);
+        responseSize += chunk.length;
+        if (responseSize > 64 * 1024) {
+          socket.destroy();
+          upstream.destroy();
+          return;
+        }
+        const boundarySearch = Buffer.concat([responseTail, chunk]);
+        if (boundarySearch.indexOf("\r\n\r\n") < 0) {
+          responseTail = Buffer.from(boundarySearch.subarray(-3));
+          return;
+        }
+        const responseHead = Buffer.concat(responseChunks, responseSize);
+        const safe = stripSensitiveHandshakeHeaders(responseHead);
+        if (!safe) {
+          socket.destroy();
+          upstream.destroy();
+          return;
+        }
+        upstream.off("data", forwardHandshake);
+        socket.write(safe);
+        upstream.pipe(socket);
+      };
+      upstream.on("data", forwardHandshake);
     });
     upstream.on("error", () => socket.destroy());
     socket.on("error", () => upstream.destroy());
   });
 }
 
-export default defineConfig({
-  plugins: [
-    react(),
-    tailwindcss(),
-    {
-      name: "rakazo-novnc-proxy",
-      configureServer: attachNovncProxy,
-      configurePreviewServer: attachNovncProxy,
+export default defineConfig(({ mode }) => {
+  const rootEnv = loadEnv(mode, path.resolve(import.meta.dirname, "../.."), "");
+  const api = process.env.API_PROXY_TARGET ?? rootEnv.API_PROXY_TARGET ?? "http://127.0.0.1:3100";
+  const screenProxySecret =
+    process.env.BETTER_AUTH_SECRET ??
+    rootEnv.BETTER_AUTH_SECRET ??
+    "dev-secret-change-me-please-32chars";
+  return {
+    plugins: [
+      react(),
+      tailwindcss(),
+      {
+        name: "rakazo-novnc-proxy",
+        configureServer: (server) => attachNovncProxy(server, screenProxySecret),
+        configurePreviewServer: (server) => attachNovncProxy(server, screenProxySecret),
+      },
+    ],
+    server: {
+      host: "127.0.0.1",
+      port: webPort,
+      strictPort: true,
+      proxy: {
+        "/api": { target: api, changeOrigin: true },
+        "/rpc": { target: api, changeOrigin: true },
+      },
     },
-  ],
-  server: {
-    host: "127.0.0.1",
-    port: webPort,
-    strictPort: true,
-    proxy: {
-      "/api": { target: api, changeOrigin: true },
-      "/rpc": { target: api, changeOrigin: true },
+    preview: {
+      host: "0.0.0.0",
+      port: Number(process.env.WEB_PORT ?? 5173),
+      proxy: {
+        "/api": { target: api, changeOrigin: true },
+        "/rpc": { target: api, changeOrigin: true },
+      },
     },
-  },
-  preview: {
-    host: "0.0.0.0",
-    port: Number(process.env.WEB_PORT ?? 5173),
-    proxy: {
-      "/api": { target: api, changeOrigin: true },
-      "/rpc": { target: api, changeOrigin: true },
-    },
-  },
+  };
 });

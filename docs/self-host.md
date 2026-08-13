@@ -16,6 +16,8 @@ Same as the README quick start: `.env` from `.env.example`, Postgres via Compose
 
 Compose runs Postgres, the sandbox supervisor (Docker socket), API, worker, and a Vite preview of the web app. Bot computers are sibling containers (`rakazo/computer:local`). The API process does not get an unrestricted Docker socket; the supervisor owns lifecycle.
 
+The Docker supervisor is not published. It is authenticated and stays on the internal Compose network because access to it is equivalent to control of the Docker host. It uses `BETTER_AUTH_SECRET` as its shared service credential by default; advanced deployments can set the same independent `SANDBOX_SUPERVISOR_TOKEN` value on the API, worker, and supervisor.
+
 On a VPS, put TLS in front of `:5173` (or serve the web build behind your proxy) and set:
 
 ```env
@@ -39,6 +41,15 @@ E2B_API_KEY=              # when SANDBOX_PROVIDER=e2b
 ```
 
 Do not commit `.env`. Never put `COMPOSIO_API_KEY`, OpenRouter keys, or provider tokens in git, logs, or chat.
+
+## Choosing a computer provider
+
+The Electron desktop app is only a client and works with either Docker or E2B. `SANDBOX_PROVIDER=desktop` is a separate, explicit provider that runs commands on the service host.
+
+- **Docker** is the default for local use and the quickest self-hosted setup. Each bot gets a container and persistent home. Keep the supervisor private, as the included Compose file does. A public single-machine Docker deployment still shares one Docker host between its bot containers.
+- **E2B** runs bot computers away from the Rakazo host and is the recommended choice for public or multi-user production deployments.
+- **Desktop provider** is for a trusted user deliberately allowing their local agent to operate in granted host folders. It has less isolation: model shell commands execute with the API/worker process's OS permissions. Do not enable it on a public or shared service.
+- **Fake** is only an emulator for verification.
 
 ## Backup
 
@@ -70,10 +81,10 @@ To run a hosted product (same codebase):
 2. Provision managed Postgres 16 and run `pnpm db:migrate`.
 3. Run **API** and **worker** as always-on Node 22 services (Fly machines, a VM, ECS, k8s). Not lambda-style request handlers.
 4. Persist `DATA_DIR` (bot homes, artifacts). Today that is a local filesystem (`LocalAgentHomeStore`), so attach a volume. Object-storage-backed homes are not wired yet.
-5. Choose computers: **`SANDBOX_PROVIDER=e2b`** with `E2B_API_KEY` in production. Each bot keeps one sandbox id (`providerRef`) and a graphical desktop with a browser. Take control, sign in, then release — the bot keeps that session. Idle boxes pause after `SANDBOX_IDLE_MS` (default 10 minutes) and resume on the next message or Take control. Docker remains the local default.
+5. Choose computers: **`SANDBOX_PROVIDER=e2b`** with `E2B_API_KEY` for a public or multi-user production service. Each bot keeps one sandbox id (`providerRef`) and a graphical desktop with a browser. Take control, sign in, then release — the bot keeps that session. Idle boxes pause after `SANDBOX_IDLE_MS` (default 10 minutes) and resume on the next message or Take control. Docker remains the local and trusted single-machine default.
 6. A Hetzner CX22 (2 vCPU / 4 GB) is enough for API + worker + Postgres when E2B owns the desktops. 2 GB works for a quiet box; 8 GB is only needed if you also run Docker computers on that same machine.
 7. Set public HTTPS `WEB_ORIGIN` / `BETTER_AUTH_URL` / `API_URL`, secrets, and an OpenRouter (or other Pi) deployment key if you want to skip per-user model keys.
-8. Put the web app behind the same origin as `/api` and `/rpc` (Vite preview proxy, or a reverse proxy). noVNC is proxied at `/novnc/*` from the web origin.
+8. Put the web app behind the same origin as `/api` and `/rpc` (Vite preview proxy, or a reverse proxy). Docker noVNC connections use short-lived signed `/novnc/*` capabilities; do not replace that route with an unrestricted port proxy.
 9. Deploy `apps/www` to `rakazo.com` and point `app.rakazo.com` (or similar) at the product origin.
 10. Turn on `SIGNUP_ALLOWLIST` until you want open registration. There is no Rakazo-managed model billing in version 1 — users bring keys.
 
