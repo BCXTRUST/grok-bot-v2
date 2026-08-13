@@ -1,10 +1,11 @@
 import { Link, useLocalSearchParams } from "expo-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { blockText, rpc, type MobileSnapshot } from "../lib/api";
 
 export default function Thread() {
   const { botId, name } = useLocalSearchParams<{ botId?: string; name?: string }>();
+  const scroll = useRef<ScrollView>(null);
   const [snap, setSnap] = useState<MobileSnapshot | null>(null);
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -33,7 +34,11 @@ export default function Thread() {
     <View style={{ flex: 1, backgroundColor: "#0D0D0E", padding: 24 }}>
       <Text style={{ color: "#ECECEE", fontSize: 20 }}>{name || "Thread"}</Text>
       {error ? <Text style={{ color: "#85858A", marginTop: 12 }}>{error}</Text> : null}
-      <ScrollView style={{ flex: 1, marginTop: 16 }}>
+      <ScrollView
+        ref={scroll}
+        style={{ flex: 1, marginTop: 16 }}
+        onContentSizeChange={() => scroll.current?.scrollToEnd({ animated: false })}
+      >
         {(snap?.messages ?? []).map((message) => (
           <View
             key={message.id}

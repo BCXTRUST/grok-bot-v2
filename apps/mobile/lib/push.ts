@@ -6,7 +6,12 @@ export async function registerPushToken() {
   const granted =
     existing.granted || (await Notifications.requestPermissionsAsync()).granted;
   if (!granted) return;
-  const token = (await Notifications.getExpoPushTokenAsync()).data;
-  if (!token) return;
-  await rpc("notifications/registerPush", { token });
+  try {
+    const projectId = process.env.EXPO_PUBLIC_PROJECT_ID;
+    const token = (await Notifications.getExpoPushTokenAsync(projectId ? { projectId } : {})).data;
+    if (!token) return;
+    await rpc("notifications/registerPush", { token });
+  } catch {
+    // Expo Go cannot mint an ExponentPushToken without an EAS project id.
+  }
 }
