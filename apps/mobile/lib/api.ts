@@ -5,7 +5,7 @@ import {
   tokenFromAuthResponse,
 } from "./session";
 
-const API = process.env.EXPO_PUBLIC_API_URL ?? "http://127.0.0.1:3100";
+export const API = process.env.EXPO_PUBLIC_API_URL ?? "http://127.0.0.1:3100";
 
 export async function authHeaders(): Promise<Record<string, string>> {
   const token = await loadSessionToken();
