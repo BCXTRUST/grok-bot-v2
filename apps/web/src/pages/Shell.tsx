@@ -56,7 +56,9 @@ export function ShellPage() {
       navigate("/onboarding", { replace: true });
       return;
     }
-    if (!botId && list[0]) navigate(`/app/${list[0].id}`, { replace: true });
+    if (!botId || !list.some((bot) => bot.id === botId)) {
+      navigate(`/app/${list[0]!.id}`, { replace: true });
+    }
   }
 
   async function refreshThread(id: string) {
@@ -437,221 +439,227 @@ export function ShellPage() {
         {panel && active ? (
           <div className="rk-scroll h-full w-[384px] overflow-y-auto px-5 py-[17px]">
             {panel !== "routine" && panel !== "create" ? (
-            <div className="mb-4 flex items-center justify-between">
-              <span className="text-[13.5px] text-[#85858A]">
-                {computer?.state ?? active.status}
-              </span>
-              <div className="flex gap-3.5">
-                <button type="button" onClick={() => setPanel("settings")}>
-                  ⚙
-                </button>
-                <button type="button" onClick={() => setPanel(null)}>
-                  ✕
-                </button>
+              <div className="mb-4 flex items-center justify-between">
+                <span className="text-[13.5px] text-[#85858A]">
+                  {computer?.state ?? active.status}
+                </span>
+                <div className="flex gap-3.5">
+                  <button type="button" onClick={() => setPanel("settings")}>
+                    ⚙
+                  </button>
+                  <button type="button" onClick={() => setPanel(null)}>
+                    ✕
+                  </button>
+                </div>
               </div>
-            </div>
-          ) : null}
-          {panel === "computer" ? (
-            <div>
-              <div className="relative aspect-[16/10] overflow-hidden rounded-[14px] bg-[#0E0E10]">
-                {computerOpen ? (
-                  <div className="grid h-full place-items-center text-sm text-[#6C6C70]">
-                    Open in full window
-                  </div>
-                ) : computer?.state === "running" && embeddedScreenUrl ? (
-                  <iframe
-                    title="Bot screen preview"
-                    src={embeddedScreenUrl}
-                    sandbox={screenIframeSandbox(embeddedScreenUrl)}
-                    className="h-full w-full border-0 bg-black"
-                    allow="clipboard-read; clipboard-write"
-                    style={{ pointerEvents: "none" }}
+            ) : null}
+            {panel === "computer" ? (
+              <div>
+                <div className="relative aspect-[16/10] overflow-hidden rounded-[14px] bg-[#0E0E10]">
+                  {computerOpen ? (
+                    <div className="grid h-full place-items-center text-sm text-[#6C6C70]">
+                      Open in full window
+                    </div>
+                  ) : computer?.state === "running" && embeddedScreenUrl ? (
+                    <iframe
+                      title="Bot screen preview"
+                      src={embeddedScreenUrl}
+                      sandbox={screenIframeSandbox(embeddedScreenUrl)}
+                      className="h-full w-full border-0 bg-black"
+                      allow="clipboard-read; clipboard-write"
+                      style={{ pointerEvents: "none" }}
+                    />
+                  ) : (
+                    <div className="grid h-full place-items-center text-sm text-[#6C6C70]">
+                      {computer?.state === "booting" || booting
+                        ? "Booting live desktop…"
+                        : computer?.state === "running"
+                          ? `${active.name}’s screen`
+                          : computer?.state === "suspended"
+                            ? "Computer is asleep — take control to wake it"
+                            : computer?.state === "error"
+                              ? "Computer failed to boot"
+                              : "Computer is stopped"}
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    className="absolute inset-0 cursor-pointer"
+                    aria-label="Open computer"
+                    onClick={() => void openComputer()}
                   />
-                ) : (
-                  <div className="grid h-full place-items-center text-sm text-[#6C6C70]">
-                    {computer?.state === "booting" || booting
-                      ? "Booting live desktop…"
-                      : computer?.state === "running"
-                        ? `${active.name}’s screen`
-                        : computer?.state === "suspended"
-                          ? "Computer is asleep — take control to wake it"
-                          : computer?.state === "error"
-                            ? "Computer failed to boot"
-                            : "Computer is stopped"}
-                  </div>
-                )}
+                </div>
+                <div className="mt-3 flex items-center justify-between">
+                  <span className="text-[13.5px] text-[#85858A]">
+                    {computer?.controlHolder === "user"
+                      ? "You have control"
+                      : computer?.state === "suspended"
+                        ? "Asleep"
+                        : `${active.name}’s screen`}
+                  </span>
+                  {computer?.controlHolder === "user" ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void releaseComputer()}
+                    >
+                      Release
+                    </Button>
+                  ) : (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void openComputer()}
+                    >
+                      Take control
+                    </Button>
+                  )}
+                </div>
+                <div className="mt-[30px] mb-3 text-[14px] text-[#85858A]">Routines</div>
+                {routines.map((routine) => (
+                  <button
+                    key={routine.id}
+                    type="button"
+                    onClick={() => {
+                      setRoutineDraft({
+                        name: routine.name,
+                        prompt: routine.prompt,
+                        schedule: presetFromCron(routine.cron),
+                      });
+                      setPanel("routine");
+                    }}
+                    className="flex w-full items-center gap-3 rounded-[11px] px-2.5 py-2.5 hover:bg-[#121214]"
+                  >
+                    <span className="text-[#E65707]">◷</span>
+                    <span className="flex-1 text-left text-[14.5px] text-[#ECECEE]">
+                      {routine.name}
+                    </span>
+                    <span className="text-[13px] text-[#6C6C70]">{formatCron(routine.cron)}</span>
+                  </button>
+                ))}
                 <button
                   type="button"
-                  className="absolute inset-0 cursor-pointer"
-                  aria-label="Open computer"
-                  onClick={() => void openComputer()}
-                />
-              </div>
-              <div className="mt-3 flex items-center justify-between">
-                <span className="text-[13.5px] text-[#85858A]">
-                  {computer?.controlHolder === "user"
-                    ? "You have control"
-                    : computer?.state === "suspended"
-                      ? "Asleep"
-                      : `${active.name}’s screen`}
-                </span>
-                {computer?.controlHolder === "user" ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => void releaseComputer()}
-                  >
-                    Release
-                  </Button>
-                ) : (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => void openComputer()}
-                  >
-                    Take control
-                  </Button>
-                )}
-              </div>
-              <div className="mt-[30px] mb-3 text-[14px] text-[#85858A]">Routines</div>
-              {routines.map((routine) => (
+                  onClick={async () => {
+                    const first = routines[0];
+                    if (first) {
+                      await rpc.routines.testRun({ routineId: first.id });
+                      await refreshThread(active.id);
+                    } else {
+                      setRoutineDraft({ name: "", prompt: "", schedule: defaultCronPreset() });
+                      setPanel("routine");
+                    }
+                  }}
+                  className="mt-1 flex items-center gap-2.5 px-2.5 py-2.5 text-[14.5px] text-[#7A7A80]"
+                >
+                  Run now
+                </button>
                 <button
-                  key={routine.id}
                   type="button"
                   onClick={() => {
-                    setRoutineDraft({
-                      name: routine.name,
-                      prompt: routine.prompt,
-                      schedule: presetFromCron(routine.cron),
-                    });
-                    setPanel("routine");
-                  }}
-                  className="flex w-full items-center gap-3 rounded-[11px] px-2.5 py-2.5 hover:bg-[#121214]"
-                >
-                  <span className="text-[#E65707]">◷</span>
-                  <span className="flex-1 text-left text-[14.5px] text-[#ECECEE]">
-                    {routine.name}
-                  </span>
-                  <span className="text-[13px] text-[#6C6C70]">{formatCron(routine.cron)}</span>
-                </button>
-              ))}
-              <button
-                type="button"
-                onClick={async () => {
-                  const first = routines[0];
-                  if (first) {
-                    await rpc.routines.testRun({ routineId: first.id });
-                    await refreshThread(active.id);
-                  } else {
                     setRoutineDraft({ name: "", prompt: "", schedule: defaultCronPreset() });
                     setPanel("routine");
-                  }
+                  }}
+                  className="mt-1 flex items-center gap-2.5 px-2.5 py-2.5 text-[14.5px] text-[#7A7A80]"
+                >
+                  + New routine
+                </button>
+              </div>
+            ) : null}
+            {panel === "create" ? (
+              <CreateBotForm
+                onCancel={() => setPanel(null)}
+                onCreate={(input) => void createBot(input)}
+              />
+            ) : null}
+            {panel === "settings" ? (
+              <BotSettings
+                key={active.id}
+                bot={active}
+                onSave={async (patch) => {
+                  await rpc.bots.update({ botId: active.id, ...patch });
+                  await refreshBots();
                 }}
-                className="mt-1 flex items-center gap-2.5 px-2.5 py-2.5 text-[14.5px] text-[#7A7A80]"
-              >
-                Run now
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setRoutineDraft({ name: "", prompt: "", schedule: defaultCronPreset() });
-                  setPanel("routine");
+                onExport={async () => {
+                  const manifest = await rpc.export.bot({ botId: active.id });
+                  const blob = new Blob([JSON.stringify(manifest, null, 2)], {
+                    type: "application/json",
+                  });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement("a");
+                  a.href = url;
+                  a.download = `${active.name.toLowerCase().replace(/\s+/g, "-")}-export.json`;
+                  a.click();
+                  URL.revokeObjectURL(url);
                 }}
-                className="mt-1 flex items-center gap-2.5 px-2.5 py-2.5 text-[14.5px] text-[#7A7A80]"
-              >
-                + New routine
-              </button>
-            </div>
-          ) : null}
-          {panel === "create" ? (
-            <CreateBotForm
-              onCancel={() => setPanel(null)}
-              onCreate={(input) => void createBot(input)}
-            />
-          ) : null}
-          {panel === "settings" ? (
-            <BotSettings
-              bot={active}
-              onSave={async (patch) => {
-                await rpc.bots.update({ botId: active.id, ...patch });
-                await refreshBots();
-              }}
-              onExport={async () => {
-                const manifest = await rpc.export.bot({ botId: active.id });
-                const blob = new Blob([JSON.stringify(manifest, null, 2)], {
-                  type: "application/json",
-                });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement("a");
-                a.href = url;
-                a.download = `${active.name.toLowerCase().replace(/\s+/g, "-")}-export.json`;
-                a.click();
-                URL.revokeObjectURL(url);
-              }}
-            />
-          ) : null}
-          {panel === "routine" ? (
-            <div>
-              <div className="mb-5 flex items-center justify-between">
+                onDelete={async () => {
+                  await rpc.bots.remove({ botId: active.id });
+                  setPanel(null);
+                  await refreshBots();
+                }}
+              />
+            ) : null}
+            {panel === "routine" ? (
+              <div>
+                <div className="mb-5 flex items-center justify-between">
+                  <button
+                    type="button"
+                    onClick={() => setPanel("computer")}
+                    className="text-[#9A9AA0]"
+                  >
+                    ‹
+                  </button>
+                  <div className="text-[15.5px] font-medium text-[#F1F1F2]">Routine</div>
+                  <button type="button" onClick={() => setPanel(null)} className="text-[#6C6C70]">
+                    ✕
+                  </button>
+                </div>
+                <label className="text-[14px] text-[#85858A]">
+                  Name
+                  <input
+                    value={routineDraft.name}
+                    onChange={(e) => setRoutineDraft((s) => ({ ...s, name: e.target.value }))}
+                    className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
+                  />
+                </label>
+                <label className="mt-5 block text-[14px] text-[#85858A]">
+                  Instruction
+                  <textarea
+                    value={routineDraft.prompt}
+                    onChange={(e) => setRoutineDraft((s) => ({ ...s, prompt: e.target.value }))}
+                    rows={4}
+                    className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
+                  />
+                </label>
+                <div className="mt-5 text-[14px] text-[#85858A]">
+                  When to run
+                  <RoutineSchedule
+                    value={routineDraft.schedule}
+                    onChange={(schedule) => setRoutineDraft((s) => ({ ...s, schedule }))}
+                  />
+                </div>
                 <button
                   type="button"
-                  onClick={() => setPanel("computer")}
-                  className="text-[#9A9AA0]"
+                  onClick={async () => {
+                    await rpc.routines.create({
+                      botId: active.id,
+                      name: routineDraft.name || "Routine",
+                      prompt: routineDraft.prompt || "Check in.",
+                      cron: cronFromPreset(routineDraft.schedule),
+                      timezone: "UTC",
+                      active: true,
+                      notify: true,
+                    });
+                    await refreshThread(active.id);
+                    setPanel("computer");
+                  }}
+                  className="mt-5 rounded-[11px] bg-[#F1F1EF] px-4 py-2 text-[#17171A]"
                 >
-                  ‹
-                </button>
-                <div className="text-[15.5px] font-medium text-[#F1F1F2]">Routine</div>
-                <button type="button" onClick={() => setPanel(null)} className="text-[#6C6C70]">
-                  ✕
+                  Save
                 </button>
               </div>
-              <label className="text-[14px] text-[#85858A]">
-                Name
-                <input
-                  value={routineDraft.name}
-                  onChange={(e) => setRoutineDraft((s) => ({ ...s, name: e.target.value }))}
-                  className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
-                />
-              </label>
-              <label className="mt-5 block text-[14px] text-[#85858A]">
-                Instruction
-                <textarea
-                  value={routineDraft.prompt}
-                  onChange={(e) => setRoutineDraft((s) => ({ ...s, prompt: e.target.value }))}
-                  rows={4}
-                  className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
-                />
-              </label>
-              <div className="mt-5 text-[14px] text-[#85858A]">
-                When to run
-                <RoutineSchedule
-                  value={routineDraft.schedule}
-                  onChange={(schedule) => setRoutineDraft((s) => ({ ...s, schedule }))}
-                />
-              </div>
-              <button
-                type="button"
-                onClick={async () => {
-                  await rpc.routines.create({
-                    botId: active.id,
-                    name: routineDraft.name || "Routine",
-                    prompt: routineDraft.prompt || "Check in.",
-                    cron: cronFromPreset(routineDraft.schedule),
-                    timezone: "UTC",
-                    active: true,
-                    notify: true,
-                  });
-                  await refreshThread(active.id);
-                  setPanel("computer");
-                }}
-                className="mt-5 rounded-[11px] bg-[#F1F1EF] px-4 py-2 text-[#17171A]"
-              >
-                Save
-              </button>
-            </div>
-          ) : null}
+            ) : null}
           </div>
         ) : null}
       </aside>
@@ -978,6 +986,7 @@ function BotSettings({
   bot,
   onSave,
   onExport,
+  onDelete,
 }: {
   bot: Bot;
   onSave: (patch: {
@@ -987,10 +996,14 @@ function BotSettings({
     instructions?: string;
   }) => Promise<void>;
   onExport: () => Promise<void>;
+  onDelete: () => Promise<void>;
 }) {
   const [name, setName] = useState(bot.name);
   const [title, setTitle] = useState(bot.title);
   const [description, setDescription] = useState(bot.description);
+  const [confirming, setConfirming] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   return (
     <div>
@@ -1037,6 +1050,51 @@ function BotSettings({
         >
           Export
         </button>
+        {confirming ? (
+          <div className="w-full rounded-[11px] border border-[#3A1F14] bg-[#1A100C] px-3.5 py-3">
+            <p className="text-[13.5px] leading-[1.45] text-[#C9C9CE]">
+              This permanently deletes {bot.name}, including its thread, computer, memory, and
+              routines.
+            </p>
+            <div className="mt-3 flex items-center gap-3">
+              <button
+                type="button"
+                disabled={deleting}
+                onClick={() => {
+                  setConfirming(false);
+                  setError(null);
+                }}
+                className="text-[14px] text-[#85858A] disabled:opacity-40"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={deleting}
+                onClick={() => {
+                  setDeleting(true);
+                  setError(null);
+                  void onDelete().catch((err: unknown) => {
+                    setError(err instanceof Error ? err.message : "Could not delete bot");
+                    setDeleting(false);
+                  });
+                }}
+                className="rounded-[11px] bg-[#E65707] px-3.5 py-1.5 text-[14px] text-[#F1F1EF] disabled:opacity-40"
+              >
+                {deleting ? "Deleting…" : "Delete"}
+              </button>
+            </div>
+            {error ? <p className="mt-2 text-[13px] text-[#E65707]">{error}</p> : null}
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setConfirming(true)}
+            className="text-[14px] text-[#E65707]"
+          >
+            Delete bot
+          </button>
+        )}
       </div>
     </div>
   );

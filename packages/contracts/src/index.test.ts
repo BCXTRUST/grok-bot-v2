@@ -10,6 +10,7 @@ describe("contracts", () => {
 
   it("exposes the product rpc surface", () => {
     expect(appContract.bots.create).toBeTruthy();
+    expect(appContract.bots.remove).toBeTruthy();
     expect(appContract.threads.subscribe).toBeTruthy();
     expect(appContract.computer.grantFolder).toBeTruthy();
     expect(appContract.notifications.registerPush).toBeTruthy();

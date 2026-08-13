@@ -329,7 +329,46 @@ describeJourneys("required product journeys", () => {
     expect(rawJson).not.toMatch(/browserProfile|ciphertext|sessionCookie/i);
   });
 
-  it("10: compose backup docs and dump tooling exist", async () => {
+  it("10: deleting a bot removes it, its home, and is isolated", async () => {
+    const ada = await signup(app, `delete-j-${stamp}@rakazo.test`, "Delete Ada");
+    const bob = await signup(app, `delete-bob-j-${stamp}@rakazo.test`, "Delete Bob");
+    const keep = await rpc<Bot>(app, ada, "bots/create", {
+      name: "Keep",
+      title: "",
+      description: "",
+      instructions: "",
+      notifyOnFinish: true,
+    });
+    const gone = await rpc<Bot>(app, ada, "bots/create", {
+      name: "Gone",
+      title: "",
+      description: "",
+      instructions: "",
+      notifyOnFinish: true,
+    });
+    await sendAndWait(
+      app,
+      ada,
+      gone.id,
+      "write a file in your home called notes/result.txt that says delete-ok",
+    );
+    const home = path.join(dataDir, "homes", gone.id);
+    expect(existsSync(home)).toBe(true);
+
+    const stolen = await raw(app, bob, "bots/remove", { botId: gone.id });
+    expect(stolen.status).toBeGreaterThanOrEqual(400);
+    expect((await rpc<Bot[]>(app, ada, "bots/list")).map((bot) => bot.id)).toContain(gone.id);
+
+    await rpc(app, ada, "bots/remove", { botId: gone.id });
+    const list = await rpc<Bot[]>(app, ada, "bots/list");
+    expect(list.map((bot) => bot.id)).toEqual([keep.id]);
+    expect((await raw(app, ada, "bots/get", { botId: gone.id })).status).toBeGreaterThanOrEqual(
+      400,
+    );
+    expect(existsSync(home)).toBe(false);
+  });
+
+  it("11: compose backup docs and dump tooling exist", async () => {
     expect(existsSync(path.resolve("docs/self-host.md"))).toBe(true);
     expect(existsSync(path.resolve("infra/compose/docker-compose.yml"))).toBe(true);
     expect(existsSync(path.resolve("scripts/backup.sh"))).toBe(true);

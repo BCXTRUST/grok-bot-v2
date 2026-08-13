@@ -1,4 +1,4 @@
-import { mkdir } from "node:fs/promises";
+import { mkdir, rm } from "node:fs/promises";
 import path from "node:path";
 import { implement, ORPCError } from "@orpc/server";
 import type {
@@ -214,8 +214,38 @@ export function createRouter(deps: RouterDeps) {
         return bot;
       }),
       remove: authed.bots.remove.handler(async ({ context, input }) => {
-        await repos.getBot(context.actor, input.botId);
+        const bot = await repos.getBot(context.actor, input.botId);
+        await deps.prisma.run.updateMany({
+          where: {
+            botId: bot.id,
+            status: { in: ["queued", "leased", "running", "waiting_input", "waiting_takeover"] },
+          },
+          data: { status: "cancelled", completedAt: new Date() },
+        });
+        if (bot.computer?.providerRef) {
+          await deps.sandbox
+            .destroy(
+              {
+                id: bot.computer.providerRef,
+                botId: bot.id,
+                kind: bot.computer.kind as never,
+                providerRef: bot.computer.providerRef,
+              },
+              {
+                operationId: "destroy",
+                traceId: "destroy",
+                workspaceId: context.actor.workspaceId,
+                userId: context.actor.userId,
+                signal: new AbortController().signal,
+              },
+            )
+            .catch(() => undefined);
+        }
         await deps.prisma.bot.delete({ where: { id: input.botId } });
+        await rm(resolveAgentHomePath(deps.home, bot.id, deps.dataDir), {
+          recursive: true,
+          force: true,
+        }).catch(() => undefined);
         return { ok: true as const };
       }),
     },

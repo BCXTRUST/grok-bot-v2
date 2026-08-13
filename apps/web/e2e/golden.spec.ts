@@ -69,6 +69,7 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }) =>
   }
   await gear.click();
   await expect(page.getByRole("button", { name: "Export" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Delete bot" })).toBeVisible();
 });
 
 async function completeOnboarding(page: Page, answers: string[]) {
