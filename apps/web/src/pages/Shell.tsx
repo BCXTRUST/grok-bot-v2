@@ -31,8 +31,6 @@ export function ShellPage() {
   const [pluginsOpen, setPluginsOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [booting, setBooting] = useState(false);
-  const [files, setFiles] = useState<Array<{ path: string; kind: string; size: number }>>([]);
-  const [memory, setMemory] = useState<string>("");
   const [routineDraft, setRoutineDraft] = useState({ name: "", prompt: "", cron: "0 9 * * 1" });
   const [screenUrl, setScreenUrl] = useState<string | null>(null);
   const [usage, setUsage] = useState<{
@@ -58,14 +56,8 @@ export function ShellPage() {
     const snap = await rpc.threads.get({ botId: id });
     setSnapshot(snap);
     setComputer(snap.computer);
-    const [r, mem, fileList] = await Promise.all([
-      rpc.routines.list({ botId: id }),
-      rpc.memory.list({ botId: id }),
-      rpc.computer.files({ botId: id, path: "/" }).catch(() => []),
-    ]);
+    const r = await rpc.routines.list({ botId: id });
     setRoutines(r);
-    setMemory(mem.map((m) => m.content).join("\n\n"));
-    setFiles(fileList);
     const screen = await rpc.computer.screenUrl({ botId: id }).catch(() => ({ url: null }));
     setScreenUrl(screen.url);
     return snap;
@@ -467,24 +459,6 @@ export function ShellPage() {
               >
                 + New routine
               </button>
-              <div className="mt-8 text-[14px] text-[#85858A]">Memory</div>
-              <pre className="mt-2 whitespace-pre-wrap text-[13px] text-[#C9C9CE]">
-                {memory || "No memory yet."}
-              </pre>
-              <div className="mt-8 text-[14px] text-[#85858A]">Files</div>
-              <ul className="mt-2 text-[13px] text-[#C9C9CE]">
-                {files
-                  .filter(
-                    (file) =>
-                      !file.path
-                        .split("/")
-                        .filter(Boolean)
-                        .some((part) => part.startsWith(".")),
-                  )
-                  .map((file) => (
-                    <li key={file.path}>{file.path}</li>
-                  ))}
-              </ul>
             </div>
           ) : null}
           {panel === "settings" ? (
