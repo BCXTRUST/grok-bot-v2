@@ -17,7 +17,15 @@
       "expo-secure-store",
       ["expo-notifications", { "icon": "./assets/notification-icon.png", "color": "#2965EC" }]
     ],
-    "ios": { "supportsTablet": true, "icon": "./assets/icon.png" },
+    "ios": {
+      "supportsTablet": true,
+      "icon": "./assets/icon.png",
+      "infoPlist": {
+        "NSAppTransportSecurity": {
+          "NSAllowsLocalNetworking": true
+        }
+      }
+    },
     "android": {
       "icon": "./assets/icon.png",
       "adaptiveIcon": {

@@ -1,3 +1,5 @@
+import * as SecureStore from "expo-secure-store";
+import { defaultApiBase, type EndpointResult, normalizeApiBase } from "./endpoint";
 import {
   clearSessionToken,
   loadSessionToken,
@@ -5,7 +7,58 @@ import {
   tokenFromAuthResponse,
 } from "./session";
 
-export const API = process.env.EXPO_PUBLIC_API_URL ?? "http://127.0.0.1:3100";
+const ENDPOINT_KEY = "rakazo.api_base";
+
+let cachedApiBase: string | undefined;
+
+export function currentApiBase() {
+  return cachedApiBase ?? defaultApiBase();
+}
+
+export function isCustomApiBase() {
+  return currentApiBase() !== defaultApiBase();
+}
+
+export async function loadApiBase() {
+  try {
+    const stored = await SecureStore.getItemAsync(ENDPOINT_KEY);
+    if (stored) {
+      const parsed = normalizeApiBase(stored);
+      if (parsed.ok) {
+        cachedApiBase = parsed.url;
+        return cachedApiBase;
+      }
+    }
+  } catch {
+    // SecureStore is unavailable in some test / web hosts.
+  }
+  cachedApiBase = defaultApiBase();
+  return cachedApiBase;
+}
+
+export async function saveApiBase(input: string): Promise<EndpointResult> {
+  const parsed = normalizeApiBase(input);
+  if (!parsed.ok) return parsed;
+  if (parsed.url === defaultApiBase()) return resetApiBase();
+  const previous = currentApiBase();
+  await SecureStore.setItemAsync(ENDPOINT_KEY, parsed.url);
+  cachedApiBase = parsed.url;
+  if (parsed.url !== previous) await clearSessionToken();
+  return parsed;
+}
+
+export async function resetApiBase(): Promise<EndpointResult> {
+  const previous = currentApiBase();
+  try {
+    await SecureStore.deleteItemAsync(ENDPOINT_KEY);
+  } catch {
+    // ignore missing keys
+  }
+  const url = defaultApiBase();
+  cachedApiBase = url;
+  if (url !== previous) await clearSessionToken();
+  return { ok: true, url };
+}
 
 export async function authHeaders(): Promise<Record<string, string>> {
   const token = await loadSessionToken();
@@ -13,7 +66,7 @@ export async function authHeaders(): Promise<Record<string, string>> {
 }
 
 export async function signIn(email: string, password: string) {
-  const res = await fetch(`${API}/api/auth/sign-in/email`, {
+  const res = await fetch(`${currentApiBase()}/api/auth/sign-in/email`, {
     method: "POST",
     headers: { "content-type": "application/json", origin: "rakazo://" },
     body: JSON.stringify({ email, password }),
@@ -33,7 +86,7 @@ export async function signIn(email: string, password: string) {
 
 export async function signOut() {
   const headers = await authHeaders();
-  await fetch(`${API}/api/auth/sign-out`, {
+  await fetch(`${currentApiBase()}/api/auth/sign-out`, {
     method: "POST",
     headers: { "content-type": "application/json", origin: "rakazo://", ...headers },
   }).catch(() => undefined);
@@ -41,7 +94,7 @@ export async function signOut() {
 }
 
 export async function rpc<T>(proc: string, body: unknown = {}): Promise<T> {
-  const res = await fetch(`${API}/rpc/${proc}`, {
+  const res = await fetch(`${currentApiBase()}/rpc/${proc}`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
@@ -99,7 +152,7 @@ export async function subscribeThread(
   onEvent: (event: ThreadEvent) => void,
   signal: AbortSignal,
 ) {
-  const res = await fetch(`${API}/rpc/threads/subscribe`, {
+  const res = await fetch(`${currentApiBase()}/rpc/threads/subscribe`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
@@ -176,4 +229,11 @@ export function applyMobileThreadEvent(
   return prev;
 }
 
+export {
+  apiBaseWarning,
+  defaultApiBase,
+  displayApiHost,
+  normalizeApiBase,
+  probeApiBase,
+} from "./endpoint";
 export { loadSessionToken };

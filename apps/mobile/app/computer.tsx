@@ -3,7 +3,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Modal, Pressable, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { WebView } from "react-native-webview";
-import { API, rpc } from "../lib/api";
+import { currentApiBase, rpc } from "../lib/api";
 import {
   COMPUTER_HEARTBEAT_MS,
   type ComputerStatus,
@@ -25,7 +25,7 @@ export default function Computer() {
   const [computerOpen, setComputerOpen] = useState(false);
   const autoBooted = useRef<string | null>(null);
 
-  const embeddedScreenUrl = embeddableScreenUrl(screenUrl, API);
+  const embeddedScreenUrl = embeddableScreenUrl(screenUrl, currentApiBase());
   const hasControl = computer?.controlHolder === "user";
 
   useLayoutEffect(() => {

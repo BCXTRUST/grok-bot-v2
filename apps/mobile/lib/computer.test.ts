@@ -62,5 +62,6 @@ describe("mobile computer screen", () => {
     expect(src).toContain("Take control");
     expect(src).toContain("Release");
     expect(src).toContain("Close computer");
+    expect(src).toContain("currentApiBase()");
   });
 });
