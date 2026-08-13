@@ -1,8 +1,19 @@
 # Rakazo
 
-Open-source home for persistent AI bots that can do real work. Each bot has one thread, one computer, memory, routines, and history.
+Open-source Grok Bot alternative, built with Cursor and Grok 4.6.
 
-This repository is the complete core product. It runs without a Rakazo-operated control plane.
+Web, desktop, and mobile. Bring your own AI and sandbox. The product is still early (beta).
+
+Each bot has one thread, one computer, memory, routines, and history. This repository is the complete core product — it runs without a Rakazo-operated control plane.
+
+## Screenshots
+
+<p align="center">
+  <img src="docs/screenshots/www-product.png" alt="Desktop: bots, thread, computer, and routines" width="880" />
+</p>
+<p align="center">
+  <img src="docs/screenshots/web-computer.png" alt="Desktop: computer preview beside the thread" width="880" />
+</p>
 
 ## Requirements
 
