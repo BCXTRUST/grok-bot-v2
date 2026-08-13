@@ -3,6 +3,7 @@ import {
   asConnectorTools,
   collectLogIds,
   collectPages,
+  executeSessionKey,
   filterCatalog,
   isNoAuthToolkitError,
   sanitizeComposioError,
@@ -65,6 +66,11 @@ describe("composio tool mapping", () => {
         data: { results: [{ log_id: "log_abc123", slug: "HACKERNEWS_GET_USER" }] },
       }),
     ).toEqual(["log_abc123"]);
+  });
+
+  it("keys execute sessions by sorted unique toolkits", () => {
+    expect(executeSessionKey(["hackernews", "gmail", "hackernews"])).toBe("gmail,hackernews");
+    expect(executeSessionKey([])).toBe("");
   });
 
   it("filters the catalog by name or slug", () => {

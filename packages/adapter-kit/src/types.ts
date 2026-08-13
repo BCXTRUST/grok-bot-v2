@@ -8,6 +8,7 @@ export interface AdapterContext {
   botId?: string;
   runId?: string;
   signal: AbortSignal;
+  connectedProviders?: string[];
 }
 
 export interface AdapterDescriptor<TCapabilities> {

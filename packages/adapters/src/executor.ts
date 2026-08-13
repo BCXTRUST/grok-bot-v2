@@ -115,6 +115,10 @@ export function createRunExecutor(deps: ExecutorDeps) {
         email: "",
         isDeploymentOwner: false,
       };
+      const connectedPlugins = await deps.prisma.connection.findMany({
+        where: { userId: run.userId, workspaceId: run.workspaceId, status: "connected" },
+        select: { provider: true, displayName: true },
+      });
       const context = {
         operationId: runId,
         traceId: runId,
@@ -123,6 +127,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
         botId: bot.id,
         runId,
         signal: new AbortController().signal,
+        connectedProviders: connectedPlugins.map((row) => row.provider),
       };
 
       await appendEvent(deps.prisma, {
@@ -207,10 +212,6 @@ export function createRunExecutor(deps: ExecutorDeps) {
         return { error: `unknown tool ${name}` };
       };
 
-      const connectedPlugins = await deps.prisma.connection.findMany({
-        where: { userId: run.userId, workspaceId: run.workspaceId, status: "connected" },
-        select: { provider: true, displayName: true },
-      });
       const pluginLine =
         connectedPlugins.length > 0
           ? `Connected plugins: ${connectedPlugins.map((row) => `${row.displayName} (${row.provider})`).join(", ")}. Use those plugin tools when the user asks about those apps.`

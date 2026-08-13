@@ -84,9 +84,14 @@ export async function collectPages<T>(
   return items;
 }
 
+export function executeSessionKey(toolkits: string[]): string {
+  return [...new Set(toolkits.map((slug) => slug.trim()).filter(Boolean))].sort().join(",");
+}
+
 export class ComposioConnector implements ConnectorProvider, ConnectionAuthProvider {
   private client: Composio | undefined;
-  private readonly sessions = new Map<string, string>();
+  private readonly catalogSessions = new Map<string, string>();
+  private readonly executeSessions = new Map<string, { sessionId: string; key: string }>();
 
   describe() {
     return {
@@ -99,16 +104,38 @@ export class ComposioConnector implements ConnectorProvider, ConnectionAuthProvi
 
   async sessionFor(userId: string): Promise<ComposioSession> {
     const composio = this.sdk();
-    const existing = this.sessions.get(userId);
+    const existing = this.catalogSessions.get(userId);
     if (existing) {
       try {
         return await composio.sessions.use(existing);
       } catch {
-        this.sessions.delete(userId);
+        this.catalogSessions.delete(userId);
       }
     }
     const session = await composio.create(userId, { manageConnections: false, sandbox: { enable: false } });
-    this.sessions.set(userId, session.sessionId);
+    this.catalogSessions.set(userId, session.sessionId);
+    return session;
+  }
+
+  async sessionForExecute(userId: string, toolkits: string[]): Promise<ComposioSession> {
+    const key = executeSessionKey(toolkits);
+    if (!key) return this.sessionFor(userId);
+    const composio = this.sdk();
+    const existing = this.executeSessions.get(userId);
+    if (existing?.key === key) {
+      try {
+        return await composio.sessions.use(existing.sessionId);
+      } catch {
+        this.executeSessions.delete(userId);
+      }
+    }
+    const session = await composio.create(userId, {
+      manageConnections: false,
+      sandbox: { enable: false },
+      toolkits: key.split(","),
+      sessionPreset: "direct_tools",
+    });
+    this.executeSessions.set(userId, { sessionId: session.sessionId, key });
     return session;
   }
 
@@ -131,14 +158,16 @@ export class ComposioConnector implements ConnectorProvider, ConnectionAuthProvi
   }
 
   async discoverTools(context: AdapterContext): Promise<ConnectorTool[]> {
-    const session = await this.sessionFor(context.userId);
+    const toolkits = context.connectedProviders ?? [];
+    if (toolkits.length === 0) return [];
+    const session = await this.sessionForExecute(context.userId, toolkits);
     const raw = await session.tools();
     return asConnectorTools(raw);
   }
 
   async *execute(call: ConnectorCall, context: AdapterContext): AsyncIterable<ConnectorEvent> {
     try {
-      const session = await this.sessionFor(context.userId);
+      const session = await this.sessionForExecute(context.userId, context.connectedProviders ?? []);
       const result = await session.execute(call.tool, call.args ?? {});
       if (result.error) {
         yield { type: "error", message: sanitizeComposioError(result.error) };
