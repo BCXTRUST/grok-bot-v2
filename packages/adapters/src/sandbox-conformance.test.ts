@@ -96,7 +96,7 @@ describe("docker sandbox", () => {
     const out = await drain(provider, computer);
     expect(out).toContain("graphical-ok");
     const session = await provider.connectScreen(computer, { view: "stream" }, ctx);
-    expect(session.url).toMatch(/vnc\.html/);
+    expect(session.url).toMatch(/embed\.html/);
     await provider.destroy(computer, ctx);
   }, 60_000);
 });

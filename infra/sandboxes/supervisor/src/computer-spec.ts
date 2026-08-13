@@ -52,7 +52,7 @@ export function containerNameFor(botId: string) {
 }
 
 export function screenUrlFor(hostPort: string, host = SCREEN_HOST) {
-  return `http://${host}:${hostPort}/vnc.html?autoconnect=1&resize=scale`;
+  return `http://${host}:${hostPort}/embed.html`;
 }
 
 export function xdotoolCommand(input: SandboxInput): string[] {

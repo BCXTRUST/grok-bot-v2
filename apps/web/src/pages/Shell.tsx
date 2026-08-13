@@ -109,11 +109,14 @@ export function ShellPage() {
 
   useEffect(() => {
     if (panel !== "computer" || !active) return;
-    if (computer?.state === "running" || computer?.state === "booting") return;
+    if (computer?.state === "booting") return;
+    if (computer?.state === "running" && screenUrl) return;
     if (autoBooted.current === active.id) return;
     autoBooted.current = active.id;
     void bootComputer({ takeControl: false, overlay: false });
-  }, [panel, active?.id, computer?.state]);
+  }, [panel, active?.id, computer?.state, screenUrl]);
+
+  const embeddedScreenUrl = embeddableScreenUrl(screenUrl);
 
   const userName = session.data?.user.name ?? "You";
   const initials = userName
@@ -291,11 +294,11 @@ export function ShellPage() {
           ) : null}
           {panel === "computer" ? (
             <div>
-              <div className="relative h-[216px] overflow-hidden rounded-[14px] bg-[#0E0E10]">
-                {screenUrl && /^https?:/i.test(screenUrl) ? (
+              <div className="relative h-[300px] overflow-hidden rounded-[14px] bg-[#0E0E10]">
+                {embeddedScreenUrl ? (
                   <iframe
                     title="Bot screen"
-                    src={screenUrl}
+                    src={embeddedScreenUrl}
                     className="h-full w-full border-0 bg-black"
                     allow="clipboard-read; clipboard-write; fullscreen"
                     style={{ pointerEvents: computer?.controlHolder === "user" ? "auto" : "none" }}
@@ -363,9 +366,11 @@ export function ShellPage() {
               <pre className="mt-2 whitespace-pre-wrap text-[13px] text-[#C9C9CE]">{memory || "No memory yet."}</pre>
               <div className="mt-8 text-[14px] text-[#85858A]">Files</div>
               <ul className="mt-2 text-[13px] text-[#C9C9CE]">
-                {files.map((file) => (
-                  <li key={file.path}>{file.path}</li>
-                ))}
+                {files
+                  .filter((file) => !file.path.split("/").filter(Boolean).some((part) => part.startsWith(".")))
+                  .map((file) => (
+                    <li key={file.path}>{file.path}</li>
+                  ))}
               </ul>
             </div>
           ) : null}
@@ -633,4 +638,20 @@ function BotSettings({
       </button>
     </div>
   );
+}
+
+function embeddableScreenUrl(url: string | null): string | null {
+  if (!url) return null;
+  try {
+    const parsed = new URL(url, window.location.href);
+    const page = new URL(window.location.href);
+    const local = parsed.hostname === "127.0.0.1" || parsed.hostname === "localhost";
+    const pagePort = page.port || (page.protocol === "https:" ? "443" : "80");
+    if (local && parsed.port && parsed.port !== pagePort) {
+      return `${page.origin}/novnc/${parsed.port}${parsed.pathname}${parsed.search}`;
+    }
+    return parsed.toString();
+  } catch {
+    return url;
+  }
 }

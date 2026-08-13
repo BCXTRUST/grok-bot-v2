@@ -202,7 +202,7 @@ async function ensureComputerImage() {
         );
       }
       const stream = await docker.buildImage(
-        { context: computerContext, src: ["Dockerfile", "start.sh"] },
+        { context: computerContext, src: ["Dockerfile", "start.sh", "embed.html", "fluxbox.init"] },
         { t: COMPUTER_IMAGE },
       );
       await new Promise<void>((resolve, reject) => {

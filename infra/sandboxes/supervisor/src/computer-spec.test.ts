@@ -24,9 +24,8 @@ describe("graphical computer spec", () => {
     expect(containerNameFor("bot_1")).toBe(containerNameFor("bot_1"));
   });
 
-  it("points the screen at noVNC", () => {
-    expect(screenUrlFor("16080")).toContain("/vnc.html");
-    expect(screenUrlFor("16080")).toContain("autoconnect=1");
+  it("points the screen at the chrome-less noVNC embed", () => {
+    expect(screenUrlFor("16080")).toBe("http://127.0.0.1:16080/embed.html");
   });
 
   it("turns takeover input into xdotool", () => {

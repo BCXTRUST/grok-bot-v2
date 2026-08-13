@@ -6,17 +6,24 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     xterm \
     xdotool \
     x11-utils \
+    x11-xserver-utils \
     novnc \
     websockify \
     python3 \
     ca-certificates \
     procps \
     bash \
-  && rm -rf /var/lib/apt/lists/*
+  && rm -rf /var/lib/apt/lists/* \
+  && mkdir -p /etc/rakazo/fluxbox \
+  && printf '%s\n' '#!/bin/sh' 'exec xsetroot -solid "#111113" "$@"' > /usr/bin/fbsetbg \
+  && chmod +x /usr/bin/fbsetbg \
+  && ln -sfn /bin/true /usr/bin/xmessage
 ENV DISPLAY=:1
 ENV HOME=/home/rakazo
 WORKDIR /home/rakazo
 COPY start.sh /usr/local/bin/rakazo-computer
+COPY fluxbox.init /etc/rakazo/fluxbox/init
+COPY embed.html /usr/share/novnc/embed.html
 RUN chmod +x /usr/local/bin/rakazo-computer
 EXPOSE 6080
 CMD ["/usr/local/bin/rakazo-computer"]

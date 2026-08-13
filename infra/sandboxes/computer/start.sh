@@ -2,7 +2,7 @@
 set -uo pipefail
 export DISPLAY="${DISPLAY:-:1}"
 export HOME="${HOME:-/home/rakazo}"
-mkdir -p "$HOME" /tmp/rakazo /tmp/.X11-unix
+mkdir -p "$HOME" /tmp/rakazo /tmp/.X11-unix /tmp/fluxbox-home
 cd "$HOME"
 
 rm -f /tmp/.X1-lock /tmp/.X11-unix/X1
@@ -24,7 +24,16 @@ if [[ "$ready" -ne 1 ]]; then
   exit 1
 fi
 
-fluxbox >/tmp/rakazo/fluxbox.log 2>&1 &
+xsetroot -solid "#111113" >/dev/null 2>&1 || true
+mkdir -p /tmp/fluxbox-home/.fluxbox
+cp /etc/rakazo/fluxbox/init /tmp/fluxbox-home/.fluxbox/init
+cat > /tmp/fluxbox-home/.fluxbox/startup <<'EOF'
+#!/bin/sh
+xsetroot -solid "#111113"
+exec fluxbox -rc /tmp/fluxbox-home/.fluxbox/init
+EOF
+chmod +x /tmp/fluxbox-home/.fluxbox/startup
+HOME=/tmp/fluxbox-home /tmp/fluxbox-home/.fluxbox/startup >/tmp/rakazo/fluxbox.log 2>&1 &
 xterm -geometry 100x28+24+24 -title "Rakazo computer" >/tmp/rakazo/xterm.log 2>&1 &
 
 x11vnc -display :1 -forever -shared -nopw -listen 127.0.0.1 -rfbport 5900 -xkb -ncache 0 >/tmp/rakazo/x11vnc.log 2>&1 &
@@ -32,6 +41,10 @@ x11vnc -display :1 -forever -shared -nopw -listen 127.0.0.1 -rfbport 5900 -xkb -
 NOVNC_ROOT=/usr/share/novnc
 if [[ ! -d "$NOVNC_ROOT" ]]; then
   echo "noVNC is missing from the computer image" >&2
+  exit 1
+fi
+if [[ ! -f "$NOVNC_ROOT/embed.html" ]]; then
+  echo "noVNC embed.html is missing from the computer image" >&2
   exit 1
 fi
 websockify --web="$NOVNC_ROOT" 0.0.0.0:6080 127.0.0.1:5900 >/tmp/rakazo/novnc.log 2>&1 &
