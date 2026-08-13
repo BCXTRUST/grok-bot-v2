@@ -97,13 +97,14 @@ export function ShellPage() {
 
   async function bootComputer({ takeControl, overlay }: { takeControl: boolean; overlay: boolean }) {
     if (!active) return;
-    if (overlay) setBooting(true);
+    const needsBoot = computer?.state !== "running" || !screenUrl;
+    if (overlay && needsBoot) setBooting(true);
     try {
-      await rpc.computer.boot({ botId: active.id });
+      if (needsBoot) await rpc.computer.boot({ botId: active.id });
       if (takeControl) await rpc.computer.takeover({ botId: active.id });
       await refreshThread(active.id);
     } finally {
-      if (overlay) setBooting(false);
+      setBooting(false);
     }
   }
 
@@ -127,7 +128,7 @@ export function ShellPage() {
     .toUpperCase();
 
   return (
-    <div className="relative flex h-full min-w-[1100px] overflow-hidden bg-[#050506] text-[#DFDFE2]">
+    <div className="relative flex h-full min-w-0 overflow-hidden bg-[#050506] text-[#DFDFE2]">
       <aside className="flex w-[316px] shrink-0 flex-col border-r border-[#171719] bg-[#0B0B0C]">
         <div className="flex items-center justify-between px-[18px] pb-3 pt-4">
           <div className="flex gap-[7px]">
@@ -214,7 +215,7 @@ export function ShellPage() {
         </div>
       </aside>
 
-      <main className="flex min-w-[520px] flex-1 flex-col bg-[#0D0D0E]">
+      <main className="flex min-w-0 flex-1 flex-col bg-[#0D0D0E]">
         <div className="flex items-center justify-between border-b border-[#141416] px-[22px] py-[17px]">
           <button type="button" onClick={() => setPanel("settings")} className="flex items-center gap-3">
             {active ? <BotAvatar color={active.color} size={26} /> : null}
@@ -278,7 +279,7 @@ export function ShellPage() {
       </main>
 
       {panel && active ? (
-        <aside className="rk-scroll w-[384px] shrink-0 overflow-y-auto border-l border-[#141416] bg-[#0A0A0B] px-5 py-[17px]">
+        <aside className="rk-scroll absolute inset-y-0 right-0 z-20 w-[min(384px,100%)] overflow-y-auto border-l border-[#141416] bg-[#0A0A0B] px-5 py-[17px] shadow-[-24px_0_48px_rgba(0,0,0,.35)]">
           {panel !== "routine" ? (
             <div className="mb-4 flex items-center justify-between">
               <span className="text-[13.5px] text-[#85858A]">{computer?.state ?? active.status}</span>
@@ -294,7 +295,7 @@ export function ShellPage() {
           ) : null}
           {panel === "computer" ? (
             <div>
-              <div className="relative h-[300px] overflow-hidden rounded-[14px] bg-[#0E0E10]">
+              <div className="relative aspect-[16/10] overflow-hidden rounded-[14px] bg-[#0E0E10]">
                 {embeddedScreenUrl ? (
                   <iframe
                     title="Bot screen"
