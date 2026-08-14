@@ -1,4 +1,4 @@
-import { Platform, PlatformColor, type ColorValue } from "react-native";
+import { type ColorValue, Platform, PlatformColor } from "react-native";
 
 function systemColor(iosName: string, fallback: string): ColorValue {
   return Platform.OS === "ios" ? PlatformColor(iosName) : fallback;

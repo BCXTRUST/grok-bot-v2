@@ -1,6 +1,6 @@
-import type { ComponentProps } from "react";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { SymbolView } from "expo-symbols";
+import type { ComponentProps } from "react";
 
 export function NativeSymbol({
   ios,

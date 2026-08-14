@@ -1,9 +1,5 @@
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
-import {
-  DEVICE_CODE_PROVIDERS,
-  DEVICE_CODE_SIGN_IN,
-  isDeviceCodeProvider,
-} from "./pi-oauth.js";
+import { DEVICE_CODE_PROVIDERS, DEVICE_CODE_SIGN_IN, isDeviceCodeProvider } from "./pi-oauth.js";
 
 export type PiCatalogAuth = "api-key" | "oauth" | "both";
 export type PiCatalogSignIn = typeof DEVICE_CODE_SIGN_IN;

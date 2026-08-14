@@ -229,9 +229,7 @@ export function OnboardingPage() {
                   <span className="text-[15px] text-[#ECECEE]">
                     {entry.providerName ?? entry.provider}
                   </span>
-                  <span className="text-[12px] text-[#85858A]">
-                    {providerHint(entry)}
-                  </span>
+                  <span className="text-[12px] text-[#85858A]">{providerHint(entry)}</span>
                 </button>
               ))}
             </div>

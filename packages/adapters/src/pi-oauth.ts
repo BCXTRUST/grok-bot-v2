@@ -25,14 +25,12 @@ export const DEVICE_CODE_PROVIDERS: Record<
   [COPILOT_OAUTH_PROVIDER]: {
     loginLabel: "Sign in with GitHub Copilot",
     hint: "Copilot",
-    billing:
-      "Sign in with GitHub Copilot. Uses your Copilot subscription. Rakazo does not pay.",
+    billing: "Sign in with GitHub Copilot. Uses your Copilot subscription. Rakazo does not pay.",
   },
   [XAI_OAUTH_PROVIDER]: {
     loginLabel: "Sign in with SuperGrok or X Premium",
     hint: "SuperGrok / key",
-    billing:
-      "Sign in with SuperGrok or X Premium, or paste an xAI API key. Rakazo does not pay.",
+    billing: "Sign in with SuperGrok or X Premium, or paste an xAI API key. Rakazo does not pay.",
   },
 };
 

@@ -4,11 +4,11 @@ import {
   CHATGPT_OAUTH_PROVIDER,
   COPILOT_OAUTH_PROVIDER,
   PiOAuthLogins,
-  XAI_OAUTH_PROVIDER,
   parseModelSecret,
   resolveModelApiKey,
   secretValuesToRedact,
   serializeModelSecret,
+  XAI_OAUTH_PROVIDER,
 } from "./pi-oauth.js";
 
 const oauthCred = (overrides: Partial<OAuthCredential> = {}): OAuthCredential => ({

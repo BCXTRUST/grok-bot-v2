@@ -1,5 +1,5 @@
 import { Redirect, useRouter } from "expo-router";
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActionSheetIOS,
   ActivityIndicator,
@@ -212,10 +212,7 @@ function CircleButton({
       accessibilityLabel={accessibilityLabel}
       onPress={onPress}
       hitSlop={4}
-      style={({ pressed }) => [
-        styles.circleButton,
-        (active || pressed) && styles.circlePressed,
-      ]}
+      style={({ pressed }) => [styles.circleButton, (active || pressed) && styles.circlePressed]}
     >
       {children}
     </Pressable>
@@ -229,30 +226,32 @@ function BotRow({ bot }: { bot: MobileBot }) {
   const tag = botTag(bot.title, bot.name);
   return (
     <Pressable
-      onPress={() => router.push({ pathname: "/thread", params: { botId: bot.id, name: bot.name } })}
+      onPress={() =>
+        router.push({ pathname: "/thread", params: { botId: bot.id, name: bot.name } })
+      }
       style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
     >
-        <BotAvatar color={bot.color || FALLBACK_COLOR} />
-        <View style={styles.rowBody}>
-          <View style={styles.rowTop}>
-            <View style={styles.titleRow}>
-              <Text style={styles.name} numberOfLines={1} ellipsizeMode="tail">
-                {bot.name}
-              </Text>
-              {tag ? (
-                <View style={styles.tag}>
-                  <Text style={styles.tagLabel} numberOfLines={1} ellipsizeMode="tail">
-                    {tag}
-                  </Text>
-                </View>
-              ) : null}
-            </View>
-            {time ? <Text style={styles.time}>{time}</Text> : null}
+      <BotAvatar color={bot.color || FALLBACK_COLOR} />
+      <View style={styles.rowBody}>
+        <View style={styles.rowTop}>
+          <View style={styles.titleRow}>
+            <Text style={styles.name} numberOfLines={1} ellipsizeMode="tail">
+              {bot.name}
+            </Text>
+            {tag ? (
+              <View style={styles.tag}>
+                <Text style={styles.tagLabel} numberOfLines={1} ellipsizeMode="tail">
+                  {tag}
+                </Text>
+              </View>
+            ) : null}
           </View>
-          <Text style={styles.preview} numberOfLines={1} ellipsizeMode="tail">
-            {preview}
-          </Text>
+          {time ? <Text style={styles.time}>{time}</Text> : null}
         </View>
+        <Text style={styles.preview} numberOfLines={1} ellipsizeMode="tail">
+          {preview}
+        </Text>
+      </View>
     </Pressable>
   );
 }
