@@ -1,5 +1,7 @@
 # Rakazo
 
+![Rakazo — AI teammates you actually own](./docs/readme-hero.png)
+
 Open-source Grok Bot alternative, built with Cursor and Grok 4.6.
 
 Web, desktop, and mobile. Bring your own AI and sandbox. The product is still early (beta). Notable product changes are in [`CHANGELOG.md`](./CHANGELOG.md).
