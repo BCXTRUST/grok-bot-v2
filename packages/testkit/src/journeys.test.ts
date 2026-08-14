@@ -251,7 +251,7 @@ describeJourneys("required product journeys", () => {
       notifyOnFinish: true,
     });
     const before = connector.records.length;
-    const secret = "sk-or-v1-should-never-leak-into-thread";
+    const secret = "test-openrouter-key-not-a-real-secret";
     await rpc(app, cookie, "models/connect", {
       provider: "openrouter",
       apiKey: secret,
@@ -306,7 +306,7 @@ describeJourneys("required product journeys", () => {
       instructions: "Be useful",
       notifyOnFinish: true,
     });
-    const secret = "sk-or-v1-export-must-redact-this-key";
+    const secret = "test-openrouter-key-not-a-real-secret";
     await rpc(app, cookie, "models/connect", {
       provider: "openrouter",
       apiKey: secret,
@@ -366,6 +366,35 @@ describeJourneys("required product journeys", () => {
       400,
     );
     expect(existsSync(home)).toBe(false);
+  });
+
+  it("11: deleting an account removes the user and personal workspace data", async () => {
+    const email = `account-delete-j-${stamp}@rakazo.test`;
+    const cookie = await signup(app, email, "Delete Account");
+    const me = await rpc<Me>(app, cookie, "me");
+    const bot = await rpc<Bot>(app, cookie, "bots/create", {
+      name: "Temporary",
+      title: "",
+      description: "",
+      instructions: "",
+      notifyOnFinish: true,
+    });
+
+    const deleted = await app.request("/api/auth/delete-user", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        cookie,
+        origin: "http://127.0.0.1:5173",
+      },
+      body: JSON.stringify({ password: "password12" }),
+    });
+
+    expect(deleted.status).toBe(200);
+    expect(await prisma.user.findUnique({ where: { id: me.userId } })).toBeNull();
+    expect(await prisma.organization.findUnique({ where: { id: me.workspaceId } })).toBeNull();
+    expect(await prisma.bot.findUnique({ where: { id: bot.id } })).toBeNull();
+    expect((await raw(app, cookie, "me")).status).toBeGreaterThanOrEqual(400);
   });
 
   it("12: a bot can spawn a regular bot and must confirm the name to delete it", async () => {

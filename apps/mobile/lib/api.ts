@@ -93,6 +93,23 @@ export async function signOut() {
   await clearSessionToken();
 }
 
+export async function deleteAccount(password: string) {
+  const res = await fetch(`${currentApiBase()}/api/auth/delete-user`, {
+    method: "POST",
+    headers: { "content-type": "application/json", origin: "rakazo://", ...(await authHeaders()) },
+    body: JSON.stringify({ password }),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const message =
+      typeof body === "object" && body && "message" in body
+        ? String((body as { message?: string }).message ?? "Could not delete account")
+        : "Could not delete account";
+    throw new Error(message);
+  }
+  await clearSessionToken();
+}
+
 export async function rpc<T>(proc: string, body: unknown = {}): Promise<T> {
   const res = await fetch(`${currentApiBase()}/rpc/${proc}`, {
     method: "POST",

@@ -1,3 +1,4 @@
+import { rm } from "node:fs/promises";
 import { RPCHandler } from "@orpc/server/fetch";
 import type { SandboxProvider, WakeupDriver } from "@rakazo/adapter-kit";
 import {
@@ -6,6 +7,7 @@ import {
   createRunExecutor,
   createRunSandbox,
   type DestinationEmulator,
+  destroyBot,
   EncryptedSecretStore,
   ExpoPushProvider,
   GraphileWakeupDriver,
@@ -14,6 +16,7 @@ import {
   LocalAgentHomeStore,
   PiAgentRuntime,
   PiOAuthLogins,
+  pushTokenPath,
   ScriptedAgentRuntime,
   sleepComputerIfIdle,
 } from "@rakazo/adapters";
@@ -51,22 +54,6 @@ export async function createApp(
     update: {},
   });
 
-  const auth = createAuth(prisma, {
-    secret: env.authSecret,
-    baseURL: env.authUrl,
-    webOrigin: env.webOrigin,
-    signupsEnabled: env.signupsEnabled,
-    signupAllowlist: env.signupAllowlist,
-    extraOrigins: [
-      "rakazo://",
-      "exp://",
-      "exp://*",
-      "http://localhost:8081",
-      "http://127.0.0.1:8081",
-      "http://localhost:19006",
-      "http://127.0.0.1:19006",
-    ],
-  });
   const wakeupKind = env.wakeupDriver;
   const wakeup =
     wakeupKind === "memory"
@@ -90,6 +77,41 @@ export async function createApp(
   const runtime =
     env.agentRuntime === "scripted" ? new ScriptedAgentRuntime() : new PiAgentRuntime();
   const notifications = new ExpoPushProvider(env.dataDir);
+  const auth = createAuth(prisma, {
+    secret: env.authSecret,
+    baseURL: env.authUrl,
+    webOrigin: env.webOrigin,
+    signupsEnabled: env.signupsEnabled,
+    signupAllowlist: env.signupAllowlist,
+    extraOrigins: [
+      "rakazo://",
+      "exp://",
+      "exp://*",
+      "http://localhost:8081",
+      "http://127.0.0.1:8081",
+      "http://localhost:19006",
+      "http://127.0.0.1:19006",
+    ],
+    beforeDeleteUser: async (userId) => {
+      const bots = await prisma.bot.findMany({
+        where: { userId },
+        select: { id: true, workspaceId: true },
+      });
+      await Promise.all(
+        bots.map((bot) =>
+          destroyBot({ prisma, sandbox, home, dataDir: env.dataDir }, bot.id, {
+            operationId: `account-delete:${userId}`,
+            traceId: `account-delete:${userId}`,
+            workspaceId: bot.workspaceId,
+            userId,
+            botId: bot.id,
+            signal: new AbortController().signal,
+          }),
+        ),
+      );
+      await rm(pushTokenPath(env.dataDir, userId), { force: true }).catch(() => undefined);
+    },
+  });
   const executor = createRunExecutor({
     prisma,
     runtime,
