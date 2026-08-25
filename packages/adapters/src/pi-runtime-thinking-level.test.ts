@@ -121,6 +121,26 @@ describe("Pi agent thinking level", () => {
     expect(await runWithModel("plain-model")).toEqual(["off", "off"]);
   });
 
+  it("runs an OpenRouter model that is not in the static catalog", async () => {
+    const levels = await runWithModel("openai/gpt-5-user-pick", "openrouter");
+
+    expect(fakeAgentState.models[0]).toMatchObject({
+      id: "openai/gpt-5-user-pick",
+      provider: "openrouter",
+      reasoning: true,
+    });
+    expect(levels).toEqual(["medium", "medium"]);
+  });
+
+  it("runs an OpenAI API model that is not in the static catalog", async () => {
+    await runWithModel("gpt-user-pick", "openai");
+    expect(fakeAgentState.models[0]).toMatchObject({
+      id: "gpt-user-pick",
+      provider: "openai",
+      reasoning: true,
+    });
+  });
+
   it("normalizes and runs a configured OpenRouter model absent from the static catalog", async () => {
     vi.stubEnv("PI_DEFAULT_PROVIDER", " openrouter ");
     vi.stubEnv("PI_DEFAULT_MODEL", "  stealth/ox-alpha  ");

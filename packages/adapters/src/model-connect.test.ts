@@ -29,4 +29,16 @@ describe("modelCredentialDto", () => {
       modelId: "qwen3-4b",
     });
   });
+
+  it("exposes the last selected model for hosted providers", () => {
+    expect(
+      modelCredentialDto({
+        id: "cred-2",
+        provider: "openrouter",
+        label: "OpenRouter",
+        isDefault: true,
+        defaultModel: "openai/gpt-5",
+      }),
+    ).toMatchObject({ provider: "openrouter", modelId: "openai/gpt-5" });
+  });
 });

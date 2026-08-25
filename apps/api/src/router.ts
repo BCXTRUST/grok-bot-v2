@@ -44,6 +44,7 @@ import {
   prepareApiInstall,
   prepareMemoryProviderConnection,
   probeOpenAiCompatibleModels,
+  probeOpenRouterModels,
   provisionComputer,
   type RemoteConnectorDependencies,
   releaseComputerExecutionLease,
@@ -434,6 +435,16 @@ export function createRouter(deps: RouterDeps) {
           }
         },
       ),
+      probeOpenRouter: authed.models.probeOpenRouter.handler(async ({ context, input }) => {
+        try {
+          const models = await probeOpenRouterModels(input, fetch, context.signal);
+          return { models };
+        } catch (error) {
+          throw new ORPCError("BAD_REQUEST", {
+            message: error instanceof Error ? error.message : "Could not list OpenRouter models",
+          });
+        }
+      }),
       beginOAuth: authed.models.beginOAuth.handler(async ({ context, input }) => {
         return deps.oauthLogins.begin({
           userId: context.actor.userId,

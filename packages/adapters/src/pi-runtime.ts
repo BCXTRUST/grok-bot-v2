@@ -69,7 +69,6 @@ export class PiAgentRuntime implements AgentRuntime {
         const provider =
           request.model.provider === "scripted" ? "openrouter" : request.model.provider;
         const envDefaultModel = process.env.PI_DEFAULT_MODEL?.trim();
-        const envDefaultProvider = process.env.PI_DEFAULT_PROVIDER?.trim() || "openrouter";
         const modelId =
           request.model.id === "scripted"
             ? envDefaultModel || "deepseek/deepseek-v4-flash-0731"
@@ -79,13 +78,11 @@ export class PiAgentRuntime implements AgentRuntime {
         if (!model && provider !== "openrouter" && provider !== OPENAI_COMPATIBLE_PROVIDER_ID) {
           model = models.getModel("openrouter", modelId);
         }
-        if (
-          !model &&
-          provider === "openrouter" &&
-          envDefaultProvider === "openrouter" &&
-          modelId === envDefaultModel
-        ) {
+        if (!model && provider === "openrouter") {
           model = configuredOpenRouterModel(modelId);
+        }
+        if (!model && provider === "openai") {
+          model = configuredOpenAiApiModel(modelId);
         }
         if (!model) {
           queue.push({ type: "text", text: `Unknown model ${provider}/${modelId}` });
@@ -250,6 +247,22 @@ function configuredOpenRouterModel(id: string): Model<"openai-completions"> {
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     contextWindow: 16_384,
     maxTokens: 4_096,
+  };
+}
+
+function configuredOpenAiApiModel(id: string): Model<"openai-responses"> {
+  return {
+    id,
+    name: id,
+    api: "openai-responses",
+    provider: "openai",
+    baseUrl: "https://api.openai.com/v1",
+    reasoning: true,
+    input: ["text", "image"],
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    contextWindow: 128_000,
+    maxTokens: 16_384,
+    compat: { supportsStrictMode: true },
   };
 }
 
