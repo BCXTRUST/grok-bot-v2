@@ -4,7 +4,7 @@ import type {
   AgentInboxRef,
   AgentMailMessage,
 } from "@rakazo/adapter-kit";
-import { botInboxClientId, botInboxUsername } from "./bot-inbox.js";
+import { botInboxClientId, botInboxUsername, isNaturalInboxAddress } from "./bot-inbox.js";
 
 export class FakeAgentInboxProvider implements AgentInboxProvider {
   readonly boxes = new Map<string, AgentInboxRef>();
@@ -27,7 +27,11 @@ export class FakeAgentInboxProvider implements AgentInboxProvider {
     const existing = [...this.boxes.values()].find((inbox) =>
       inbox.inboxId.includes(botInboxClientId(request.botId)),
     );
-    if (existing) return existing;
+    if (existing && isNaturalInboxAddress(existing.address)) return existing;
+    if (existing) {
+      this.boxes.delete(existing.inboxId);
+      this.messages.delete(existing.inboxId);
+    }
     const username = botInboxUsername(request.botId, request.name);
     const ref: AgentInboxRef = {
       provider: "fake-inbox",

@@ -3,9 +3,11 @@ import { AgentMailInboxProvider, type AgentMailSdk } from "./agentmail-inbox.js"
 import {
   botInboxClientId,
   botInboxUsername,
-  ensureBotInbox,
-  inboxRefFromBot,
+  botInboxUsernames,
+  isNaturalInboxAddress,
   mailInstruction,
+  inboxRefFromBot,
+  ensureBotInbox,
 } from "./bot-inbox.js";
 import { FakeAgentInboxProvider } from "./fake-inbox.js";
 
@@ -18,13 +20,13 @@ const context = {
 };
 
 describe("bot inbox usernames", () => {
-  it("builds a short lastname.initial username from the bot name", () => {
-    expect(botInboxUsername("cmt8shbab0002wbjscmcade55", "Helen Marsh")).toBe("marsh.h");
-    expect(botInboxUsername("cmt8shbab0002wbjscmcade55", "Link Builder")).toBe("builder.l");
+  it("uses firstname plus last initial, never a bot id", () => {
+    expect(botInboxUsername("cmt8shbab0002wbjscmcade55", "Helen Marsh")).toBe("helen.m");
+    expect(botInboxUsername("cmt8shbab0002wbjscmcade55", "Link Builder")).toBe("link.b");
     expect(botInboxUsername("bot-1", "Chief")).toBe("chief");
-    expect(botInboxUsername("cmt8shbab0002wbjscmcade55", "Link Builder", true)).toBe(
-      "builder.l.de55",
-    );
+    expect(botInboxUsernames("Link Builder").slice(0, 3)).toEqual(["link.b", "link.bu", "link.bui"]);
+    expect(isNaturalInboxAddress("link.b@faircroft.us")).toBe(true);
+    expect(isNaturalInboxAddress("link.builder.cmcade55@faircroft.us")).toBe(false);
     expect(botInboxClientId("bot-1")).toBe("rakazo-bot-bot-1");
   });
 });
@@ -64,10 +66,10 @@ describe("ensureBotInbox", () => {
       context,
     );
 
-    expect(first?.address).toMatch(/builder\.l@/);
+    expect(first?.address).toMatch(/link\.b@/);
     expect(second).toEqual(first);
     expect(inbox.boxes.size).toBe(1);
-    expect(mailInstruction(first?.address)).toContain(first!.address);
+    expect(mailInstruction("link.b@faircroft.us")).toMatch(/confirmation|confirm/i);
     expect(inboxRefFromBot({ inboxProvider: null, inboxId: null, inboxAddress: null })).toBeNull();
   });
 });
@@ -76,7 +78,7 @@ describe("AgentMail inbox adapter", () => {
   it("creates an inbox with a stable client id and maps message bodies", async () => {
     const created = vi.fn(async () => ({
       inboxId: "inb_1",
-      email: "link.builder.bot-1@faircroft.us",
+      email: "link.b@faircroft.us",
     }));
     const sdk: AgentMailSdk = {
       inboxes: {
@@ -87,7 +89,7 @@ describe("AgentMail inbox adapter", () => {
           get: async () => ({
             messageId: "msg-1",
             from: "human@x.test",
-            extractedText: "please reply",
+            extractedText: "please confirm https://forum.example/confirm?token=1",
             to: ["a@x.test"],
             subject: "Hi",
           }),
@@ -108,12 +110,13 @@ describe("AgentMail inbox adapter", () => {
         displayName: "Link Builder",
       }),
     );
-    expect(inbox.address).toBe("link.builder.bot-1@faircroft.us");
+    expect(inbox.address).toBe("link.b@faircroft.us");
     expect(await provider.listMessages(inbox, {}, context)).toEqual([
       { id: "msg-1", from: "human@x.test", subject: "Hi", createdAt: undefined },
     ]);
     expect(await provider.readMessage(inbox, "msg-1", context)).toMatchObject({
-      text: "please reply",
+      text: "please confirm https://forum.example/confirm?token=1",
+      links: ["https://forum.example/confirm?token=1"],
     });
   });
 
@@ -122,13 +125,44 @@ describe("AgentMail inbox adapter", () => {
       throw { body: { code: "limit_exceeded" } };
     });
     const provider = new AgentMailInboxProvider(
-      { inboxes: { create: created, get: async () => ({}), messages: {} as never } },
+      { inboxes: { create: created, get: async () => ({}), delete: async () => undefined, messages: {} as never } },
       "faircroft.us",
     );
     await expect(
       provider.provision({ botId: "bot-2", name: "Overflow", workspaceId: "ws" }, context),
     ).rejects.toThrow(/inbox limit reached/i);
     expect(created).toHaveBeenCalledTimes(1);
+  });
+
+  it("replaces an idempotent machine address with firstname.last-initial", async () => {
+    const deleted = vi.fn(async () => undefined);
+    const created = vi
+      .fn()
+      .mockResolvedValueOnce({
+        inboxId: "old",
+        email: "link.builder.cmcade55@faircroft.us",
+      })
+      .mockResolvedValueOnce({
+        inboxId: "new",
+        email: "link.b@faircroft.us",
+      });
+    const provider = new AgentMailInboxProvider(
+      {
+        inboxes: {
+          create: created,
+          get: async () => ({}),
+          delete: deleted,
+          messages: {} as never,
+        },
+      },
+      "faircroft.us",
+    );
+    const inbox = await provider.provision(
+      { botId: "bot-1", name: "Link Builder", workspaceId: "ws" },
+      context,
+    );
+    expect(deleted).toHaveBeenCalledWith("old");
+    expect(inbox.address).toBe("link.b@faircroft.us");
   });
 });
 
