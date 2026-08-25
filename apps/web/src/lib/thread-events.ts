@@ -404,6 +404,18 @@ export function computerPanelAutoBoot(
   return "boot";
 }
 
+/** Poll the live stream while the computer panel or takeover overlay is open. */
+export function shouldPollComputerScreen(input: {
+  panel: string | null;
+  overlayOpen: boolean;
+  state: string | undefined;
+  embeddable: boolean;
+}): boolean {
+  if (input.state !== "running") return false;
+  if (input.panel !== "computer" && !input.overlayOpen) return false;
+  return !input.embeddable;
+}
+
 export function reduceComputerStatus(
   prev: ComputerStatus | null,
   event: ProductEvent,

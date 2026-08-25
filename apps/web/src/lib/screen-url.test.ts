@@ -37,4 +37,13 @@ describe("embeddableScreenUrl", () => {
       ),
     ).toBeNull();
   });
+
+  it("iframes a same-page /novnc path from a tunnel host", () => {
+    expect(
+      embeddableScreenUrl(
+        "/novnc/remote/view/1.token/vnc.html?autoconnect=true&password=screen-key",
+        "https://assembled-fraction-kid-pressing.trycloudflare.com/app",
+      ),
+    ).toBe("/novnc/remote/view/1.token/vnc.html?autoconnect=true&password=screen-key");
+  });
 });

@@ -118,6 +118,15 @@ function isAllowedTargetName(hostname: string) {
   );
 }
 
+/** Host header for the upstream noVNC server. Default HTTPS/HTTP ports must omit :443/:80. */
+export function upstreamHostHeader(hostname: string, port: number, protocol?: string): string {
+  const https = protocol === "https:" || protocol === "https";
+  const http = protocol === "http:" || protocol === "http";
+  if ((https && port === 443) || (http && port === 80)) return hostname;
+  if (!protocol && port === 443) return hostname;
+  return `${hostname}:${port}`;
+}
+
 export function safeProxyHeaders(headers: IncomingHttpHeaders) {
   return Object.fromEntries(
     Object.entries(headers).filter(([key, value]) => {

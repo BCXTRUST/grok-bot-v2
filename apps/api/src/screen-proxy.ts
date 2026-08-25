@@ -13,6 +13,20 @@ export function proxiesExternalDesktop(kind: string | undefined) {
   return kind === "box" || kind === "e2b";
 }
 
+function screenProxyHref(proxyOrigin: string, pathAndSearch: string): string {
+  try {
+    const origin = new URL(proxyOrigin);
+    const local =
+      origin.hostname === "127.0.0.1" ||
+      origin.hostname === "localhost" ||
+      origin.hostname === "::1";
+    if (local) return pathAndSearch;
+    return `${origin.origin}${pathAndSearch}`;
+  } catch {
+    return pathAndSearch;
+  }
+}
+
 export function addScreenProxyCapability(
   url: string,
   secret: string,
@@ -26,8 +40,10 @@ export function addScreenProxyCapability(
       const expiresAt = now + SCREEN_PROXY_TTL_MS;
       const policy = parsed.searchParams.get("view_only") === "false" ? "control" : "view";
       const token = sealScreenTarget(parsed.toString(), secret, policy, expiresAt);
-      const origin = new URL(proxyOrigin).origin;
-      return `${origin}${SCREEN_PROXY_REMOTE_PREFIX}/${policy}/${expiresAt}.${token}${parsed.pathname || "/"}${novncViewerSearch(parsed)}`;
+      return screenProxyHref(
+        proxyOrigin,
+        `${SCREEN_PROXY_REMOTE_PREFIX}/${policy}/${expiresAt}.${token}${parsed.pathname || "/"}${novncViewerSearch(parsed)}`,
+      );
     }
     if (parsed.protocol !== "http:" || !parsed.hostname || !parsed.port) return url;
     const expiresAt = now + SCREEN_PROXY_TTL_MS;
@@ -37,8 +53,10 @@ export function addScreenProxyCapability(
     const signature = createHmac("sha256", secret)
       .update(`${parsed.hostname}:${parsed.port}:${policy}:${expiresAt}`)
       .digest("base64url");
-    const origin = new URL(proxyOrigin).origin;
-    return `${origin}/novnc/${target}/${parsed.port}/${policy}/${expiresAt}.${signature}${destination}`;
+    return screenProxyHref(
+      proxyOrigin,
+      `/novnc/${target}/${parsed.port}/${policy}/${expiresAt}.${signature}${destination}`,
+    );
   } catch {
     return url;
   }

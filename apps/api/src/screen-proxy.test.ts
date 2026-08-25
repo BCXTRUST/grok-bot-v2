@@ -40,6 +40,21 @@ describe("screen proxy capability", () => {
     expect(result.toString()).not.toContain("provider-token");
   });
 
+  it("emits a same-page /novnc path when the web origin is loopback so tunnels can iframe it", () => {
+    const href = addScreenProxyCapability(
+      "https://6080-desktop.e2b.dev/vnc.html?password=screen-key&view_only=true",
+      "secret",
+      "http://127.0.0.1:5173",
+      100,
+      { proxyExternal: true },
+    );
+    expect(href.startsWith("/novnc/remote/view/")).toBe(true);
+    expect(href).not.toContain("127.0.0.1");
+    expect(new URL(href, "https://tunnel.trycloudflare.com/app").pathname).toMatch(
+      /^\/novnc\/remote\/view\/3600100\./,
+    );
+  });
+
   it("maps E2B authKey onto the noVNC password query the iframe reads", () => {
     const result = new URL(
       addScreenProxyCapability(

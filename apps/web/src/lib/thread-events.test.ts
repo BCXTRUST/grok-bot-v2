@@ -9,6 +9,7 @@ import {
   activeThreadRuns,
   clearActiveThreadRuns,
   computerPanelAutoBoot,
+  shouldPollComputerScreen,
   computerTakeoverBlocked,
   isThreadSnapshotEvent,
   mergeThreadSnapshot,
@@ -1090,6 +1091,41 @@ describe("computer event reduction", () => {
     expect(computerPanelAutoBoot("running", null)).toBe("recover-screen");
     expect(computerPanelAutoBoot("booting")).toBe("wait");
     expect(computerPanelAutoBoot("suspended")).toBe("wait");
+  });
+
+  it("keeps asking for a screen URL while Take control is open, not only the side panel", () => {
+    expect(
+      shouldPollComputerScreen({
+        panel: null,
+        overlayOpen: true,
+        state: "running",
+        embeddable: false,
+      }),
+    ).toBe(true);
+    expect(
+      shouldPollComputerScreen({
+        panel: "computer",
+        overlayOpen: false,
+        state: "running",
+        embeddable: false,
+      }),
+    ).toBe(true);
+    expect(
+      shouldPollComputerScreen({
+        panel: null,
+        overlayOpen: true,
+        state: "running",
+        embeddable: true,
+      }),
+    ).toBe(false);
+    expect(
+      shouldPollComputerScreen({
+        panel: "settings",
+        overlayOpen: false,
+        state: "running",
+        embeddable: false,
+      }),
+    ).toBe(false);
   });
 });
 

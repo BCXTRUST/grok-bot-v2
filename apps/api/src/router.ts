@@ -1356,31 +1356,39 @@ export function createRouter(deps: RouterDeps) {
           ) {
             return { url: null };
           }
-          const session = await deps.sandbox
-            .connectScreen(
-              toComputerRef(bot.computer),
-              {
-                view: "stream",
-                interactive:
-                  hasActiveComputerControl(bot.computer) && bot.computer.controlBotId === bot.id,
-                controlToken:
-                  bot.computer.controlBotId === bot.id
-                    ? (bot.computer.controlLeaseId ?? undefined)
-                    : undefined,
-              },
-              await computerScreenContext(
-                deps.prisma,
-                context.actor,
-                bot.computer.id,
-                bot.id,
-                "screen",
-              ),
-            )
-            .catch(() => ({
-              url: null as string | null,
-              mimeType: "text/html",
-              close: async () => undefined,
-            }));
+          const request = {
+            view: "stream" as const,
+            interactive:
+              hasActiveComputerControl(bot.computer) && bot.computer.controlBotId === bot.id,
+            controlToken:
+              bot.computer.controlBotId === bot.id
+                ? (bot.computer.controlLeaseId ?? undefined)
+                : undefined,
+          };
+          const ctx = await computerScreenContext(
+            deps.prisma,
+            context.actor,
+            bot.computer.id,
+            bot.id,
+            "screen",
+          );
+          let session: Awaited<ReturnType<typeof deps.sandbox.connectScreen>>;
+          try {
+            session = await deps.sandbox.connectScreen(toComputerRef(bot.computer), request, ctx);
+          } catch {
+            session = { url: null, mimeType: "text/html", close: async () => undefined };
+          }
+          if (!session.url && request.interactive) {
+            try {
+              session = await deps.sandbox.connectScreen(
+                toComputerRef(bot.computer),
+                { view: "stream", interactive: false },
+                ctx,
+              );
+            } catch {
+              session = { url: null, mimeType: "text/html", close: async () => undefined };
+            }
+          }
           if (!session.url) return { url: null };
           scheduleComputerSleep(deps.jobs, bot.computer.id);
           const viewUrl = withViewOnly(

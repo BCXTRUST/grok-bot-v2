@@ -102,6 +102,7 @@ import {
   clearActiveThreadRuns,
   computerPanelAutoBoot,
   computerTakeoverBlocked,
+  shouldPollComputerScreen,
   isComputerStatusEvent,
   isThreadSnapshotEvent,
   mergeThreadSnapshot,
@@ -473,18 +474,18 @@ export function ShellPage() {
     return snap;
   }
 
-  async function refreshComputerScreen(id: string) {
-    if (!computerVisible.current) return null;
+  async function refreshComputerScreen(id: string, force = false) {
+    if (!force && !computerVisible.current) return null;
     const request = ++screenRequest.current;
     let screen: { url: string | null } = { url: null };
-    for (let attempt = 0; attempt < 3; attempt += 1) {
+    for (let attempt = 0; attempt < 8; attempt += 1) {
       screen = await rpc.computer.screenUrl({ botId: id }).catch(() => ({ url: null }));
       if (screen.url) break;
-      if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 400));
+      if (attempt < 7) await new Promise((resolve) => setTimeout(resolve, 1_000));
       if (
         request !== screenRequest.current ||
         activeBotId.current !== id ||
-        !computerVisible.current
+        (!force && !computerVisible.current)
       ) {
         return null;
       }
@@ -492,7 +493,7 @@ export function ShellPage() {
     if (
       request !== screenRequest.current ||
       activeBotId.current !== id ||
-      !computerVisible.current
+      (!force && !computerVisible.current)
     ) {
       return null;
     }
@@ -1248,6 +1249,9 @@ export function ShellPage() {
       if (needsBoot) await rpc.computer.boot({ botId: active.id });
       if (takeControl) await rpc.computer.takeover({ botId: active.id });
       await refreshThread(active.id);
+      if (computerVisible.current || overlay) {
+        await refreshComputerScreen(active.id, true);
+      }
       setComputerError(null);
     } catch (error) {
       setComputerError(error instanceof Error ? error.message : "Could not take control");
@@ -1292,14 +1296,24 @@ export function ShellPage() {
   }, [panel, active?.id]);
 
   useEffect(() => {
-    if (panel !== "computer" || computer?.state !== "running" || !active) return;
-    if (embeddableScreenUrl(screenUrl, window.location.href)) return;
+    if (
+      !active ||
+      !shouldPollComputerScreen({
+        panel,
+        overlayOpen: computerOpen,
+        state: computer?.state,
+        embeddable: Boolean(embeddableScreenUrl(screenUrl, window.location.href)),
+      })
+    ) {
+      return;
+    }
     const botId = active.id;
+    void refreshComputerScreen(botId, computerOpen);
     const timer = window.setInterval(() => {
-      void refreshComputerScreen(botId);
+      void refreshComputerScreen(botId, computerOpen);
     }, 2_000);
     return () => window.clearInterval(timer);
-  }, [panel, computer?.state, screenUrl, active?.id]);
+  }, [panel, computerOpen, computer?.state, screenUrl, active?.id]);
 
   useEffect(() => {
     setComputerOpen(false);
@@ -1360,14 +1374,16 @@ export function ShellPage() {
     const needsTakeover = !userHoldsComputerControl(computer, active.id);
     const blocked = computerTakeoverBlocked(computer, snapshot?.run?.status);
     try {
+      computerVisible.current = true;
+      setComputerOpen(true);
       await bootComputer({
         takeControl: needsTakeover && !blocked,
         overlay: (needsTakeover && !blocked) || computer?.state !== "running",
         force: computer?.state !== "running",
       });
-      setComputerOpen(true);
+      await refreshComputerScreen(active.id, true);
     } catch {
-      // computerError already set in bootComputer
+      setComputerOpen(false);
     }
   }
 

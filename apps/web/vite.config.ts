@@ -12,6 +12,7 @@ import {
   safeProxyHeaders,
   safeProxyResponseHeaders,
   stripSensitiveHandshakeHeaders,
+  upstreamHostHeader,
 } from "./src/screen-proxy.js";
 import { VITE_ALLOWED_HOSTS } from "./src/vite-dev-hosts.ts";
 
@@ -31,7 +32,11 @@ function attachNovncProxy(server: ViteDevServer | PreviewServer, secret: string)
     }
     const headers = {
       ...safeProxyHeaders(req.headers),
-      host: `${target.hostname}:${target.port}`,
+      host: upstreamHostHeader(
+        target.hostname,
+        target.port,
+        "protocol" in target ? target.protocol : undefined,
+      ),
     };
     const transport = target.protocol === "https:" ? https : http;
     const upstream = transport.request(
@@ -72,7 +77,11 @@ function attachNovncProxy(server: ViteDevServer | PreviewServer, secret: string)
     upstream.once(target.protocol === "https:" ? "secureConnect" : "connect", () => {
       const headerLines = [
         `${req.method ?? "GET"} ${target.path} HTTP/1.1`,
-        `Host: ${target.hostname}:${target.port}`,
+        `Host: ${upstreamHostHeader(
+          target.hostname,
+          target.port,
+          "protocol" in target ? target.protocol : undefined,
+        )}`,
       ];
       for (const [key, value] of Object.entries(safeProxyHeaders(req.headers))) {
         headerLines.push(`${key}: ${Array.isArray(value) ? value.join(",") : value}`);

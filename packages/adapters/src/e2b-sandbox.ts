@@ -244,7 +244,8 @@ export class E2BSandboxProvider implements SandboxProvider {
       ]);
     } catch (error) {
       // Reconnected SDK clients forget stream.url even when noVNC is already up.
-      if (!e2bPublicStreamUrl(desktop, 6080, true)) throw error;
+      // A start timeout must not blank the pane if the public desktop host exists.
+      if (!e2bHostVncUrl(desktop, 6080) && !e2bPublicStreamUrl(desktop, 6080, true)) throw error;
     }
     try {
       await desktop.commands.run("x11vnc -R viewonly", { timeoutMs: 2_500 });
@@ -347,7 +348,12 @@ export class E2BSandboxProvider implements SandboxProvider {
     const screenKey = screenSessionKey(context);
     const layout = await this.resolveLayout(desktop, screenKey, context.screenLeaseId);
     if (layout.isPrimary) {
-      await this.startStream(desktop);
+      try {
+        await this.startStream(desktop);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (/teardown/i.test(message) || !e2bHostVncUrl(desktop, layout.viewPort)) throw error;
+      }
       if (request.interactive) {
         if (!request.controlToken) throw new Error("interactive screen requires a control token");
         try {

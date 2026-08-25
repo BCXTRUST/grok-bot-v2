@@ -19,6 +19,51 @@ describe("E2B computer backend", () => {
     expect(shouldSkipPortableWorkspaceFile(".browser-profiles/chromium/SingletonLock")).toBe(true);
   });
 
+  it("still returns a public desktop URL when stream.start hangs past the timeout", async () => {
+    vi.useFakeTimers();
+    const desktop = {
+      sandboxId: "e2b-hang-start",
+      display: ":0",
+      getHost: (port: number) => `${port}-desktop.test`,
+      commands: {
+        run: vi.fn(async (value: string) => {
+          if (String(value).includes("RAKAZO_SCREEN_INDEX=")) {
+            return { stdout: "RAKAZO_SCREEN_INDEX=0\n", stderr: "", exitCode: 0 };
+          }
+          return { stdout: "", stderr: "", exitCode: 0 };
+        }),
+      },
+      stream: {
+        start: vi.fn(() => new Promise<void>(() => undefined)),
+        stop: vi.fn(async () => undefined),
+        getAuthKey: () => {
+          throw new Error("Server is not running");
+        },
+        getUrl: () => {
+          throw new Error("Server is not running");
+        },
+      },
+    } as unknown as Sandbox;
+    const provider = new E2BSandboxProvider("test-key", {
+      create: vi.fn(async () => desktop),
+      connect: vi.fn(async () => desktop),
+      pause: vi.fn(async () => undefined),
+    });
+    const computer = await provider.provision(
+      { botId: "bot-1", homePath: "/unused", providerRef: "e2b-hang-start", providerKind: "e2b" },
+      context,
+    );
+    const pending = provider.connectScreen(computer, { view: "stream" }, context);
+    try {
+      await vi.advanceTimersByTimeAsync(8_050);
+      const screen = await pending;
+      expect(screen.url).toContain("https://6080-desktop.test/vnc.html");
+      expect(screen.url).toContain("autoconnect=true");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("prepares a reused computer idempotently", async () => {
     let profilesConfigured = false;
     const command = vi.fn(async (value: string) => {
