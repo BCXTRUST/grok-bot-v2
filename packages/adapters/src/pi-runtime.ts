@@ -114,27 +114,16 @@ export class PiAgentRuntime implements AgentRuntime {
           depth: 0,
         };
         const tools = toAgentTools(toolDefs, host);
-        const history = toHistory(request.history, request.prompt);
+        const history = toAgentHistory(request.history, request.prompt);
+        const systemPrompt =
+          request.instructions ||
+          (toolDefs.some((tool) => tool.name === "computer_observe")
+            ? "You are a Rakazo bot with a real computer. Follow the latest user message on the live desktop. Use computer_observe before clicking when the screen may have changed. Use computer_act for the visible browser and apps. Use shell and file tools for precise terminal and filesystem work. Do not relaunch a browser if one is already open. The user may take control of the same desktop while you run. Be concise."
+            : "You are a Rakazo bot with a persistent sandbox filesystem and shell. Be concise.");
 
-        const agent = new Agent({
-          streamFn: (m, ctx, options) => models.streamSimple(m, ctx, options),
-          getApiKey: async () => apiKey,
-          transformContext: async (messages) => pruneComputerScreenshotContext(messages),
-          initialState: {
-            systemPrompt:
-              request.instructions ||
-              (toolDefs.some((tool) => tool.name === "computer_observe")
-                ? "You are a Rakazo bot with a real computer. Use computer_observe and computer_act to operate its visible desktop, including browsers and installed applications. Use shell and the file tools for precise terminal and filesystem work. The user may interact with the same desktop while you run, so re-observe when the screen may have changed. Be concise."
-                : "You are a Rakazo bot with a persistent sandbox filesystem and shell. Be concise."),
-            model,
-            thinkingLevel: thinkingLevelFor(model),
-            tools,
-            messages: history,
-          },
-        });
-
+        let currentAgent: Agent | undefined;
         const onAbort = () => {
-          agent.abort();
+          currentAgent?.abort();
           for (const nested of nestedAgents) nested.abort();
         };
         host.abortTurn = onAbort;
@@ -146,76 +135,114 @@ export class PiAgentRuntime implements AgentRuntime {
 
         let streamed = "";
         let toolActivityShowing = false;
-        agent.subscribe((event) => {
-          if (event.type === "tool_execution_start") {
-            if (!consumeToolCall(host)) return;
-            // Live activity feedback: without this the thread shows a bare
-            // "working…" for the whole tool call with nothing actionable.
-            toolActivityShowing = true;
-            queue.push({
-              type: "progress",
-              text: describeToolActivity(event.toolName, event.args),
-            });
-          }
-          if (
-            event.type === "message_update" &&
-            event.assistantMessageEvent.type === "text_delta"
-          ) {
-            const delta = event.assistantMessageEvent.delta;
-            if (delta) {
-              if (toolActivityShowing) {
-                // Real text replaces the activity line instead of appending to it.
-                toolActivityShowing = false;
-                queue.push({ type: "progress", text: "" });
-              }
-              streamed += delta;
-              queue.push({ type: "text", text: delta });
-            }
-          }
-          if (event.type === "message_end" && event.message.role === "assistant") {
-            const text = assistantText(event.message);
-            if (text && !streamed) {
-              streamed = text;
-              queue.push({ type: "text", text });
-            }
-            if ("usage" in event.message && event.message.usage) {
-              queue.push({
-                type: "usage",
-                inputTokens: event.message.usage.input ?? 0,
-                outputTokens: event.message.usage.output ?? 0,
-                provider: model.provider,
-                model: model.id,
-              });
-            }
-          }
-        });
-
-        // No "working…" progress push here: the shell already renders its own
-        // placeholder while a run is active, and emitting one here shows two.
         const images = request.currentTurnImages?.map((image) => ({
           type: "image" as const,
           data: Buffer.from(image.data).toString("base64"),
           mimeType: image.mimeType,
         }));
+
+        const runAgent = async (messages: ReturnType<typeof toAgentHistory>) => {
+          const agent = new Agent({
+            streamFn: (m, ctx, options) => models.streamSimple(m, ctx, options),
+            getApiKey: async () => apiKey,
+            transformContext: async (next) => pruneComputerScreenshotContext(next),
+            initialState: {
+              systemPrompt,
+              model,
+              thinkingLevel: thinkingLevelFor(model),
+              tools,
+              messages,
+            },
+          });
+          currentAgent = agent;
+          agent.subscribe((event) => {
+            if (event.type === "tool_execution_start") {
+              if (!consumeToolCall(host)) return;
+              toolActivityShowing = true;
+              queue.push({
+                type: "progress",
+                text: describeToolActivity(event.toolName, event.args),
+              });
+            }
+            if (
+              event.type === "message_update" &&
+              event.assistantMessageEvent.type === "text_delta"
+            ) {
+              const delta = event.assistantMessageEvent.delta;
+              if (delta) {
+                if (toolActivityShowing) {
+                  toolActivityShowing = false;
+                  queue.push({ type: "progress", text: "" });
+                }
+                streamed += delta;
+                queue.push({ type: "text", text: delta });
+              }
+            }
+            if (event.type === "message_end" && event.message.role === "assistant") {
+              const text = assistantText(event.message);
+              if (text && !streamed) {
+                streamed = text;
+                queue.push({ type: "text", text });
+              }
+              if ("usage" in event.message && event.message.usage) {
+                queue.push({
+                  type: "usage",
+                  inputTokens: event.message.usage.input ?? 0,
+                  outputTokens: event.message.usage.output ?? 0,
+                  provider: model.provider,
+                  model: model.id,
+                });
+              }
+            }
+          });
+          try {
+            await agent.prompt(request.prompt, images?.length ? images : undefined);
+            await agent.waitForIdle();
+            return {
+              error: agent.state.errorMessage,
+              messages: agent.state.messages,
+            };
+          } catch (error) {
+            return {
+              error: error instanceof Error ? error.message : String(error),
+              messages: agent.state.messages,
+            };
+          }
+        };
+
         try {
-          await agent.prompt(request.prompt, images?.length ? images : undefined);
-          await agent.waitForIdle();
+          let result = await runAgent(history);
+          if (isThoughtSignatureFailure(result.error)) {
+            queue.push({
+              type: "progress",
+              text: "Model lost tool context — continuing on the live desktop…",
+            });
+            result = await runAgent([
+              ...history,
+              {
+                role: "user" as const,
+                content: thoughtSignatureContinueNote(summarizeCompletedTools(result.messages)),
+                timestamp: Date.now(),
+              },
+            ]);
+          }
+          if (result.error) {
+            const message = isThoughtSignatureFailure(result.error)
+              ? explainThoughtSignatureFailure()
+              : sanitizeError(result.error);
+            queue.push({ type: "text", text: `I hit a problem: ${message}` });
+            queue.push({ type: "done", text: message });
+            return;
+          }
+          if (!streamed) {
+            const fallback = assistantText(result.messages.at(-1)) || "I finished the work.";
+            queue.push({ type: "text", text: fallback });
+            streamed = fallback;
+          }
+          queue.push({ type: "done", text: streamed });
         } finally {
           signal.removeEventListener("abort", onAbort);
         }
-
-        const error = agent.state.errorMessage;
-        if (error) {
-          queue.push({ type: "text", text: `I hit a problem: ${sanitizeError(error)}` });
-          queue.push({ type: "done", text: sanitizeError(error) });
-          return;
-        }
-        if (!streamed) {
-          const fallback = assistantText(agent.state.messages.at(-1)) || "I finished the work.";
-          queue.push({ type: "text", text: fallback });
-          streamed = fallback;
-        }
-        queue.push({ type: "done", text: streamed });
       } catch (error) {
         const message = sanitizeError(error instanceof Error ? error.message : String(error));
         queue.push({ type: "text", text: `I hit a problem: ${message}` });
@@ -383,16 +410,63 @@ function stableToolNameHash(name: string): string {
   return (hash >>> 0).toString(36);
 }
 
-function toHistory(history: AgentRunRequest["history"], prompt: string) {
+export function toAgentHistory(history: AgentRunRequest["history"], prompt: string) {
   const last = history.at(-1);
   const prior = last?.role === "user" && last.content === prompt ? history.slice(0, -1) : history;
   return prior
-    .filter((m) => m.role === "user" || m.role === "assistant")
-    .map((m) =>
-      m.role === "assistant"
-        ? { role: "user" as const, content: `Assistant: ${m.content}`, timestamp: Date.now() }
-        : { role: "user" as const, content: m.content, timestamp: Date.now() },
+    .filter((message) => message.role === "user" || message.role === "assistant")
+    .map((message) =>
+      message.role === "assistant"
+        ? {
+            role: "assistant" as const,
+            content: [{ type: "text" as const, text: message.content }],
+            timestamp: Date.now(),
+          }
+        : { role: "user" as const, content: message.content, timestamp: Date.now() },
     );
+}
+
+export function isThoughtSignatureFailure(message: string | undefined): boolean {
+  return Boolean(message && /thought[_\s-]*signature/i.test(message));
+}
+
+export function explainThoughtSignatureFailure() {
+  return "The model lost its computer-session context after a long tool loop. Take control if a page is half-finished, or send the next instruction and I will continue on the same desktop.";
+}
+
+export function thoughtSignatureContinueNote(completedTools: string) {
+  return [
+    "The previous model turn failed because its encrypted reasoning tokens were dropped.",
+    "The live desktop is still running. Do not start over unless the screen shows you must.",
+    "Observe the current screen, then continue the user's latest request.",
+    completedTools,
+  ].join("\n");
+}
+
+export function summarizeCompletedTools(messages: unknown[]): string {
+  const names: string[] = [];
+  for (const message of messages) {
+    if (!message || typeof message !== "object") continue;
+    const row = message as { role?: string; toolName?: string; content?: unknown };
+    if (row.role === "toolResult" && row.toolName) names.push(row.toolName);
+    if (row.role === "assistant" && Array.isArray(row.content)) {
+      for (const block of row.content) {
+        if (
+          block &&
+          typeof block === "object" &&
+          (block as { type?: string }).type === "toolCall" &&
+          typeof (block as { name?: string }).name === "string"
+        ) {
+          names.push((block as { name: string }).name);
+        }
+      }
+    }
+  }
+  if (names.length === 0) return "No tools finished before the provider error.";
+  return `Tools already finished this turn:\n${names
+    .slice(-24)
+    .map((name) => `- ${name}`)
+    .join("\n")}`;
 }
 
 function toAgentTool(tool: ConnectorTool, host: ToolHost, exposedName: string): AgentTool {
