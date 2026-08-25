@@ -94,7 +94,12 @@ export class AgentMailInboxProvider implements AgentInboxProvider {
           username: botInboxUsername(request.botId, request.name),
         }),
       );
-    } catch {
+    } catch (error) {
+      if (isLimitExceeded(error)) {
+        throw new Error(
+          "AgentMail inbox limit reached. Delete unused inboxes or upgrade the plan, then retry.",
+        );
+      }
       return toInboxRef(
         await this.client.inboxes.create({
           ...payload,
@@ -158,6 +163,12 @@ export async function createAgentMailInboxProvider(options: {
     new AgentMailClient({ apiKey }) as unknown as AgentMailSdk,
     options.domain?.trim() || undefined,
   );
+}
+
+function isLimitExceeded(error: unknown) {
+  if (!error || typeof error !== "object") return false;
+  const body = "body" in error ? (error as { body?: { code?: string } }).body : undefined;
+  return body?.code === "limit_exceeded";
 }
 
 function toInboxRef(inbox: AgentMailInboxRecord): AgentInboxRef {
