@@ -47,7 +47,6 @@ import {
   parseExtraDisplayObservation,
   parseExtraDisplayViewPassword,
   parseReleasedExtraDisplay,
-  primaryStreamCleanupCommand,
   releaseExtraDisplayCommand,
   screenControlKey,
 } from "./extra-displays.js";
@@ -88,7 +87,7 @@ function e2bStreamAuthKey(desktop: Sandbox): string | undefined {
   }
 }
 
-function e2bPrimaryViewUrl(desktop: Sandbox, layout: ExtraDisplayLayout): string {
+function e2bSdkStreamUrl(desktop: Sandbox): string | null {
   const authKey = e2bStreamAuthKey(desktop);
   const fromSdk =
     typeof desktop.stream.getUrl === "function"
@@ -99,7 +98,13 @@ function e2bPrimaryViewUrl(desktop: Sandbox, layout: ExtraDisplayLayout): string
           ...(authKey ? { authKey } : {}),
         })
       : null;
-  if (typeof fromSdk === "string" && fromSdk.length > 0) return fromSdk;
+  return typeof fromSdk === "string" && fromSdk.length > 0 ? fromSdk : null;
+}
+
+function e2bPrimaryViewUrl(desktop: Sandbox, layout: ExtraDisplayLayout): string {
+  const fromSdk = e2bSdkStreamUrl(desktop);
+  if (fromSdk) return fromSdk;
+  const authKey = e2bStreamAuthKey(desktop);
   const url = new URL(`https://${desktop.getHost(layout.viewPort)}/vnc.html`);
   url.searchParams.set("autoconnect", "true");
   url.searchParams.set("resize", "scale");
@@ -189,8 +194,15 @@ export class E2BSandboxProvider implements SandboxProvider {
   }
 
   private async initializeStream(desktop: Sandbox) {
-    await desktop.commands.run(primaryStreamCleanupCommand()).catch(() => undefined);
-    await desktop.stream.start({ requireAuth: true });
+    try {
+      await desktop.stream.start({ requireAuth: true });
+    } catch (error) {
+      // API/worker restarts forget in-memory stream state. Killing noVNC on :6080
+      // blanks the Team Computer; reuse the live E2B stream when it still answers.
+      if (!e2bSdkStreamUrl(desktop)) {
+        throw error;
+      }
+    }
     try {
       await desktop.commands.run("x11vnc -R viewonly");
     } catch {

@@ -267,6 +267,42 @@ describe("E2B computer backend", () => {
     expect(fallbackScreen.url).toContain("authKey=screen-key");
     expect(viewonlyFailDesktop.stream.stop).not.toHaveBeenCalled();
 
+    const alreadyStreamingDesktop = {
+      ...desktop,
+      sandboxId: "e2b-already-streaming",
+      commands: {
+        run: vi.fn(async (value: string) => {
+          if (String(value).includes("RAKAZO_SCREEN_INDEX=")) {
+            return { stdout: "RAKAZO_SCREEN_INDEX=0\n", stderr: "", exitCode: 0 };
+          }
+          return { stdout: "", stderr: "", exitCode: 0 };
+        }),
+      },
+      stream: {
+        start: vi.fn(async () => {
+          throw new Error("signal: terminated");
+        }),
+        stop: vi.fn(async () => undefined),
+        getAuthKey: () => "screen-key",
+        getUrl: () => "https://desktop.test/vnc.html?existing=1",
+      },
+    } as unknown as Sandbox;
+    const alreadyProvider = new E2BSandboxProvider("test-key", {
+      create: vi.fn(async () => alreadyStreamingDesktop),
+      connect: vi.fn(async () => alreadyStreamingDesktop),
+      pause: vi.fn(async () => undefined),
+    });
+    const alreadyComputer = await alreadyProvider.provision(
+      { botId: "bot-1", homePath: "/unused" },
+      context,
+    );
+    const reused = await alreadyProvider.connectScreen(
+      alreadyComputer,
+      { view: "stream" },
+      context,
+    );
+    expect(reused.url).toBe("https://desktop.test/vnc.html?existing=1");
+
     const control = await provider.connectScreen(
       computer,
       { view: "stream", interactive: true, controlToken: "lease-1" },
