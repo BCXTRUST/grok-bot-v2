@@ -18,9 +18,12 @@ const context = {
 };
 
 describe("bot inbox usernames", () => {
-  it("builds a stable AgentMail username from the bot name and id", () => {
-    expect(botInboxUsername("cmt8shbab0002wbjscmcade55", "Link Builder")).toBe(
-      "link.builder.cmcade55",
+  it("builds a short lastname.initial username from the bot name", () => {
+    expect(botInboxUsername("cmt8shbab0002wbjscmcade55", "Helen Marsh")).toBe("marsh.h");
+    expect(botInboxUsername("cmt8shbab0002wbjscmcade55", "Link Builder")).toBe("builder.l");
+    expect(botInboxUsername("bot-1", "Chief")).toBe("chief");
+    expect(botInboxUsername("cmt8shbab0002wbjscmcade55", "Link Builder", true)).toBe(
+      "builder.l.de55",
     );
     expect(botInboxClientId("bot-1")).toBe("rakazo-bot-bot-1");
   });
@@ -61,7 +64,7 @@ describe("ensureBotInbox", () => {
       context,
     );
 
-    expect(first?.address).toMatch(/link\.builder\./);
+    expect(first?.address).toMatch(/builder\.l@/);
     expect(second).toEqual(first);
     expect(inbox.boxes.size).toBe(1);
     expect(mailInstruction(first?.address)).toContain(first!.address);

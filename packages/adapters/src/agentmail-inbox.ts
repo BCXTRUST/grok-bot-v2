@@ -103,7 +103,7 @@ export class AgentMailInboxProvider implements AgentInboxProvider {
       return toInboxRef(
         await this.client.inboxes.create({
           ...payload,
-          username: botInboxUsername(`${request.botId}mail`, request.name),
+          username: botInboxUsername(request.botId, request.name, true),
         }),
       );
     }
