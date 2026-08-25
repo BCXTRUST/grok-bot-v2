@@ -165,6 +165,8 @@ export async function createApp(
       "http://127.0.0.1:8081",
       "http://localhost:19006",
       "http://127.0.0.1:19006",
+      "https://*.trycloudflare.com",
+      "http://*.trycloudflare.com",
     ],
     beforeDeleteUser: async (userId) => {
       const bots = await prisma.bot.findMany({
@@ -336,7 +338,11 @@ function isTrustedOrigin(origin: string, env: AppEnv) {
   if (origin.startsWith("rakazo://") || origin.startsWith("exp://")) return true;
   try {
     const host = new URL(origin).hostname;
-    return host === "localhost" || host === "127.0.0.1";
+    return (
+      host === "localhost" ||
+      host === "127.0.0.1" ||
+      host.endsWith(".trycloudflare.com")
+    );
   } catch {
     return false;
   }
