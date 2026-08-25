@@ -1274,7 +1274,7 @@ export function ShellPage() {
       const screen = state === "running" ? await refreshComputerScreen(botId) : null;
       if (cancelled || activeBotId.current !== botId) return;
       const action = computerPanelAutoBoot(state, screen);
-      if (action === "wait") {
+      if (action === "wait" || action === "recover-screen") {
         if (state === "running") autoBooted.current = botId;
         return;
       }
@@ -1290,6 +1290,16 @@ export function ShellPage() {
       cancelled = true;
     };
   }, [panel, active?.id]);
+
+  useEffect(() => {
+    if (panel !== "computer" || computer?.state !== "running" || !active) return;
+    if (embeddableScreenUrl(screenUrl, window.location.href)) return;
+    const botId = active.id;
+    const timer = window.setInterval(() => {
+      void refreshComputerScreen(botId);
+    }, 2_000);
+    return () => window.clearInterval(timer);
+  }, [panel, computer?.state, screenUrl, active?.id]);
 
   useEffect(() => {
     setComputerOpen(false);
@@ -1904,7 +1914,7 @@ export function ShellPage() {
                     <div className="grid h-full place-items-center text-sm text-[#6C6C70]">
                       {computerPlaceholder(
                         computer?.state,
-                        booting,
+                        booting || (computer?.state === "running" && !embeddedScreenUrl),
                         computerLabel(computer?.mode, active.name),
                       )}
                     </div>
@@ -2513,7 +2523,9 @@ export function ShellPage() {
               <div className="grid h-full place-items-center text-sm text-[#6C6C70]">
                 {computer?.state === "suspended"
                   ? "Computer is asleep"
-                  : computerLabel(computer?.mode, active.name)}
+                  : computer?.state === "running" || booting
+                    ? "Booting live desktop…"
+                    : computerLabel(computer?.mode, active.name)}
               </div>
             )}
           </div>

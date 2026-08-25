@@ -28,4 +28,13 @@ describe("embeddableScreenUrl", () => {
       ),
     ).toBeNull();
   });
+
+  it("does not iframe a raw loopback VNC port on a public tunnel page", () => {
+    expect(
+      embeddableScreenUrl(
+        "http://127.0.0.1:6080/vnc.html?autoconnect=true",
+        "https://assembled-fraction-kid-pressing.trycloudflare.com/app",
+      ),
+    ).toBeNull();
+  });
 });

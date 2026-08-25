@@ -52,6 +52,7 @@ describe("screen proxy capability", () => {
     );
     expect(result.searchParams.get("password")).toBe("screen-key");
     expect(result.searchParams.get("autoconnect")).toBe("true");
+    expect(result.searchParams.get("reconnect")).toBe("true");
     expect(result.toString()).not.toContain("authKey");
   });
 

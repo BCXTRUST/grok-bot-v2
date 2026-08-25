@@ -178,7 +178,11 @@ describe("E2B computer backend", () => {
     ]);
     expect(command).toHaveBeenCalledWith(
       "'hang'",
-      expect.objectContaining({ timeoutMs: 42, signal: context.signal }),
+      expect.objectContaining({
+        timeoutMs: 42,
+        signal: context.signal,
+        envs: expect.objectContaining({ DISPLAY: ":0" }),
+      }),
     );
 
     await provider.writeFile(
@@ -222,6 +226,7 @@ describe("E2B computer backend", () => {
     expect(screen.url).toContain("https://desktop.test/vnc.html");
     expect(screen.url).toContain("password=screen-key");
     expect(screen.url).toContain("autoconnect=true");
+    expect(screen.url).toContain("reconnect=true");
     expect(desktop.stream.start).toHaveBeenCalledWith({ requireAuth: true });
     expect(desktop.stream.start).toHaveBeenCalledTimes(1);
     expect(getStreamUrl).toHaveBeenCalledWith(
@@ -268,6 +273,41 @@ describe("E2B computer backend", () => {
     expect(fallbackScreen.url).toContain("https://6080-desktop.test/vnc.html");
     expect(fallbackScreen.url).toContain("password=screen-key");
     expect(viewonlyFailDesktop.stream.stop).not.toHaveBeenCalled();
+
+    const loopbackStreamDesktop = {
+      ...desktop,
+      sandboxId: "e2b-loopback-stream",
+      commands: {
+        run: vi.fn(async (value: string) => {
+          if (String(value).includes("RAKAZO_SCREEN_INDEX=")) {
+            return { stdout: "RAKAZO_SCREEN_INDEX=0\n", stderr: "", exitCode: 0 };
+          }
+          return { stdout: "", stderr: "", exitCode: 0 };
+        }),
+      },
+      stream: {
+        start: vi.fn(async () => undefined),
+        stop: vi.fn(async () => undefined),
+        getAuthKey: () => "screen-key",
+        getUrl: () => "http://127.0.0.1:6080/vnc.html",
+      },
+    } as unknown as Sandbox;
+    const loopbackProvider = new E2BSandboxProvider("test-key", {
+      create: vi.fn(async () => loopbackStreamDesktop),
+      connect: vi.fn(async () => loopbackStreamDesktop),
+      pause: vi.fn(async () => undefined),
+    });
+    const loopbackComputer = await loopbackProvider.provision(
+      { botId: "bot-1", homePath: "/unused" },
+      context,
+    );
+    const publicScreen = await loopbackProvider.connectScreen(
+      loopbackComputer,
+      { view: "stream" },
+      context,
+    );
+    expect(publicScreen.url).toContain("https://6080-desktop.test/vnc.html");
+    expect(publicScreen.url).not.toContain("127.0.0.1");
 
     const alreadyStreamingDesktop = {
       ...desktop,
@@ -388,6 +428,20 @@ describe("E2B computer backend", () => {
     expect(stillCurrent.url).toBe(replacementControl.url);
 
     await screen.close();
+    expect(streamStop).not.toHaveBeenCalled();
+
+    await provider.stop(computer, context);
+    expect(desktop.pause).toHaveBeenCalled();
+
+    const resumed = await provider.provision(
+      {
+        botId: "bot-1",
+        homePath: "/unused",
+        providerRef: desktop.sandboxId,
+        providerKind: "e2b",
+      },
+      context,
+    );
     let finishStart!: () => void;
     streamStart.mockImplementationOnce(
       () =>
@@ -395,13 +449,12 @@ describe("E2B computer backend", () => {
           finishStart = () => resolve(undefined);
         }),
     );
-    const connecting = provider.connectScreen(computer, { view: "stream" }, context);
+    const connecting = provider.connectScreen(resumed, { view: "stream" }, context);
     await vi.waitFor(() => expect(desktop.stream.start).toHaveBeenCalledTimes(2));
-    const stopping = provider.stop(computer, context);
+    const stopping = provider.stop(resumed, context);
     finishStart();
     await expect(connecting).rejects.toThrow(/teardown/);
     await stopping;
-    expect(desktop.pause).toHaveBeenCalled();
     expect(streamStop).toHaveBeenCalled();
   });
 

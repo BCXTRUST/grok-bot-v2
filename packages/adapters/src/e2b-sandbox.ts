@@ -35,12 +35,12 @@ import {
 } from "./computer-workspace.js";
 import {
   allocateExtraDisplayCommand,
+  type ExtraDisplayLayout,
   ensureExtraDisplayCommand,
   extraDisplayActionCommand,
   extraDisplayControlStartCommand,
   extraDisplayControlStopCommand,
   extraDisplayInputCommand,
-  type ExtraDisplayLayout,
   extraDisplayLayout,
   observeExtraDisplayCommand,
   parseAllocatedExtraDisplay,
@@ -77,7 +77,12 @@ export function isUnrecoverableSandboxError(error: unknown): boolean {
   );
 }
 
-export const E2B_BROWSER_APPS = ["google-chrome", "firefox", "chromium"] as const;
+export const E2B_BROWSER_APPS = [
+  "google-chrome",
+  "google-chrome-stable",
+  "firefox",
+  "chromium",
+] as const;
 
 function e2bStreamAuthKey(desktop: Sandbox): string | undefined {
   try {
@@ -105,6 +110,23 @@ function e2bSdkStreamUrl(desktop: Sandbox, viewOnly = true): string | null {
   }
 }
 
+function isPublicHttpsDesktopUrl(url: string) {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== "https:") return false;
+    const host = parsed.hostname;
+    return host !== "localhost" && host !== "127.0.0.1" && host !== "::1";
+  } catch {
+    return false;
+  }
+}
+
+function e2bPublicStreamUrl(desktop: Sandbox, viewPort: number, viewOnly: boolean): string | null {
+  const fromSdk = e2bSdkStreamUrl(desktop, viewOnly);
+  if (fromSdk && isPublicHttpsDesktopUrl(fromSdk)) return fromSdk;
+  return e2bHostVncUrl(desktop, viewPort);
+}
+
 function e2bHostVncUrl(desktop: Sandbox, port: number): string | null {
   try {
     if (typeof desktop.getHost !== "function") return null;
@@ -117,11 +139,11 @@ function e2bHostVncUrl(desktop: Sandbox, port: number): string | null {
 
 function e2bPrimaryUrl(desktop: Sandbox, layout: ExtraDisplayLayout, interactive: boolean): string {
   const authKey = e2bStreamAuthKey(desktop);
-  const fromSdk = e2bSdkStreamUrl(desktop, !interactive);
-  const hostUrl = fromSdk ?? e2bHostVncUrl(desktop, layout.viewPort);
+  const hostUrl = e2bPublicStreamUrl(desktop, layout.viewPort, !interactive);
   if (!hostUrl) throw new Error("screen stream URL unavailable");
   const url = new URL(hostUrl);
   url.searchParams.set("autoconnect", "true");
+  url.searchParams.set("reconnect", "true");
   url.searchParams.set("resize", "scale");
   url.searchParams.set("view_only", interactive ? "false" : "true");
   const password = url.searchParams.get("password") || authKey;
@@ -222,7 +244,7 @@ export class E2BSandboxProvider implements SandboxProvider {
       ]);
     } catch (error) {
       // Reconnected SDK clients forget stream.url even when noVNC is already up.
-      if (!e2bSdkStreamUrl(desktop) && !e2bHostVncUrl(desktop, 6080)) throw error;
+      if (!e2bPublicStreamUrl(desktop, 6080, true)) throw error;
     }
     try {
       await desktop.commands.run("x11vnc -R viewonly", { timeoutMs: 2_500 });
@@ -296,7 +318,7 @@ export class E2BSandboxProvider implements SandboxProvider {
     try {
       const result = await desktop.commands.run(cmd, {
         cwd: e2bCwd(request.cwd),
-        envs: request.env,
+        envs: { DISPLAY: desktop.display ?? ":0", ...(request.env ?? {}) },
         signal: context.signal,
         timeoutMs,
       });
@@ -334,6 +356,7 @@ export class E2BSandboxProvider implements SandboxProvider {
           if (!hostUrl) throw new Error("control host unavailable");
           const url = new URL(hostUrl);
           url.searchParams.set("autoconnect", "true");
+          url.searchParams.set("reconnect", "true");
           url.searchParams.set("resize", "scale");
           url.searchParams.set("password", password);
           return {
@@ -352,10 +375,7 @@ export class E2BSandboxProvider implements SandboxProvider {
       return {
         url: e2bPrimaryUrl(desktop, layout, false),
         mimeType: "text/html",
-        close: async () => {
-          await desktop.stream.stop().catch(() => undefined);
-          this.streamReady.delete(desktop.sandboxId);
-        },
+        close: async () => undefined,
       };
     }
     const viewPassword = await this.ensureExtraDisplay(desktop, layout, context);
@@ -369,6 +389,7 @@ export class E2BSandboxProvider implements SandboxProvider {
       );
       const url = new URL(`https://${desktop.getHost(layout.controlPort)}/vnc.html`);
       url.searchParams.set("autoconnect", "true");
+      url.searchParams.set("reconnect", "true");
       url.searchParams.set("resize", "scale");
       url.searchParams.set("password", password);
       return {
@@ -379,6 +400,7 @@ export class E2BSandboxProvider implements SandboxProvider {
     }
     const url = new URL(`https://${desktop.getHost(layout.viewPort)}/vnc.html`);
     url.searchParams.set("autoconnect", "true");
+    url.searchParams.set("reconnect", "true");
     url.searchParams.set("resize", "scale");
     url.searchParams.set("view_only", "true");
     url.searchParams.set("password", viewPassword);
