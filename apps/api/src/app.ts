@@ -45,6 +45,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { type AppEnv, loadEnv } from "./env.js";
 import { createRouter } from "./router.js";
+import { isTrustedOrigin, TUNNEL_AUTH_ORIGINS } from "./trusted-origin.js";
 import { mountVoiceHttpRoutes } from "./voice.js";
 
 export interface AppHandles {
@@ -160,6 +161,7 @@ export async function createApp(
       "http://127.0.0.1:8081",
       "http://localhost:19006",
       "http://127.0.0.1:19006",
+      ...TUNNEL_AUTH_ORIGINS,
     ],
     beforeDeleteUser: async (userId) => {
       const bots = await prisma.bot.findMany({
@@ -319,18 +321,6 @@ export async function createApp(
       await created.pool?.end().catch(() => undefined);
     },
   };
-}
-
-function isTrustedOrigin(origin: string, env: AppEnv) {
-  if (!origin) return true;
-  if (origin === env.webOrigin || origin === env.apiUrl || origin === env.authUrl) return true;
-  if (origin.startsWith("rakazo://") || origin.startsWith("exp://")) return true;
-  try {
-    const host = new URL(origin).hostname;
-    return host === "localhost" || host === "127.0.0.1";
-  } catch {
-    return false;
-  }
 }
 
 function sessionHeaders(request: Request) {
