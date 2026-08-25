@@ -38,6 +38,11 @@ export function isNaturalInboxAddress(address: string | null | undefined) {
   return /^[a-z]{2,24}(\.[a-z]{1,16}[2-9]?)?$/.test(local);
 }
 
+export function inboxAddressFitsName(address: string | null | undefined, name: string) {
+  const local = address?.split("@")[0]?.toLowerCase() ?? "";
+  return botInboxUsernames(name).includes(local);
+}
+
 export function botInboxClientId(botId: string) {
   return `rakazo-bot-${botId}`;
 }
@@ -71,7 +76,7 @@ export async function ensureBotInbox(
     select: { inboxProvider: true, inboxId: true, inboxAddress: true },
   });
   const existing = stored ? inboxRefFromBot(stored) : null;
-  if (existing && isNaturalInboxAddress(existing.address)) return existing;
+  if (existing && inboxAddressFitsName(existing.address, bot.name)) return existing;
   const provisioned = await deps.inbox.provision(
     { botId: bot.id, name: bot.name, workspaceId: bot.workspaceId },
     context,
@@ -106,7 +111,7 @@ export async function ensureMissingBotInboxes(
     select: { id: true, name: true, workspaceId: true, userId: true, inboxAddress: true },
   });
   for (const bot of bots) {
-    if (isNaturalInboxAddress(bot.inboxAddress)) continue;
+    if (inboxAddressFitsName(bot.inboxAddress, bot.name)) continue;
     await ensureBotInbox(deps, bot, context).catch((error) => {
       console.error("bot inbox provision failed", bot.id, error);
     });

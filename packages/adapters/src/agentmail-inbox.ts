@@ -4,7 +4,7 @@ import type {
   AgentInboxRef,
   AgentMailMessage,
 } from "@rakazo/adapter-kit";
-import { botInboxClientId, botInboxUsernames, isNaturalInboxAddress } from "./bot-inbox.js";
+import { botInboxClientId, botInboxUsernames, inboxAddressFitsName } from "./bot-inbox.js";
 
 interface AgentMailInboxRecord {
   inboxId?: string;
@@ -97,7 +97,7 @@ export class AgentMailInboxProvider implements AgentInboxProvider {
             username,
           }),
         );
-        if (isNaturalInboxAddress(created.address)) return created;
+        if (inboxAddressFitsName(created.address, request.name)) return created;
         await this.client.inboxes.delete?.(created.inboxId);
         const replaced = toInboxRef(
           await this.client.inboxes.create({
@@ -105,7 +105,7 @@ export class AgentMailInboxProvider implements AgentInboxProvider {
             username,
           }),
         );
-        if (isNaturalInboxAddress(replaced.address)) return replaced;
+        if (inboxAddressFitsName(replaced.address, request.name)) return replaced;
       } catch (error) {
         lastError = error;
         if (isLimitExceeded(error)) {
