@@ -1380,25 +1380,31 @@ export function createRouter(deps: RouterDeps) {
         ) {
           return { url: null };
         }
-        const session = await deps.sandbox.connectScreen(
-          toComputerRef(bot.computer),
-          {
-            view: "stream",
-            interactive:
-              hasActiveComputerControl(bot.computer) && bot.computer.controlBotId === bot.id,
-            controlToken:
-              bot.computer.controlBotId === bot.id
-                ? (bot.computer.controlLeaseId ?? undefined)
-                : undefined,
-          },
-          await computerScreenContext(
-            deps.prisma,
-            context.actor,
-            bot.computer.id,
-            bot.id,
-            "screen",
-          ),
-        );
+        const session = await deps.sandbox
+          .connectScreen(
+            toComputerRef(bot.computer),
+            {
+              view: "stream",
+              interactive:
+                hasActiveComputerControl(bot.computer) && bot.computer.controlBotId === bot.id,
+              controlToken:
+                bot.computer.controlBotId === bot.id
+                  ? (bot.computer.controlLeaseId ?? undefined)
+                  : undefined,
+            },
+            await computerScreenContext(
+              deps.prisma,
+              context.actor,
+              bot.computer.id,
+              bot.id,
+              "screen",
+            ),
+          )
+          .catch(() => ({
+            url: null as string | null,
+            mimeType: "text/html",
+            close: async () => undefined,
+          }));
         if (!session.url) return { url: null };
         scheduleComputerSleep(deps.jobs, bot.computer.id);
         const viewUrl = withViewOnly(
