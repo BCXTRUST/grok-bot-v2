@@ -3575,6 +3575,15 @@ function BotSettings({
         />
       </label>
       <label className="mt-4 block text-[14px] text-[#85858A]">
+        Email
+        <input
+          value={bot.inboxAddress ?? ""}
+          readOnly
+          aria-label="Bot email address"
+          className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
+        />
+      </label>
+      <label className="mt-4 block text-[14px] text-[#85858A]">
         Title
         <input
           value={title}

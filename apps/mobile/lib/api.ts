@@ -157,7 +157,7 @@ export type MobileBot = Pick<
   | "updatedAt"
   | "computerMode"
 > &
-  Partial<Pick<Bot, "parentBotId">>;
+  Partial<Pick<Bot, "parentBotId" | "inboxAddress">>;
 
 export type MobileBotSection = BotSection;
 
