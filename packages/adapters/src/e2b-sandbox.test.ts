@@ -219,7 +219,9 @@ describe("E2B computer backend", () => {
       provider.connectScreen(computer, { view: "stream" }, context),
       provider.connectScreen(computer, { view: "stream" }, context),
     ]);
-    expect(screen.url).toBe("https://desktop.test/vnc.html");
+    expect(screen.url).toContain("https://desktop.test/vnc.html");
+    expect(screen.url).toContain("password=screen-key");
+    expect(screen.url).toContain("autoconnect=true");
     expect(desktop.stream.start).toHaveBeenCalledWith({ requireAuth: true });
     expect(desktop.stream.start).toHaveBeenCalledTimes(1);
     expect(getStreamUrl).toHaveBeenCalledWith(
@@ -264,7 +266,7 @@ describe("E2B computer backend", () => {
       context,
     );
     expect(fallbackScreen.url).toContain("https://6080-desktop.test/vnc.html");
-    expect(fallbackScreen.url).toContain("authKey=screen-key");
+    expect(fallbackScreen.url).toContain("password=screen-key");
     expect(viewonlyFailDesktop.stream.stop).not.toHaveBeenCalled();
 
     const alreadyStreamingDesktop = {
@@ -301,7 +303,9 @@ describe("E2B computer backend", () => {
       { view: "stream" },
       context,
     );
-    expect(reused.url).toBe("https://desktop.test/vnc.html?existing=1");
+    expect(reused.url).toContain("https://desktop.test/vnc.html");
+    expect(reused.url).toContain("existing=1");
+    expect(reused.url).toContain("password=screen-key");
 
     const reconnectDesktop = {
       ...desktop,

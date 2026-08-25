@@ -116,16 +116,19 @@ function e2bHostVncUrl(desktop: Sandbox, port: number): string | null {
 }
 
 function e2bPrimaryUrl(desktop: Sandbox, layout: ExtraDisplayLayout, interactive: boolean): string {
+  const authKey = e2bStreamAuthKey(desktop);
   const fromSdk = e2bSdkStreamUrl(desktop, !interactive);
-  if (fromSdk) return fromSdk;
-  const hostUrl = e2bHostVncUrl(desktop, layout.viewPort);
+  const hostUrl = fromSdk ?? e2bHostVncUrl(desktop, layout.viewPort);
   if (!hostUrl) throw new Error("screen stream URL unavailable");
   const url = new URL(hostUrl);
   url.searchParams.set("autoconnect", "true");
   url.searchParams.set("resize", "scale");
   url.searchParams.set("view_only", interactive ? "false" : "true");
-  const authKey = e2bStreamAuthKey(desktop);
-  if (authKey) url.searchParams.set("authKey", authKey);
+  const password = url.searchParams.get("password") || authKey;
+  if (password) {
+    url.searchParams.set("password", password);
+    url.searchParams.delete("authKey");
+  }
   return url.toString();
 }
 
