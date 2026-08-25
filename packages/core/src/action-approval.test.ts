@@ -13,7 +13,9 @@ describe("toolRequiresApproval", () => {
     expect(toolRequiresApproval("destination.write", false)).toBe(true);
     expect(toolRequiresApproval("destination.write", true)).toBe(true);
     expect(toolRequiresApproval("delete_bot", false)).toBe(true);
-    expect(toolRequiresApproval("archive_bot", false)).toBe(true);
+    expect(toolRequiresApproval("mail_send", false)).toBe(true);
+    expect(toolRequiresApproval("mail_reply", false)).toBe(true);
+    expect(toolRequiresApproval("mail_list", false)).toBe(false);
   });
 
   it("does not gate read-only or local work", () => {

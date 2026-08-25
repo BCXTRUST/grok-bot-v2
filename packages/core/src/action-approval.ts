@@ -18,7 +18,13 @@ const APPROVAL_EXEMPT_TOOLS = new Set([
   "schedule_cancel",
 ]);
 
-const APPROVAL_REQUIRED_BUILTIN_TOOLS = new Set(["destination.write", "delete_bot", "archive_bot"]);
+const APPROVAL_REQUIRED_BUILTIN_TOOLS = new Set([
+  "destination.write",
+  "delete_bot",
+  "archive_bot",
+  "mail_send",
+  "mail_reply",
+]);
 
 const READ_ONLY_CONNECTOR_PATTERN = /(^|_)(get|list|search|find|read)(_|$)/i;
 const MUTATING_CONNECTOR_PATTERN =

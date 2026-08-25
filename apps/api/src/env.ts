@@ -34,6 +34,8 @@ export interface AppEnv {
   mcpStdioAllowedCommands: string[];
   port: number;
   gitSha: string | undefined;
+  agentMailApiKey: string | undefined;
+  agentMailDomain: string | undefined;
 }
 
 export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
@@ -76,6 +78,8 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
       .filter(Boolean),
     port: Number(source.API_PORT ?? 3100),
     gitSha: optional(source.GIT_SHA) ?? optional(source.RAKAZO_GIT_SHA),
+    agentMailApiKey: optional(source.AGENTMAIL_API_KEY),
+    agentMailDomain: optional(source.AGENTMAIL_DOMAIN),
   };
 }
 

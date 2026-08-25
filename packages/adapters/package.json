@@ -23,6 +23,7 @@
     "@rakazo/contracts": "workspace:*",
     "@rakazo/core": "workspace:*",
     "@rakazo/db": "workspace:*",
+    "agentmail": "^0.5.20",
     "d3-dsv": "^3.0.1",
     "graphile-worker": "^0.17.3",
     "jsdom": "^30.0.1",
