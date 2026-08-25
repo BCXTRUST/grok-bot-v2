@@ -17,6 +17,9 @@ describe("E2B computer backend", () => {
     expect(shouldSkipPortableWorkspaceFile("project/lock")).toBe(false);
     expect(shouldSkipPortableWorkspaceFile(".browser-profiles/chromium/Cache/data")).toBe(true);
     expect(shouldSkipPortableWorkspaceFile(".browser-profiles/chromium/SingletonLock")).toBe(true);
+    expect(
+      shouldSkipPortableWorkspaceFile(".browser-profiles/chromium/BrowserMetrics-spare.pma"),
+    ).toBe(true);
   });
 
   it("prepares a reused computer idempotently", async () => {

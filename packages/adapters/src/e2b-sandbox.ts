@@ -515,6 +515,7 @@ export class E2BSandboxProvider implements SandboxProvider {
       batchBytes = 0;
     };
     for await (const file of files) {
+      if (shouldSkipPortableWorkspaceFile(file.path)) continue;
       if (
         batch.length >= 32 ||
         batchBytes + file.content.byteLength > PORTABLE_TRANSFER_BATCH_BYTES

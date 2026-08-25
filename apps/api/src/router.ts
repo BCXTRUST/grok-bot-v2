@@ -190,6 +190,15 @@ function computerContext(actor: Actor, botId: string, operationId: string): Adap
   };
 }
 
+function computerBootErrorMessage(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  if (/EACCES|permission denied/i.test(message)) {
+    return "Computer failed to boot: leftover desktop files are not readable. Retry after they are cleared.";
+  }
+  const compact = message.replace(/\s+/g, " ").trim();
+  return compact ? `Computer failed to boot: ${compact.slice(0, 180)}` : "Computer failed to boot";
+}
+
 function mcpServerDto(
   row: {
     id: string;
@@ -985,6 +994,13 @@ export function createRouter(deps: RouterDeps) {
             screenLeaseId: screenLeaseIdForRun(lease, manualRunId),
           });
           scheduleComputerSleep(deps.jobs, bot.computer.id);
+        } catch (error) {
+          if (error instanceof ComputerBusyError) {
+            throw new ORPCError("CONFLICT", { message: "Computer is busy" });
+          }
+          throw new ORPCError("INTERNAL_SERVER_ERROR", {
+            message: computerBootErrorMessage(error),
+          });
         } finally {
           await releaseComputerExecutionLease(deps.prisma, lease);
         }
