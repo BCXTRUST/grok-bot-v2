@@ -1,15 +1,26 @@
 import type { AdapterContext, AgentInboxProvider, AgentInboxRef } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
 
-export function botInboxUsername(botId: string, name: string) {
-  const slug =
-    name
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, ".")
-      .replace(/^\.+|\.+$/g, "")
-      .slice(0, 24) || "bot";
-  const suffix = botId.replace(/[^a-z0-9]/gi, "").slice(-8).toLowerCase() || "mail";
-  return `${slug}.${suffix}`.slice(0, 64);
+function nameTokens(name: string) {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
+/** Prefer lastname.f (Helen Marsh → marsh.h). One-word names stay as-is (Chief → chief). */
+export function botInboxUsername(botId: string, name: string, unique = false) {
+  const parts = nameTokens(name);
+  const first = parts[0] ?? "bot";
+  const last = parts.at(-1) ?? first;
+  const preferred =
+    parts.length > 1 ? `${last}.${first[0] ?? "b"}` : last;
+  const base = preferred.replace(/[^a-z0-9.]+/g, "").replace(/^\.+|\.+$/g, "").slice(0, 48) || "bot";
+  if (!unique) return base.slice(0, 64);
+  const suffix = botId.replace(/[^a-z0-9]/gi, "").slice(-4).toLowerCase() || "mail";
+  return `${base}.${suffix}`.slice(0, 64);
 }
 
 export function botInboxClientId(botId: string) {
