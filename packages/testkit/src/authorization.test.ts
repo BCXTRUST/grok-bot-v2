@@ -121,6 +121,20 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["scratchpad/create", { botId: "missing-bot", title: "Nope" }],
       ["scratchpad/update", { itemId: "missing-item", title: "Nope" }],
       ["scratchpad/remove", { itemId: "missing-item" }],
+      [
+        "vault/list",
+        { botId: "missing-bot" },
+      ],
+      [
+        "vault/upsert",
+        {
+          botId: "missing-bot",
+          site: "https://forum.example.test",
+          username: "nope",
+          password: "test-password-not-real",
+        },
+      ],
+      ["vault/remove", { loginId: "missing-login" }],
       ["skills/list", { botId: "missing-bot" }],
       ["skills/get", { skillId: "missing-skill" }],
       ["skills/start", { botId: "missing-bot", goal: "Demonstrate export" }],
@@ -202,6 +216,14 @@ describeWithDatabase("API authorization and resource isolation", () => {
       title: "Owner open work",
       notes: "private",
     });
+    const ownerVault = await rpc<{ id: string; username: string }>(app, owner, "vault/upsert", {
+      botId: ownerBot.id,
+      site: "https://forum.example.test",
+      username: "owner-user",
+      password: "test-password-not-real",
+      share: "workspace",
+    });
+    expect(ownerVault).not.toHaveProperty("password");
     const ownerSkill = await handles.prisma.taughtSkill.create({
       data: {
         workspaceId: ownerActor.workspaceId,
@@ -312,6 +334,16 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["routines/create", routineInput(ownerBot.id)],
       ["scratchpad/list", { botId: ownerBot.id }],
       ["scratchpad/create", { botId: ownerBot.id, title: "Stolen item" }],
+      ["vault/list", { botId: ownerBot.id }],
+      [
+        "vault/upsert",
+        {
+          botId: ownerBot.id,
+          site: "https://stolen.example.test",
+          username: "intruder",
+          password: "test-password-not-real",
+        },
+      ],
       ["skills/list", { botId: ownerBot.id }],
       ["skills/start", { botId: ownerBot.id, goal: "Intruder demo" }],
       ["artifacts/list", { botId: ownerBot.id }],
@@ -368,6 +400,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["routines/testRun", { routineId: ownerRoutine.id }],
       ["scratchpad/update", { itemId: ownerScratchpad.id, title: "Stolen item" }],
       ["scratchpad/remove", { itemId: ownerScratchpad.id }],
+      ["vault/remove", { loginId: ownerVault.id }],
       ["skills/get", { skillId: ownerSkill.id }],
       [
         "skills/appendEvent",
@@ -425,6 +458,9 @@ describeWithDatabase("API authorization and resource isolation", () => {
     expect(
       await handles.prisma.scratchpadItem.findUniqueOrThrow({ where: { id: ownerScratchpad.id } }),
     ).toMatchObject({ title: "Owner open work", notes: "private" });
+    expect(
+      await handles.prisma.siteLogin.findUniqueOrThrow({ where: { id: ownerVault.id } }),
+    ).toMatchObject({ username: "owner-user", host: "forum.example.test" });
     expect(
       await handles.prisma.memoryDocument.findUniqueOrThrow({ where: { id: ownerMemory.id } }),
     ).toMatchObject({ content: "owner-only-memory" });

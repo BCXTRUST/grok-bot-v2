@@ -50,6 +50,8 @@ export * from "./remote-mcp.js";
 export * from "./sandbox-factory.js";
 export * from "./scratchpad-context.js";
 export * from "./scratchpad-tools.js";
+export * from "./site-login-context.js";
+export * from "./site-login-tools.js";
 export * from "./scripted-runtime.js";
 export * from "./scripted-voice.js";
 export * from "./secrets.js";

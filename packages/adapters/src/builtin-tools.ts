@@ -310,6 +310,55 @@ export const builtinAgentTools: ConnectorTool[] = [
     },
   },
   {
+    name: "vault_list",
+    description:
+      "List site logins in the vault this bot can use (host and username only, never passwords).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        site: { type: "string", description: "Optional hostname or URL to filter." },
+      },
+    },
+  },
+  {
+    name: "vault_get",
+    description:
+      "Retrieve a vault username and password for a site. Never print the password. Prefer this over request_takeover when a matching login exists.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        site: { type: "string", description: "Hostname or URL." },
+        username: { type: "string", description: "Required when several accounts exist for the site." },
+      },
+      required: ["site"],
+    },
+  },
+  {
+    name: "vault_put",
+    description:
+      "Store a site username and password in the vault after you create an account. Do not use remember for passwords.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        site: { type: "string", description: "Hostname or page URL." },
+        username: { type: "string" },
+        password: { type: "string" },
+      },
+      required: ["site", "username", "password"],
+    },
+  },
+  {
+    name: "vault_delete",
+    description: "Remove a vault login this bot created.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        loginId: { type: "string" },
+      },
+      required: ["loginId"],
+    },
+  },
+  {
     name: "schedule_create",
     description:
       'Create a reminder or recurring job for this bot. Use for "remind me in 10 minutes" or "every morning send a joke". Repeats: cron or every/unit (min 1 minute). One-shot: runAt, delayMinutes, or delaySeconds.',
