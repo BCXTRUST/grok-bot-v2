@@ -103,7 +103,7 @@ import {
 } from "./computer-status.js";
 import { buildMcpUpdateMaterial } from "./mcp-material.js";
 import { chooseFocus, markAppConnected, startOnboarding } from "./onboarding.js";
-import { addScreenProxyCapability } from "./screen-proxy.js";
+import { addScreenProxyCapability, proxiesExternalDesktop } from "./screen-proxy.js";
 import { queryWorkspaceSearch } from "./search.js";
 import { withSerializableRetry } from "./serializable-retry.js";
 import { assertTeachingSendAllowed, createTaughtSkillsService } from "./taught-skills.js";
@@ -1345,50 +1345,60 @@ export function createRouter(deps: RouterDeps) {
         return { path: input.path, content };
       }),
       screenUrl: authed.computer.screenUrl.handler(async ({ context, input }) => {
-        let bot = await repos.getBot(context.actor, input.botId);
-        if (await expireStaleComputerControl(deps, bot.computer)) {
-          bot = await repos.getBot(context.actor, input.botId);
-        }
-        if (
-          !bot.computer?.providerRef ||
-          (bot.computer.state !== "running" && bot.computer.state !== "booting")
-        ) {
+        try {
+          let bot = await repos.getBot(context.actor, input.botId);
+          if (await expireStaleComputerControl(deps, bot.computer)) {
+            bot = await repos.getBot(context.actor, input.botId);
+          }
+          if (
+            !bot.computer?.providerRef ||
+            (bot.computer.state !== "running" && bot.computer.state !== "booting")
+          ) {
+            return { url: null };
+          }
+          const session = await deps.sandbox
+            .connectScreen(
+              toComputerRef(bot.computer),
+              {
+                view: "stream",
+                interactive:
+                  hasActiveComputerControl(bot.computer) && bot.computer.controlBotId === bot.id,
+                controlToken:
+                  bot.computer.controlBotId === bot.id
+                    ? (bot.computer.controlLeaseId ?? undefined)
+                    : undefined,
+              },
+              await computerScreenContext(
+                deps.prisma,
+                context.actor,
+                bot.computer.id,
+                bot.id,
+                "screen",
+              ),
+            )
+            .catch(() => ({
+              url: null as string | null,
+              mimeType: "text/html",
+              close: async () => undefined,
+            }));
+          if (!session.url) return { url: null };
+          scheduleComputerSleep(deps.jobs, bot.computer.id);
+          const viewUrl = withViewOnly(
+            session.url,
+            !(hasActiveComputerControl(bot.computer) && bot.computer.controlBotId === bot.id),
+          );
+          return {
+            url: addScreenProxyCapability(
+              viewUrl,
+              deps.env.screenProxySecret,
+              deps.env.webOrigin,
+              undefined,
+              { proxyExternal: proxiesExternalDesktop(bot.computer.kind) },
+            ),
+          };
+        } catch {
           return { url: null };
         }
-        const session = await deps.sandbox.connectScreen(
-          toComputerRef(bot.computer),
-          {
-            view: "stream",
-            interactive:
-              hasActiveComputerControl(bot.computer) && bot.computer.controlBotId === bot.id,
-            controlToken:
-              bot.computer.controlBotId === bot.id
-                ? (bot.computer.controlLeaseId ?? undefined)
-                : undefined,
-          },
-          await computerScreenContext(
-            deps.prisma,
-            context.actor,
-            bot.computer.id,
-            bot.id,
-            "screen",
-          ),
-        );
-        if (!session.url) return { url: null };
-        scheduleComputerSleep(deps.jobs, bot.computer.id);
-        const viewUrl = withViewOnly(
-          session.url,
-          !(hasActiveComputerControl(bot.computer) && bot.computer.controlBotId === bot.id),
-        );
-        return {
-          url: addScreenProxyCapability(
-            viewUrl,
-            deps.env.screenProxySecret,
-            deps.env.webOrigin,
-            undefined,
-            { proxyExternal: bot.computer.kind === "box" },
-          ),
-        };
       }),
       heartbeat: authed.computer.heartbeat.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);
