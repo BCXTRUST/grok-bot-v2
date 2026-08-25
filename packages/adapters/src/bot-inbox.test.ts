@@ -113,5 +113,19 @@ describe("AgentMail inbox adapter", () => {
       text: "please reply",
     });
   });
+
+  it("does not retry username changes when the AgentMail inbox limit is reached", async () => {
+    const created = vi.fn(async () => {
+      throw { body: { code: "limit_exceeded" } };
+    });
+    const provider = new AgentMailInboxProvider(
+      { inboxes: { create: created, get: async () => ({}), messages: {} as never } },
+      "faircroft.us",
+    );
+    await expect(
+      provider.provision({ botId: "bot-2", name: "Overflow", workspaceId: "ws" }, context),
+    ).rejects.toThrow(/inbox limit reached/i);
+    expect(created).toHaveBeenCalledTimes(1);
+  });
 });
 
