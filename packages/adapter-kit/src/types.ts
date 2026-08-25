@@ -402,6 +402,7 @@ export interface AgentMailMessage {
   to: string[];
   subject: string;
   text: string;
+  links?: string[];
   createdAt?: string;
 }
 

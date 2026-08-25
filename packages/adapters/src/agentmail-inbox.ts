@@ -4,7 +4,7 @@ import type {
   AgentInboxRef,
   AgentMailMessage,
 } from "@rakazo/adapter-kit";
-import { botInboxClientId, botInboxUsername } from "./bot-inbox.js";
+import { botInboxClientId, botInboxUsernames, isNaturalInboxAddress } from "./bot-inbox.js";
 
 interface AgentMailInboxRecord {
   inboxId?: string;
@@ -58,6 +58,7 @@ export interface AgentMailSdk {
       metadata?: Record<string, string>;
     }): Promise<AgentMailInboxRecord>;
     get(inboxId: string): Promise<AgentMailInboxRecord>;
+    delete?(inboxId: string): Promise<void>;
     messages: AgentMailMessagesApi;
   };
 }
@@ -87,26 +88,36 @@ export class AgentMailInboxProvider implements AgentInboxProvider {
       clientId: botInboxClientId(request.botId),
       metadata: { rakazoBotId: request.botId, workspaceId: request.workspaceId },
     };
-    try {
-      return toInboxRef(
-        await this.client.inboxes.create({
-          ...payload,
-          username: botInboxUsername(request.botId, request.name),
-        }),
-      );
-    } catch (error) {
-      if (isLimitExceeded(error)) {
-        throw new Error(
-          "AgentMail inbox limit reached. Delete unused inboxes or upgrade the plan, then retry.",
+    let lastError: unknown;
+    for (const username of botInboxUsernames(request.name)) {
+      try {
+        const created = toInboxRef(
+          await this.client.inboxes.create({
+            ...payload,
+            username,
+          }),
         );
+        if (isNaturalInboxAddress(created.address)) return created;
+        await this.client.inboxes.delete?.(created.inboxId);
+        const replaced = toInboxRef(
+          await this.client.inboxes.create({
+            ...payload,
+            username,
+          }),
+        );
+        if (isNaturalInboxAddress(replaced.address)) return replaced;
+      } catch (error) {
+        lastError = error;
+        if (isLimitExceeded(error)) {
+          throw new Error(
+            "AgentMail inbox limit reached. Delete unused inboxes or upgrade the plan, then retry.",
+          );
+        }
       }
-      return toInboxRef(
-        await this.client.inboxes.create({
-          ...payload,
-          username: botInboxUsername(request.botId, request.name, true),
-        }),
-      );
     }
+    throw lastError instanceof Error
+      ? lastError
+      : new Error("Could not create a natural AgentMail address for this bot.");
   }
 
   async listMessages(
@@ -198,6 +209,11 @@ function toMailMessage(message: AgentMailFullMessage): AgentMailMessage {
     to,
     subject: message.subject ?? "",
     text,
+    links: extractHttpUrls(text),
     createdAt: message.createdAt ?? message.timestamp,
   };
+}
+
+function extractHttpUrls(text: string) {
+  return [...new Set(text.match(/https?:\/\/[^\s"'<>]+/gi) ?? [])];
 }
