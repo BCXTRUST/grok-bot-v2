@@ -4,6 +4,7 @@ import {
   botInboxClientId,
   botInboxUsername,
   botInboxUsernames,
+  inboxAddressFitsName,
   isNaturalInboxAddress,
   mailInstruction,
   inboxRefFromBot,
@@ -26,7 +27,9 @@ describe("bot inbox usernames", () => {
     expect(botInboxUsername("bot-1", "Chief")).toBe("chief");
     expect(botInboxUsernames("Link Builder").slice(0, 3)).toEqual(["link.b", "link.bu", "link.bui"]);
     expect(isNaturalInboxAddress("link.b@faircroft.us")).toBe(true);
-    expect(isNaturalInboxAddress("link.builder.cmcade55@faircroft.us")).toBe(false);
+    expect(botInboxUsername("cmt8shbab0002wbjscmcade55", "Roman Schreiber")).toBe("roman.s");
+    expect(inboxAddressFitsName("link.bu@faircroft.us", "Roman Schreiber")).toBe(false);
+    expect(inboxAddressFitsName("roman.s@faircroft.us", "Roman Schreiber")).toBe(true);
     expect(botInboxClientId("bot-1")).toBe("rakazo-bot-bot-1");
   });
 });
@@ -163,6 +166,37 @@ describe("AgentMail inbox adapter", () => {
     );
     expect(deleted).toHaveBeenCalledWith("old");
     expect(inbox.address).toBe("link.b@faircroft.us");
+  });
+
+  it("replaces the old inbox when the bot is renamed", async () => {
+    const deleted = vi.fn(async () => undefined);
+    const created = vi
+      .fn()
+      .mockResolvedValueOnce({
+        inboxId: "old",
+        email: "link.bu@faircroft.us",
+      })
+      .mockResolvedValueOnce({
+        inboxId: "new",
+        email: "roman.s@faircroft.us",
+      });
+    const provider = new AgentMailInboxProvider(
+      {
+        inboxes: {
+          create: created,
+          get: async () => ({}),
+          delete: deleted,
+          messages: {} as never,
+        },
+      },
+      "faircroft.us",
+    );
+    const inbox = await provider.provision(
+      { botId: "bot-1", name: "Roman Schreiber", workspaceId: "ws" },
+      context,
+    );
+    expect(deleted).toHaveBeenCalledWith("old");
+    expect(inbox.address).toBe("roman.s@faircroft.us");
   });
 });
 

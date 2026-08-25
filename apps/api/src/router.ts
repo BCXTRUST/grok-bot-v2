@@ -622,7 +622,7 @@ export function createRouter(deps: RouterDeps) {
         const bots = await repos.listBots(context.actor);
         const bot = bots.find((b) => b.id === input.botId);
         if (!bot) throw new IsolationError();
-        return bot;
+        return withBotInbox(deps, context.actor, bot);
       }),
       setComputer: authed.bots.setComputer.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);
