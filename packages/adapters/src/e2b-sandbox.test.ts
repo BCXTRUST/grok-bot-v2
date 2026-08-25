@@ -228,7 +228,10 @@ describe("E2B computer backend", () => {
     expect(getStreamUrl).toHaveBeenCalledWith(
       expect.objectContaining({ viewOnly: true, authKey: "screen-key" }),
     );
-    expect(command).toHaveBeenCalledWith("x11vnc -R viewonly");
+    expect(command).toHaveBeenCalledWith(
+      "x11vnc -R viewonly",
+      expect.objectContaining({ timeoutMs: 2_500 }),
+    );
 
     const viewonlyFailDesktop = {
       ...desktop,
@@ -302,6 +305,46 @@ describe("E2B computer backend", () => {
       context,
     );
     expect(reused.url).toBe("https://desktop.test/vnc.html?existing=1");
+
+    const reconnectDesktop = {
+      ...desktop,
+      sandboxId: "e2b-reconnect",
+      commands: {
+        run: vi.fn(async (value: string) => {
+          if (String(value).includes("RAKAZO_SCREEN_INDEX=")) {
+            return { stdout: "RAKAZO_SCREEN_INDEX=0\n", stderr: "", exitCode: 0 };
+          }
+          return { stdout: "", stderr: "", exitCode: 0 };
+        }),
+      },
+      stream: {
+        start: vi.fn(async () => {
+          throw new Error("Stream is already running");
+        }),
+        stop: vi.fn(async () => undefined),
+        getAuthKey: () => {
+          throw new Error("Server is not running");
+        },
+        getUrl: () => {
+          throw new Error("Server is not running");
+        },
+      },
+    } as unknown as Sandbox;
+    const reconnectProvider = new E2BSandboxProvider("test-key", {
+      create: vi.fn(async () => reconnectDesktop),
+      connect: vi.fn(async () => reconnectDesktop),
+      pause: vi.fn(async () => undefined),
+    });
+    const reconnectComputer = await reconnectProvider.provision(
+      { botId: "bot-1", homePath: "/unused" },
+      context,
+    );
+    const reconnectScreen = await reconnectProvider.connectScreen(
+      reconnectComputer,
+      { view: "stream" },
+      context,
+    );
+    expect(reconnectScreen.url).toContain("https://6080-desktop.test/vnc.html");
 
     const control = await provider.connectScreen(
       computer,

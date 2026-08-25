@@ -88,17 +88,21 @@ function e2bStreamAuthKey(desktop: Sandbox): string | undefined {
 }
 
 function e2bSdkStreamUrl(desktop: Sandbox): string | null {
-  const authKey = e2bStreamAuthKey(desktop);
-  const fromSdk =
-    typeof desktop.stream.getUrl === "function"
-      ? desktop.stream.getUrl({
-          autoConnect: true,
-          viewOnly: true,
-          resize: "scale",
-          ...(authKey ? { authKey } : {}),
-        })
-      : null;
-  return typeof fromSdk === "string" && fromSdk.length > 0 ? fromSdk : null;
+  try {
+    const authKey = e2bStreamAuthKey(desktop);
+    const fromSdk =
+      typeof desktop.stream.getUrl === "function"
+        ? desktop.stream.getUrl({
+            autoConnect: true,
+            viewOnly: true,
+            resize: "scale",
+            ...(authKey ? { authKey } : {}),
+          })
+        : null;
+    return typeof fromSdk === "string" && fromSdk.length > 0 ? fromSdk : null;
+  } catch {
+    return null;
+  }
 }
 
 function e2bPrimaryViewUrl(desktop: Sandbox, layout: ExtraDisplayLayout): string {
@@ -195,18 +199,20 @@ export class E2BSandboxProvider implements SandboxProvider {
 
   private async initializeStream(desktop: Sandbox) {
     try {
-      await desktop.stream.start({ requireAuth: true });
+      await Promise.race([
+        desktop.stream.start({ requireAuth: true }),
+        new Promise<never>((_, reject) => {
+          setTimeout(() => reject(new Error("stream start timed out")), 8_000);
+        }),
+      ]);
     } catch (error) {
-      // API/worker restarts forget in-memory stream state. Killing noVNC on :6080
-      // blanks the Team Computer; reuse the live E2B stream when it still answers.
-      if (!e2bSdkStreamUrl(desktop)) {
-        throw error;
-      }
+      // Reconnected SDK clients forget stream.url even when noVNC is already up.
+      if (!e2bSdkStreamUrl(desktop) && !desktop.getHost) throw error;
     }
     try {
-      await desktop.commands.run("x11vnc -R viewonly");
+      await desktop.commands.run("x11vnc -R viewonly", { timeoutMs: 2_500 });
     } catch {
-      // View-only is preferred; a failed remote-control flag must not blank the live screen.
+      // View-only is preferred; a hung or failed remote-control flag must not blank the live screen.
     }
     const current = this.boxes.get(desktop.sandboxId);
     if (current !== desktop) {
