@@ -17,6 +17,9 @@ describe("E2B computer backend", () => {
     expect(shouldSkipPortableWorkspaceFile("project/lock")).toBe(false);
     expect(shouldSkipPortableWorkspaceFile(".browser-profiles/chromium/Cache/data")).toBe(true);
     expect(shouldSkipPortableWorkspaceFile(".browser-profiles/chromium/SingletonLock")).toBe(true);
+    expect(
+      shouldSkipPortableWorkspaceFile(".browser-profiles/chromium/BrowserMetrics-spare.pma"),
+    ).toBe(true);
   });
 
   it("prepares a reused computer idempotently", async () => {
@@ -226,6 +229,43 @@ describe("E2B computer backend", () => {
       expect.objectContaining({ viewOnly: true, authKey: "screen-key" }),
     );
     expect(command).toHaveBeenCalledWith("x11vnc -R viewonly");
+
+    const viewonlyFailDesktop = {
+      ...desktop,
+      sandboxId: "e2b-viewonly-fail",
+      commands: {
+        run: vi.fn(async (value: string) => {
+          if (value === "x11vnc -R viewonly") throw new Error("viewonly refused");
+          if (String(value).includes("RAKAZO_SCREEN_INDEX=")) {
+            return { stdout: "RAKAZO_SCREEN_INDEX=0\n", stderr: "", exitCode: 0 };
+          }
+          return { stdout: "", stderr: "", exitCode: 0 };
+        }),
+      },
+      stream: {
+        start: vi.fn(async () => undefined),
+        stop: vi.fn(async () => undefined),
+        getAuthKey: () => "screen-key",
+        getUrl: () => null,
+      },
+    } as unknown as Sandbox;
+    const viewonlyProvider = new E2BSandboxProvider("test-key", {
+      create: vi.fn(async () => viewonlyFailDesktop),
+      connect: vi.fn(async () => viewonlyFailDesktop),
+      pause: vi.fn(async () => undefined),
+    });
+    const viewonlyComputer = await viewonlyProvider.provision(
+      { botId: "bot-1", homePath: "/unused" },
+      context,
+    );
+    const fallbackScreen = await viewonlyProvider.connectScreen(
+      viewonlyComputer,
+      { view: "stream" },
+      context,
+    );
+    expect(fallbackScreen.url).toContain("https://6080-desktop.test/vnc.html");
+    expect(fallbackScreen.url).toContain("authKey=screen-key");
+    expect(viewonlyFailDesktop.stream.stop).not.toHaveBeenCalled();
 
     const control = await provider.connectScreen(
       computer,

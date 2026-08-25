@@ -96,7 +96,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "shell",
     description:
-      "Run a command inside this bot's computer. cwd defaults to the bot's folder on a Team Computer and the workspace root on a Private Computer.",
+      "Run a command inside this bot's computer. cwd defaults to the bot's folder on a Team Computer and the workspace root on a Private Computer. Do not drive websites with Selenium, Playwright, or other browser automation; open URLs with open_path or launch_app and click or type with computer_act so the live desktop is visible.",
     inputSchema: {
       type: "object",
       properties: {

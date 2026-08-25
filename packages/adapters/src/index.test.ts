@@ -154,6 +154,9 @@ describe("builtin tools", () => {
         "mail_send",
       ]),
     );
+    expect(builtinAgentTools.find((t) => t.name === "shell")?.description).toMatch(
+      /Do not drive websites with Selenium/,
+    );
   });
 });
 

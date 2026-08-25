@@ -73,9 +73,9 @@ import {
   settleUncertainEffect,
   uncertainEffectResult,
 } from "./approval-effect.js";
+import { ensureBotInbox, inboxRefFromBot, mailInstruction } from "./bot-inbox.js";
 import { builtinAgentTools } from "./builtin-tools.js";
 import { archiveSpawnedBot, spawnBot } from "./child-bots.js";
-import { ensureBotInbox, inboxRefFromBot, mailInstruction } from "./bot-inbox.js";
 import {
   collectLogIds,
   mergeConnectedPlugins,
@@ -734,7 +734,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
         };
         const tools = [...builtins, ...exposedConnectorTools];
         const computerInstruction = graphical
-          ? "You have a persistent computer. Use computer_observe and computer_act for its visible desktop, including browsers and installed applications. Use open_path and launch_app to open graphical files, URLs, and applications. Use the file tools and shell for precise filesystem and terminal work. On a Team Computer you have your own screen; other Team bots may run at the same time on theirs. Another user may interact with your screen while you run, so re-observe when it may have changed."
+          ? "You have a persistent computer. Use computer_observe and computer_act for its visible desktop, including browsers and installed applications. Use open_path and launch_app to open graphical files, URLs, and applications. Use the file tools and shell for precise filesystem and terminal work. Do not drive websites with Selenium, Playwright, or other browser automation from shell; the user watches the same desktop, so browse with the computer's graphical browser. On a Team Computer you have your own screen; other Team bots may run at the same time on theirs. Another user may interact with your screen while you run, so re-observe when the screen may have changed."
           : "You have a persistent sandbox filesystem and shell. This backend does not provide model-visible graphical control, so use the file tools and shell.";
         const workspaceInstruction =
           computerMode === "team"
@@ -1223,9 +1223,15 @@ export function createRunExecutor(deps: ExecutorDeps) {
             );
             return finish({ ok: true });
           }
-          if (name === "mail_list" || name === "mail_read" || name === "mail_send" || name === "mail_reply") {
+          if (
+            name === "mail_list" ||
+            name === "mail_read" ||
+            name === "mail_send" ||
+            name === "mail_reply"
+          ) {
             const ref = inboxRefFromBot(bot) ?? inbox;
-            if (!deps.inbox || !ref) return { error: "This bot does not have an email address yet." };
+            if (!deps.inbox || !ref)
+              return { error: "This bot does not have an email address yet." };
             if (name === "mail_list") {
               return {
                 address: ref.address,

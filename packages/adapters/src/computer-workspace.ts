@@ -44,7 +44,8 @@ export function shouldSkipPortableWorkspaceFile(relative: string) {
   const name = segments.at(-1) ?? "";
   return (
     segments.some((segment) => skippedBrowserProfileDirectories.has(segment)) ||
-    skippedBrowserProfileFiles.has(name)
+    skippedBrowserProfileFiles.has(name) ||
+    name.startsWith("BrowserMetrics")
   );
 }
 

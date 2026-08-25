@@ -29,10 +29,10 @@ import {
   createVoiceProvider,
   destroyBot,
   displayBotWorkspacePath,
-  ensureBotInbox,
-  ensureMissingBotInboxes,
   type EncryptedSecretStore,
   enqueueTakeoverContinuation,
+  ensureBotInbox,
+  ensureMissingBotInboxes,
   expireComputerControl,
   hasActiveComputerControl,
   isScratchpadStatus,
@@ -106,7 +106,7 @@ import {
 } from "./computer-status.js";
 import { buildMcpUpdateMaterial } from "./mcp-material.js";
 import { chooseFocus, markAppConnected, startOnboarding } from "./onboarding.js";
-import { addScreenProxyCapability } from "./screen-proxy.js";
+import { addScreenProxyCapability, proxiesExternalDesktop } from "./screen-proxy.js";
 import { queryWorkspaceSearch } from "./search.js";
 import { withSerializableRetry } from "./serializable-retry.js";
 import { assertTeachingSendAllowed, createTaughtSkillsService } from "./taught-skills.js";
@@ -193,11 +193,7 @@ function computerContext(actor: Actor, botId: string, operationId: string): Adap
   };
 }
 
-async function withBotInbox(
-  deps: RouterDeps,
-  actor: Actor,
-  bot: import("@rakazo/contracts").Bot,
-) {
+async function withBotInbox(deps: RouterDeps, actor: Actor, bot: import("@rakazo/contracts").Bot) {
   const inbox = await ensureBotInbox(
     { prisma: deps.prisma, inbox: deps.inbox },
     { id: bot.id, name: bot.name, workspaceId: bot.workspaceId, userId: actor.userId },
@@ -1415,7 +1411,7 @@ export function createRouter(deps: RouterDeps) {
             deps.env.screenProxySecret,
             deps.env.webOrigin,
             undefined,
-            { proxyExternal: bot.computer.kind === "box" },
+            { proxyExternal: proxiesExternalDesktop(bot.computer.kind) },
           ),
         };
       }),
