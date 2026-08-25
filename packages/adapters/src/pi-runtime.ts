@@ -9,6 +9,7 @@ import type {
   AgentToolExecutionResult,
   ConnectorTool,
 } from "@rakazo/adapter-kit";
+import { openRouterFeaturedLimits } from "@rakazo/contracts";
 import { builtinAgentTools, DELEGATION_TOOL_NAMES } from "./builtin-tools.js";
 import { PiRuntimeCredentialStore, toOAuthCredential } from "./pi-credentials.js";
 import { registerLocalProvider } from "./pi-local-provider.js";
@@ -69,7 +70,6 @@ export class PiAgentRuntime implements AgentRuntime {
         const provider =
           request.model.provider === "scripted" ? "openrouter" : request.model.provider;
         const envDefaultModel = process.env.PI_DEFAULT_MODEL?.trim();
-        const envDefaultProvider = process.env.PI_DEFAULT_PROVIDER?.trim() || "openrouter";
         const modelId =
           request.model.id === "scripted"
             ? envDefaultModel || "deepseek/deepseek-v4-flash-0731"
@@ -79,12 +79,7 @@ export class PiAgentRuntime implements AgentRuntime {
         if (!model && provider !== "openrouter" && provider !== OPENAI_COMPATIBLE_PROVIDER_ID) {
           model = models.getModel("openrouter", modelId);
         }
-        if (
-          !model &&
-          provider === "openrouter" &&
-          envDefaultProvider === "openrouter" &&
-          modelId === envDefaultModel
-        ) {
+        if (!model && provider === "openrouter") {
           model = configuredOpenRouterModel(modelId);
         }
         if (!model) {
@@ -239,6 +234,7 @@ function configuredOpenRouterModel(id: string): Model<"openai-completions"> {
   // pricing conservative, but enable reasoning: unknown OpenRouter endpoints
   // (e.g. gemini-3.7-flash before the snapshot catches up) often mandate it, and
   // thinkingLevel "off" becomes effort "none" which those endpoints reject.
+  const featured = openRouterFeaturedLimits(id);
   return {
     id,
     name: id,
@@ -248,8 +244,8 @@ function configuredOpenRouterModel(id: string): Model<"openai-completions"> {
     reasoning: true,
     input: ["text"],
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-    contextWindow: 16_384,
-    maxTokens: 4_096,
+    contextWindow: featured?.contextWindow ?? 16_384,
+    maxTokens: featured?.maxTokens ?? 4_096,
   };
 }
 

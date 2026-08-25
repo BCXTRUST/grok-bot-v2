@@ -1,12 +1,15 @@
 import {
   OPENAI_COMPATIBLE_BASE_URL_HINT,
   OPENAI_COMPATIBLE_PROVIDER_ID,
+  OPENROUTER_FEATURED_MODELS,
+  OPENROUTER_PROVIDER_ID,
   openAiCompatibleConnectReady,
   openAiCompatibleProbeSuccessMessage,
 } from "@rakazo/contracts";
 import { ChevronDown } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { OpenRouterFeaturedPicks } from "../components/OpenRouterFeaturedPicks";
 import { type ModelCatalogEntry, providerHint } from "../lib/model-auth";
 import { rpc } from "../lib/rpc";
 import { useModelOAuthSignIn } from "../lib/use-model-oauth-signin";
@@ -16,8 +19,8 @@ export function OnboardingPage() {
   const [step, setStep] = useState<"loading" | "model" | "bot">("loading");
   const [catalog, setCatalog] = useState<ModelCatalogEntry[]>([]);
   const [query, setQuery] = useState("");
-  const [provider, setProvider] = useState("openrouter");
-  const [modelId, setModelId] = useState("deepseek/deepseek-v4-flash-0731");
+  const [provider, setProvider] = useState(OPENROUTER_PROVIDER_ID);
+  const [modelId, setModelId] = useState(OPENROUTER_FEATURED_MODELS[0].id);
   const [apiKey, setApiKey] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
   const [probeModels, setProbeModels] = useState<string[]>([]);
@@ -50,12 +53,21 @@ export function OnboardingPage() {
     void Promise.all([rpc.me(), rpc.models.list().catch(() => [])])
       .then(([me, models]) => {
         setCatalog(models);
-        const preferred =
-          models.find(
-            (entry) => entry.provider === me.defaultProvider && entry.id === me.defaultModel,
-          ) ??
-          models.find((entry) => entry.provider === me.defaultProvider) ??
-          models[0];
+        const featured = models.find(
+          (entry) =>
+            entry.provider === OPENROUTER_PROVIDER_ID &&
+            entry.id === OPENROUTER_FEATURED_MODELS[0].id,
+        );
+        const preferred = me.needsModel
+          ? (featured ??
+            models.find((entry) => entry.provider === OPENROUTER_PROVIDER_ID) ??
+            models[0])
+          : (models.find(
+              (entry) => entry.provider === me.defaultProvider && entry.id === me.defaultModel,
+            ) ??
+            models.find((entry) => entry.provider === me.defaultProvider) ??
+            featured ??
+            models[0]);
         if (preferred) {
           setProvider(preferred.provider);
           setModelId(preferred.provider === OPENAI_COMPATIBLE_PROVIDER_ID ? "" : preferred.id);
@@ -73,7 +85,11 @@ export function OnboardingPage() {
     for (const entry of catalog) {
       if (!seen.has(entry.provider)) seen.set(entry.provider, entry);
     }
-    return [...seen.values()];
+    return [...seen.values()].sort((left, right) => {
+      if (left.provider === OPENROUTER_PROVIDER_ID) return -1;
+      if (right.provider === OPENROUTER_PROVIDER_ID) return 1;
+      return 0;
+    });
   }, [catalog]);
 
   const filteredProviders = useMemo(() => {
@@ -215,7 +231,7 @@ export function OnboardingPage() {
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search providers and models"
+              placeholder="Search OpenRouter, Gemini Flash, Grok"
               className="mt-8 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
             />
             <div className="mt-3 max-h-48 overflow-y-auto rounded-[11px] border border-[#26262A]">
@@ -229,7 +245,9 @@ export function OnboardingPage() {
                     setModelId(
                       entry.provider === OPENAI_COMPATIBLE_PROVIDER_ID
                         ? ""
-                        : (catalog.find((item) => item.provider === entry.provider)?.id ?? ""),
+                        : entry.provider === OPENROUTER_PROVIDER_ID
+                          ? OPENROUTER_FEATURED_MODELS[0].id
+                          : (catalog.find((item) => item.provider === entry.provider)?.id ?? ""),
                     );
                     setBaseUrl("");
                     resetOpenAiCompatibleProbe();
@@ -321,7 +339,15 @@ export function OnboardingPage() {
                 </>
               ) : (
                 <>
-                  <span>Model</span>
+                  <OpenRouterFeaturedPicks
+                    provider={provider}
+                    selectedId={selected?.id ?? modelId}
+                    onSelect={(next) => {
+                      cancelOAuthAttempt();
+                      setModelId(next);
+                    }}
+                  />
+                  <span className="mt-4 block">Model</span>
                   <select
                     value={selected?.id ?? modelId}
                     onChange={(e) => {
@@ -434,7 +460,7 @@ export function OnboardingPage() {
                   <input
                     value={apiKey}
                     onChange={(e) => updateApiKey(e.target.value)}
-                    placeholder="sk-…"
+                    placeholder={provider === OPENROUTER_PROVIDER_ID ? "sk-or-…" : "sk-…"}
                     type="password"
                     autoComplete="new-password"
                     className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"

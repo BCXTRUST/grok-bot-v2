@@ -140,6 +140,19 @@ describe("Pi agent thinking level", () => {
     expect(levels.every((level) => level !== "off")).toBe(true);
   });
 
+  it("runs an OpenRouter model that is not in the static catalog without PI_DEFAULT_MODEL", async () => {
+    const levels = await runWithModel("google/gemini-3.7-flash", "openrouter");
+
+    expect(fakeAgentState.models[0]).toMatchObject({
+      id: "google/gemini-3.7-flash",
+      provider: "openrouter",
+      reasoning: true,
+      contextWindow: 1_048_576,
+      maxTokens: 65_536,
+    });
+    expect(levels).toEqual(["medium", "medium"]);
+  });
+
   it("uses the trimmed configured default for scripted requests", async () => {
     vi.stubEnv("PI_DEFAULT_MODEL", "  stealth/ox-alpha  ");
 
