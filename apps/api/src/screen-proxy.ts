@@ -9,6 +9,10 @@ export interface ScreenProxyOptions {
   proxyExternal?: boolean;
 }
 
+export function proxiesExternalDesktop(kind: string | undefined) {
+  return kind === "box" || kind === "e2b";
+}
+
 export function addScreenProxyCapability(
   url: string,
   secret: string,

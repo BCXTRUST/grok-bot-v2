@@ -96,6 +96,7 @@ import { connectMcpOauth } from "../lib/mcp-connect";
 import { revokePendingAttachmentPreviews } from "../lib/pending-attachments";
 import { markAfterPaint, markOnce } from "../lib/performance";
 import { rpc } from "../lib/rpc";
+import { embeddableScreenUrl } from "../lib/screen-url";
 import {
   activeThreadRuns,
   clearActiveThreadRuns,
@@ -475,7 +476,19 @@ export function ShellPage() {
   async function refreshComputerScreen(id: string) {
     if (!computerVisible.current) return null;
     const request = ++screenRequest.current;
-    const screen = await rpc.computer.screenUrl({ botId: id }).catch(() => ({ url: null }));
+    let screen: { url: string | null } = { url: null };
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      screen = await rpc.computer.screenUrl({ botId: id }).catch(() => ({ url: null }));
+      if (screen.url) break;
+      if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 400));
+      if (
+        request !== screenRequest.current ||
+        activeBotId.current !== id ||
+        !computerVisible.current
+      ) {
+        return null;
+      }
+    }
     if (
       request !== screenRequest.current ||
       activeBotId.current !== id ||
@@ -1355,7 +1368,7 @@ export function ShellPage() {
     await refreshThread(active.id);
   }
 
-  const embeddedScreenUrl = embeddableScreenUrl(screenUrl);
+  const embeddedScreenUrl = embeddableScreenUrl(screenUrl, window.location.href);
   const hasControl = userHoldsComputerControl(computer, active?.id);
   const takeoverBlocked = computerTakeoverBlocked(computer, snapshot?.run?.status);
 
@@ -3988,22 +4001,6 @@ function DeleteRoutineDialog({
       </div>
     </div>
   );
-}
-
-function embeddableScreenUrl(url: string | null): string | null {
-  if (!url) return null;
-  try {
-    const parsed = new URL(url, window.location.href);
-    const page = new URL(window.location.href);
-    const local = parsed.hostname === "127.0.0.1" || parsed.hostname === "localhost";
-    const pagePort = page.port || (page.protocol === "https:" ? "443" : "80");
-    if (local && parsed.port && parsed.port !== pagePort) {
-      return null;
-    }
-    return parsed.toString();
-  } catch {
-    return url;
-  }
 }
 
 function screenIframeSandbox(url: string | null) {
