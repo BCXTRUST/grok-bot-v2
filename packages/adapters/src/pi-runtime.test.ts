@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { describeToolActivity } from "./pi-runtime.js";
+import { describeToolActivity, preferComputerVisionModel } from "./pi-runtime.js";
 
 describe("describeToolActivity", () => {
   it("summarizes builtin tools with their most informative argument", () => {
@@ -52,3 +52,46 @@ describe("describeToolActivity", () => {
     expect(describeToolActivity("destination_write", undefined)).toBe("Using destination_write");
   });
 });
+
+describe("preferComputerVisionModel", () => {
+  const textOnly = { id: "deepseek/deepseek-v4-flash-0731", provider: "openrouter", input: ["text"] };
+  const vision = {
+    id: "google/gemini-2.5-flash",
+    provider: "openrouter",
+    input: ["text", "image"],
+  };
+  const models = {
+    getModel: (provider: string, id: string) =>
+      provider === "openrouter" && id === vision.id ? vision : undefined,
+  };
+
+  it("keeps a text-only model when the run has no computer", () => {
+    expect(preferComputerVisionModel(models as never, textOnly as never, [])).toBe(textOnly);
+  });
+
+  it("keeps a model that already accepts images", () => {
+    expect(
+      preferComputerVisionModel(models as never, vision as never, [
+        { name: "computer_observe" } as never,
+      ]),
+    ).toBe(vision);
+  });
+
+  it("swaps a text-only model for a vision model when computer_observe is present", () => {
+    expect(
+      preferComputerVisionModel(models as never, textOnly as never, [
+        { name: "computer_observe" } as never,
+      ]),
+    ).toBe(vision);
+  });
+
+  it("synthesizes a vision OpenRouter model when the catalog has no fallback", () => {
+    const empty = { getModel: () => undefined };
+    const chosen = preferComputerVisionModel(empty as never, textOnly as never, [
+      { name: "computer_observe" } as never,
+    ]);
+    expect(chosen.id).toBe("google/gemini-2.5-flash");
+    expect(chosen.input).toContain("image");
+  });
+});
+

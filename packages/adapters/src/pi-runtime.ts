@@ -99,6 +99,7 @@ export class PiAgentRuntime implements AgentRuntime {
             ? request.model.apiKey || "local"
             : (request.model.apiKey ?? process.env.OPENROUTER_API_KEY);
         const toolDefs = request.tools.length ? request.tools : builtinAgentTools;
+        model = preferComputerVisionModel(models, model, toolDefs);
         const nestedAgents = new Set<Agent>();
         const host: ToolHost = {
           queue,
@@ -261,6 +262,26 @@ export class PiAgentRuntime implements AgentRuntime {
       running.delete(request.runId);
     }
   }
+}
+
+const DEFAULT_COMPUTER_VISION_MODEL = "google/gemini-2.5-flash";
+
+function modelAcceptsImages(model: { input?: readonly string[] }) {
+  return !model.input || model.input.includes("image");
+}
+
+export function preferComputerVisionModel(
+  models: Models,
+  model: Model<Api>,
+  toolDefs: readonly ConnectorTool[],
+): Model<Api> {
+  if (!toolDefs.some((tool) => tool.name === "computer_observe")) return model;
+  if (modelAcceptsImages(model)) return model;
+  const visionId = process.env.PI_COMPUTER_MODEL?.trim() || DEFAULT_COMPUTER_VISION_MODEL;
+  const vision =
+    models.getModel("openrouter", visionId) ?? models.getModel(model.provider, visionId);
+  if (vision) return vision;
+  return { ...configuredOpenRouterModel(visionId), input: ["text", "image"] };
 }
 
 function configuredOpenRouterModel(id: string): Model<"openai-completions"> {
