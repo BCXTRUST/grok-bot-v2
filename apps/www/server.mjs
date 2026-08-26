@@ -6,7 +6,11 @@ import { fileURLToPath } from "node:url";
 
 const dist = resolve(fileURLToPath(new URL("./dist", import.meta.url)));
 const host = process.env.HOST ?? "0.0.0.0";
-const port = Number(process.env.PORT ?? 4321);
+const ports = [...new Set(
+  [process.env.PORT, "4321"]
+    .map((value) => Number(value))
+    .filter((value) => Number.isInteger(value) && value > 0 && value < 65536),
+)];
 
 const TYPES = {
   ".css": "text/css; charset=utf-8",
@@ -51,8 +55,9 @@ async function resolveFile(pathname) {
   return null;
 }
 
-const server = createServer(async (req, res) => {
-  if (req.method === "GET" && req.url === "/health") {
+async function handle(req, res) {
+  const pathname = new URL(req.url ?? "/", "http://autoseo.run").pathname;
+  if ((req.method === "GET" || req.method === "HEAD") && pathname === "/health") {
     res.writeHead(200, { "content-type": "text/plain" });
     res.end("ok");
     return;
@@ -64,7 +69,6 @@ const server = createServer(async (req, res) => {
     return;
   }
 
-  const pathname = new URL(req.url ?? "/", "http://autoseo.run").pathname;
   const file = (await resolveFile(pathname)) ?? (await resolveFile("/404"));
   if (!file) {
     res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
@@ -82,9 +86,14 @@ const server = createServer(async (req, res) => {
     return;
   }
   createReadStream(file).pipe(res);
-});
+}
 
 await access(join(dist, "index.html"));
-server.listen(port, host, () => {
-  process.stdout.write(`AutoSEO.run listening on ${host}:${port}\n`);
-});
+if (ports.length === 0) {
+  throw new Error("No valid PORT to bind");
+}
+for (const port of ports) {
+  createServer(handle).listen(port, host, () => {
+    process.stdout.write(`AutoSEO.run listening on ${host}:${port}\n`);
+  });
+}
