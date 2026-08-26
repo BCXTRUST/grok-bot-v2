@@ -1,45 +1,31 @@
 ---
-import { DOCS_URL, GITHUB_URL } from "../site";
-import Button from "./Button.astro";
 import Logo from "./Logo.astro";
 
-type Props = {
-  starsLabel: string;
-};
-
-const { starsLabel } = Astro.props;
-
 const NAV_LINKS = [
-  { href: "/#demo", label: "Product" },
-  { href: "/#roster", label: "Bots" },
-  { href: "/#selfhost", label: "Self-host" },
-  { href: "/#open-source", label: "Open source" },
-  { href: DOCS_URL, label: "Docs", external: true },
+  { href: "/#pain", label: "The desk" },
+  { href: "/#work", label: "How it works" },
+  { href: "/#match", label: "Who we take" },
+  { href: "/apply/", label: "Apply" },
 ];
-
-const externalAttrs = { target: "_blank", rel: "noreferrer" };
 ---
 
 <header class="site-header">
   <div class="site-header__left">
     <Logo />
     <nav class="site-nav" aria-label="Primary">
-      {
-        NAV_LINKS.map((link) => (
-          <a href={link.href} {...(link.external ? externalAttrs : {})}>
-            {link.label}
-          </a>
-        ))
-      }
+      {NAV_LINKS.map((link) => (
+        <a href={link.href}>{link.label}</a>
+      ))}
     </nav>
   </div>
   <div class="site-header__right">
-    <a class="star-pill" href={GITHUB_URL} target="_blank" rel="noreferrer">
-      <span aria-hidden="true">★</span>
-      <span>{starsLabel}</span>
-    </a>
     <div class="site-header__cta">
-      <Button href={GITHUB_URL} size="sm" external>View on GitHub</Button>
+      <button class="button button--secondary button--small" type="button" data-get-started-open data-apply-intent="call">
+        Book a fit call
+      </button>
+      <button class="button button--primary button--small" type="button" data-get-started-open data-apply-intent="apply">
+        Apply
+      </button>
     </div>
     <details class="site-menu" data-site-menu>
       <summary class="site-menu__toggle" aria-label="Menu">
@@ -51,13 +37,12 @@ const externalAttrs = { target: "_blank", rel: "noreferrer" };
         </svg>
       </summary>
       <nav class="site-menu__panel" aria-label="Site">
-        {
-          NAV_LINKS.map((link) => (
-            <a href={link.href} {...(link.external ? externalAttrs : {})}>
-              {link.label}
-            </a>
-          ))
-        }
+        {NAV_LINKS.map((link) => (
+          <a href={link.href}>{link.label}</a>
+        ))}
+        <button class="button button--primary button--small" type="button" data-get-started-open data-apply-intent="apply">
+          Apply
+        </button>
       </nav>
     </details>
   </div>
@@ -68,7 +53,7 @@ const externalAttrs = { target: "_blank", rel: "noreferrer" };
 
   if (menu) {
     menu.addEventListener("click", (event) => {
-      if ((event.target as HTMLElement).closest("a")) menu.open = false;
+      if ((event.target as HTMLElement).closest("a, button")) menu.open = false;
     });
 
     document.addEventListener("click", (event) => {

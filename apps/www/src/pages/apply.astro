@@ -1,0 +1,25 @@
+---
+import ApplyForm from "../components/ApplyForm.astro";
+import Footer from "../components/Footer.astro";
+import Header from "../components/Header.astro";
+import BaseLayout from "../layouts/BaseLayout.astro";
+---
+
+<BaseLayout
+  title="Apply · AutoSEO.run"
+  description="Apply for AutoSEO.run early access. For SEO agencies and freelance link builders. We take a fit call only if it looks like a match."
+>
+  <div class="container">
+    <Header />
+    <main id="main" class="apply-page">
+      <p class="eyebrow">Early access</p>
+      <h1>Tell us the desk. We will tell you if we belong on it.</h1>
+      <p class="lead lead--left">
+        This is an application, not a checkout. If you asked for a call, we send a slot only after we
+        read this and think we can help.
+      </p>
+      <ApplyForm idPrefix="page-apply" />
+    </main>
+    <Footer />
+  </div>
+</BaseLayout>

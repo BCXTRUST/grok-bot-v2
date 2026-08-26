@@ -1,12 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
-  <title id="title">Rakazo mark</title>
-  <defs>
-    <linearGradient id="blue" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#2965EC" />
-      <stop offset="1" stop-color="#5C89F8" />
-    </linearGradient>
-  </defs>
-  <rect width="512" height="512" rx="148" fill="url(#blue)" />
-  <rect x="157" y="196" width="62" height="120" rx="31" fill="#F2F2F0" />
-  <rect x="293" y="196" width="62" height="120" rx="31" fill="#F2F2F0" />
+  <title id="title">AutoSEO.run</title>
+  <rect width="512" height="512" rx="128" fill="#1a1612"/>
+  <path d="M144 352V160h99c53 0 85 27 85 69 0 27-14 48-38 58L352 352h-51l-42-62h-59v62h-56Zm48-106h48c26 0 40-12 40-30s-14-30-40-30h-48v60Z" fill="#f4ead8"/>
+  <circle cx="384" cy="368" r="32" fill="#c9844a"/>
 </svg>

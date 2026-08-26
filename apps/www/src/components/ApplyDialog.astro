@@ -1,0 +1,89 @@
+---
+import ApplyForm from "./ApplyForm.astro";
+---
+
+<dialog class="get-started-dialog" data-get-started-dialog aria-labelledby="get-started-title">
+  <div class="get-started-dialog__panel apply-dialog__panel">
+    <button
+      class="get-started-dialog__close"
+      type="button"
+      data-get-started-close
+      aria-label="Close application"
+    >
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="m6 6 12 12M18 6 6 18"></path>
+      </svg>
+    </button>
+
+    <div data-get-started-signup>
+      <div class="eyebrow">Early access</div>
+      <h2 id="get-started-title">Tell us the desk</h2>
+      <p class="get-started-dialog__copy">
+        We only take operators we can actually help. Application first. A fit call only if it looks like a match.
+      </p>
+      <ApplyForm idPrefix="dialog-apply" />
+    </div>
+
+    <div class="get-started-dialog__success" data-get-started-success hidden>
+      <div class="get-started-dialog__success-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24">
+          <path d="m5 12 4 4L19 6"></path>
+        </svg>
+      </div>
+      <h2 id="get-started-success-title" tabindex="-1" data-get-started-success-title>Application in.</h2>
+      <p class="get-started-dialog__copy" data-apply-success-copy>
+        We read it. If you are a match, you get a reply and — when you asked for it — a 20-minute call slot.
+      </p>
+      <div class="get-started-dialog__actions">
+        <button class="button button--primary" type="button" data-get-started-close>Done</button>
+      </div>
+    </div>
+  </div>
+</dialog>
+
+<script>
+  const dialog = document.querySelector<HTMLDialogElement>("[data-get-started-dialog]");
+  const openers = document.querySelectorAll<HTMLButtonElement>("[data-get-started-open]");
+  const closeButtons = dialog?.querySelectorAll<HTMLButtonElement>("[data-get-started-close]");
+  const signup = dialog?.querySelector<HTMLElement>("[data-get-started-signup]");
+  const success = dialog?.querySelector<HTMLElement>("[data-get-started-success]");
+  const successTitle = dialog?.querySelector<HTMLElement>("[data-get-started-success-title]");
+  const successCopy = dialog?.querySelector<HTMLElement>("[data-apply-success-copy]");
+  const firstField = dialog?.querySelector<HTMLInputElement>("input[name='name']");
+
+  openers.forEach((opener) => {
+    opener.addEventListener("click", () => {
+      if (!dialog || dialog.open) return;
+      const intent = opener.dataset.applyIntent;
+      if (intent === "apply" || intent === "call") {
+        const radio = dialog.querySelector<HTMLInputElement>(`input[name="intent"][value="${intent}"]`);
+        if (radio) radio.checked = true;
+      }
+      dialog.showModal();
+      window.requestAnimationFrame(() => firstField?.focus());
+    });
+  });
+
+  closeButtons?.forEach((button) => {
+    button.addEventListener("click", () => dialog?.close());
+  });
+
+  dialog?.addEventListener("click", (event) => {
+    if (event.target === dialog) dialog.close();
+  });
+
+  dialog?.addEventListener("waitlist:joined", (event) => {
+    if (!signup || !success) return;
+    const intent = (event as CustomEvent<{ intent?: string }>).detail?.intent;
+    if (successCopy) {
+      successCopy.textContent =
+        intent === "call"
+          ? "If you are a match, we send a 20-minute fit-call slot. No pitch deck. We look at how you work."
+          : "We read every application. If you are a match for early access, you get a reply.";
+    }
+    signup.hidden = true;
+    success.hidden = false;
+    dialog.setAttribute("aria-labelledby", "get-started-success-title");
+    successTitle?.focus();
+  });
+</script>
