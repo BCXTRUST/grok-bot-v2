@@ -906,7 +906,11 @@ function sanitizeSensitiveText(message: string) {
 }
 
 function sanitizeError(message: string) {
-  return sanitizeSensitiveText(message);
+  const cleaned = sanitizeSensitiveText(message);
+  if (/user not found/i.test(cleaned) && /\b401\b/.test(cleaned)) {
+    return "The model provider rejected this API key (401). OpenRouter management/provisioning keys cannot run chat. Set OPENROUTER_API_KEY to a regular inference key.";
+  }
+  return cleaned;
 }
 
 interface EventQueue {
