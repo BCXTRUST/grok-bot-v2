@@ -6,6 +6,9 @@ WEB_PORT="${WEB_PORT:-5173}"
 METRICS_PORT="${CLOUDFLARED_METRICS_PORT:-20241}"
 ORIGIN="${TUNNEL_ORIGIN:-http://127.0.0.1:${WEB_PORT}}"
 LOG="${CLOUDFLARED_LOG:-/tmp/rakazo-cloudflared.log}"
+# QUIC to Cloudflare often idles out in this VM; the hostname then goes
+# NXDOMAIN while cloudflared is still running. HTTP/2 stays connected.
+PROTOCOL="${CLOUDFLARED_PROTOCOL:-http2}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
 if ! command -v cloudflared >/dev/null 2>&1; then
@@ -17,7 +20,8 @@ pkill -f "cloudflared tunnel --url ${ORIGIN}" >/dev/null 2>&1 || true
 sleep 0.5
 
 : >"$LOG"
-nohup cloudflared tunnel --url "$ORIGIN" --metrics "127.0.0.1:${METRICS_PORT}" --no-autoupdate \
+nohup cloudflared tunnel --url "$ORIGIN" --protocol "$PROTOCOL" \
+  --metrics "127.0.0.1:${METRICS_PORT}" --no-autoupdate \
   >>"$LOG" 2>&1 &
 echo $! > /tmp/rakazo-cloudflared.pid
 
@@ -65,6 +69,7 @@ if [[ "$ready_ok" -eq 0 ]]; then
 fi
 
 echo "$url"
+echo "$url" > "${RAKAZO_PUBLIC_URL_FILE:-/tmp/rakazo-public-url}"
 
 if [[ -f "$ROOT/.env" ]]; then
   python3 - "$ROOT/.env" "$url" <<'PY'
