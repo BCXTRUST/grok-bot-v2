@@ -784,6 +784,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
         let toolNameStreak: ToolNameStreak = { name: undefined, count: 0 };
         let lastComputerFrameId: string | undefined;
         let terminalCheckpointComplete = false;
+        let liveDesktopTakeover = false;
         let approvalPausePending = false;
         const progressRedactor = createStreamingRedactor(runSecrets);
         const scripted = deps.runtime.describe().capabilities.scripted;
@@ -1760,6 +1761,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
               });
               return;
             } else if (event.type === "takeover") {
+              liveDesktopTakeover = true;
+              terminalCheckpointComplete = true;
               if (!(await renewRunLease(deps, runId, workerId, fence))) return;
               const safeReason = redactSecrets(event.reason, runSecrets);
               if (assembled.trim()) {
@@ -1915,7 +1918,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             }
           }
 
-          if (approvalPausePending) return;
+          if (approvalPausePending || liveDesktopTakeover) return;
           pendingProgress += progressRedactor.finish();
           await flushProgress();
 
@@ -2013,7 +2016,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             console.error("history.compact enqueue failed", error);
           }
         } catch (error) {
-          if (!terminalCheckpointComplete) {
+          if (!terminalCheckpointComplete && !liveDesktopTakeover) {
             await checkpointAndRecordComputerWorkspace(
               deps,
               storedComputer,
@@ -2021,6 +2024,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               context,
             ).catch(() => undefined);
           }
+          if (liveDesktopTakeover) return;
           const message = redactSecrets(
             error instanceof Error ? error.message : String(error),
             runSecrets,
