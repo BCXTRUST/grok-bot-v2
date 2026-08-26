@@ -11,9 +11,13 @@ use_node
 corepack enable >/dev/null 2>&1 || true
 
 # System packages for the Dockerized product path (Postgres + agent computers).
-if ! command -v docker >/dev/null 2>&1 || ! command -v docker-compose-v2 >/dev/null 2>&1; then
+# fuse3 ships an /etc/fuse.conf that conflicts with the base image's copy; the
+# confdef/confold options answer the conffile prompt non-interactively so the
+# install does not hang or abort during unattended environment builds.
+if ! command -v docker >/dev/null 2>&1 || [ ! -x /usr/libexec/docker/cli-plugins/docker-compose ]; then
   sudo apt-get update -qq
   sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+    -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold \
     --no-install-recommends docker.io docker-compose-v2 fuse-overlayfs
 fi
 
