@@ -84,6 +84,11 @@ export const E2B_BROWSER_APPS = [
   "chromium",
 ] as const;
 
+function isAlreadyRunningStreamError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  return /already running/i.test(message);
+}
+
 function e2bStreamAuthKey(desktop: Sandbox): string | undefined {
   try {
     return desktop.stream.getAuthKey();
@@ -244,9 +249,24 @@ export class E2BSandboxProvider implements SandboxProvider {
         }),
       ]);
     } catch (error) {
-      // Reconnected SDK clients forget stream.url even when noVNC is already up.
-      // A start timeout must not blank the pane if the public desktop host exists.
-      if (!e2bHostVncUrl(desktop, 6080) && !e2bPublicStreamUrl(desktop, 6080, true)) throw error;
+      if (isAlreadyRunningStreamError(error) && !e2bStreamAuthKey(desktop)) {
+        // Leftover x11vnc from a previous API process still requires a VNC password
+        // this client does not know, which is the noVNC Credentials form.
+        await this.clearLegacyVnc(desktop);
+        try {
+          await desktop.stream.start({ requireAuth: false });
+        } catch (retryError) {
+          if (
+            !isAlreadyRunningStreamError(retryError) &&
+            !e2bHostVncUrl(desktop, 6080) &&
+            !e2bPublicStreamUrl(desktop, 6080, true)
+          ) {
+            throw retryError;
+          }
+        }
+      } else if (!e2bHostVncUrl(desktop, 6080) && !e2bPublicStreamUrl(desktop, 6080, true)) {
+        throw error;
+      }
     }
     try {
       await desktop.commands.run("x11vnc -R viewonly", { timeoutMs: 2_500 });
@@ -259,6 +279,15 @@ export class E2BSandboxProvider implements SandboxProvider {
       throw new Error("screen stream stopped during computer teardown");
     }
     this.streamReady.add(desktop.sandboxId);
+  }
+
+  private async clearLegacyVnc(desktop: Sandbox) {
+    await desktop.stream.stop().catch(() => undefined);
+    await desktop.commands
+      .run("bash -lc 'pkill -x x11vnc || true; pkill -f /opt/noVNC/utils/novnc_proxy || true; exit 0'", {
+        timeoutMs: 5_000,
+      })
+      .catch(() => undefined);
   }
 
   async provision(

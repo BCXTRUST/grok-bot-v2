@@ -405,18 +405,31 @@ describe("E2B computer backend", () => {
         }),
       },
       stream: {
-        start: vi.fn(async () => {
-          throw new Error("Stream is already running");
-        }),
+        start: vi.fn(),
         stop: vi.fn(async () => undefined),
-        getAuthKey: () => {
-          throw new Error("Server is not running");
-        },
-        getUrl: () => {
-          throw new Error("Server is not running");
-        },
+        getAuthKey: vi.fn(),
+        getUrl: vi.fn(),
       },
     } as unknown as Sandbox;
+    let vncRestarted = false;
+    reconnectDesktop.stream.start.mockImplementation(async () => {
+      if (!vncRestarted) throw new Error("Stream is already running");
+    });
+    reconnectDesktop.stream.getAuthKey.mockImplementation(() => {
+      if (!vncRestarted) throw new Error("Server is not running");
+      throw new Error("Unable to retrieve stream auth key, check if requireAuth is enabled");
+    });
+    reconnectDesktop.stream.getUrl.mockImplementation(() => {
+      if (!vncRestarted) throw new Error("Server is not running");
+      return "https://6080-desktop.test/vnc.html";
+    });
+    reconnectDesktop.commands.run.mockImplementation(async (value: string) => {
+      if (String(value).includes("pkill -x x11vnc")) vncRestarted = true;
+      if (String(value).includes("RAKAZO_SCREEN_INDEX=")) {
+        return { stdout: "RAKAZO_SCREEN_INDEX=0\n", stderr: "", exitCode: 0 };
+      }
+      return { stdout: "", stderr: "", exitCode: 0 };
+    });
     const reconnectProvider = new E2BSandboxProvider("test-key", {
       create: vi.fn(async () => reconnectDesktop),
       connect: vi.fn(async () => reconnectDesktop),
@@ -432,6 +445,9 @@ describe("E2B computer backend", () => {
       context,
     );
     expect(reconnectScreen.url).toContain("https://6080-desktop.test/vnc.html");
+    expect(reconnectScreen.url).not.toContain("password=");
+    expect(reconnectDesktop.stream.start).toHaveBeenCalledTimes(2);
+    expect(reconnectDesktop.stream.stop).toHaveBeenCalled();
 
     const control = await provider.connectScreen(
       computer,
