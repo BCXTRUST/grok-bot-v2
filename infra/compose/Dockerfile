@@ -11,4 +11,4 @@ ENV NODE_ENV=production
 ENV GIT_SHA=$GIT_SHA
 EXPOSE 3100 5173 7091
 USER node
-CMD ["pnpm", "--filter", "@rakazo/api", "start"]
+CMD ["bash", "/app/infra/compose/railway-start.sh"]
