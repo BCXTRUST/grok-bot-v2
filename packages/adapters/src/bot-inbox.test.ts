@@ -123,17 +123,29 @@ describe("AgentMail inbox adapter", () => {
     });
   });
 
-  it("does not retry username changes when the AgentMail inbox limit is reached", async () => {
+  it("reuses an existing natural address when create hits the inbox limit", async () => {
     const created = vi.fn(async () => {
       throw { body: { code: "limit_exceeded" } };
     });
+    const get = vi.fn(async () => ({
+      inboxId: "roman.s@faircroft.us",
+      email: "roman.s@faircroft.us",
+    }));
     const provider = new AgentMailInboxProvider(
-      { inboxes: { create: created, get: async () => ({}), delete: async () => undefined, messages: {} as never } },
+      {
+        inboxes: {
+          create: created,
+          get,
+          messages: {} as never,
+        },
+      },
       "faircroft.us",
     );
-    await expect(
-      provider.provision({ botId: "bot-2", name: "Overflow", workspaceId: "ws" }, context),
-    ).rejects.toThrow(/inbox limit reached/i);
+    const inbox = await provider.provision(
+      { botId: "bot-new", name: "Roman Schreiber", workspaceId: "ws" },
+      context,
+    );
+    expect(inbox.address).toBe("roman.s@faircroft.us");
     expect(created).toHaveBeenCalledTimes(1);
   });
 
@@ -161,6 +173,29 @@ describe("AgentMail inbox adapter", () => {
     );
     expect(inbox.address).toBe("roman.s@faircroft.us");
     expect(get).toHaveBeenCalledWith("roman.s@faircroft.us");
+  });
+
+  it("does not retry username changes when the AgentMail inbox limit is reached and no inbox exists", async () => {
+    const created = vi.fn(async () => {
+      throw { body: { code: "limit_exceeded" } };
+    });
+    const provider = new AgentMailInboxProvider(
+      {
+        inboxes: {
+          create: created,
+          get: async () => {
+            throw new Error("missing");
+          },
+          delete: async () => undefined,
+          messages: {} as never,
+        },
+      },
+      "faircroft.us",
+    );
+    await expect(
+      provider.provision({ botId: "bot-2", name: "Overflow", workspaceId: "ws" }, context),
+    ).rejects.toThrow(/inbox limit reached/i);
+    expect(created).toHaveBeenCalledTimes(1);
   });
 
   it("replaces an idempotent machine address with firstname.last-initial", async () => {
