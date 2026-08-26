@@ -272,7 +272,8 @@ describe("E2B computer backend", () => {
     expect(screen.url).toContain("password=screen-key");
     expect(screen.url).toContain("autoconnect=true");
     expect(screen.url).toContain("reconnect=true");
-    expect(desktop.stream.start).toHaveBeenCalledWith({ requireAuth: true });
+    expect(screen.url).toContain("path=websockify");
+    expect(desktop.stream.start).toHaveBeenCalledWith({ requireAuth: false });
     expect(desktop.stream.start).toHaveBeenCalledTimes(1);
     expect(getStreamUrl).toHaveBeenCalledWith(
       expect.objectContaining({ viewOnly: true, authKey: "screen-key" }),

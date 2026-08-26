@@ -146,6 +146,7 @@ function e2bPrimaryUrl(desktop: Sandbox, layout: ExtraDisplayLayout, interactive
   url.searchParams.set("reconnect", "true");
   url.searchParams.set("resize", "scale");
   url.searchParams.set("view_only", interactive ? "false" : "true");
+  if (!url.searchParams.get("path")) url.searchParams.set("path", "websockify");
   const password = url.searchParams.get("password") || authKey;
   if (password) {
     url.searchParams.set("password", password);
@@ -237,7 +238,7 @@ export class E2BSandboxProvider implements SandboxProvider {
   private async initializeStream(desktop: Sandbox) {
     try {
       await Promise.race([
-        desktop.stream.start({ requireAuth: true }),
+        desktop.stream.start({ requireAuth: false }),
         new Promise<never>((_, reject) => {
           setTimeout(() => reject(new Error("stream start timed out")), 8_000);
         }),

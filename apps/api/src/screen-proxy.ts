@@ -84,8 +84,8 @@ export function novncViewerSearch(parsed: URL): string {
   const params = new URLSearchParams();
   params.set("autoconnect", parsed.searchParams.get("autoconnect") || "true");
   params.set("reconnect", parsed.searchParams.get("reconnect") || "true");
-  const resize = parsed.searchParams.get("resize");
-  if (resize) params.set("resize", resize);
+  params.set("resize", parsed.searchParams.get("resize") || "scale");
+  params.set("path", parsed.searchParams.get("path") || "websockify");
   const viewOnly = parsed.searchParams.get("view_only");
   if (viewOnly) params.set("view_only", viewOnly);
   const password = parsed.searchParams.get("password") || parsed.searchParams.get("authKey");
