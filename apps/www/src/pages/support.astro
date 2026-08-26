@@ -1,35 +1,24 @@
 ---
 import Footer from "../components/Footer.astro";
 import Header from "../components/Header.astro";
-import { fetchGithubStars, formatStarCount } from "../github";
 import BaseLayout from "../layouts/BaseLayout.astro";
-import { DOCS_URL, GITHUB_URL } from "../site";
-
-const stars = await fetchGithubStars();
-const starsLabel = stars === null ? "Star" : formatStarCount(stars);
+import { CONTACT_EMAIL } from "../site";
 ---
 
-<BaseLayout title="Support · Rakazo" description="Get help with the Rakazo app and self-hosted Rakazo.">
+<BaseLayout title="Support · AutoSEO.run" description="Get help with AutoSEO.run early access and the hosted desk.">
   <div class="container">
-    <Header starsLabel={starsLabel} />
+    <Header />
     <main id="main" class="privacy-copy">
-      <h1>Rakazo support</h1>
+      <h1>Support</h1>
       <p>
-        For help with the Rakazo mobile app or a hosted Rakazo account, email{" "}
-        <a href="mailto:hello@rakazo.com">hello@rakazo.com</a>. Include the email address on your
-        account, what you expected to happen, and any error message you saw. Do not send passwords, API keys,
-        access tokens, or other secrets.
+        For early access and the hosted product, email{" "}
+        <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>. Include the email you applied with and what
+        you expected. Do not send passwords, API keys, or mailbox credentials.
       </p>
-      <h2>Self-hosted Rakazo</h2>
+      <h2>Applications</h2>
       <p>
-        Start with the <a href={DOCS_URL}>self-hosting guide</a>. For reproducible bugs or feature requests,
-        open an issue in the <a href={`${GITHUB_URL}/issues`}>Rakazo GitHub repository</a>.
-      </p>
-      <h2>Account deletion</h2>
-      <p>
-        In the mobile app, open <strong>Account</strong>, enter your current password under{" "}
-        <strong>Delete account</strong>, and confirm. This permanently deletes the hosted account and its
-        associated personal workspace data.
+        We review every application. If you have not heard back, it is either still in review or not a match —
+        we do not drip “you’re on the list” mail to people we cannot help.
       </p>
     </main>
     <Footer />

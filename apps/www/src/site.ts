@@ -1,12 +1,17 @@
-export const SITE_NAME = "Rakazo";
-export const SITE_URL = "https://rakazo.com";
+export const SITE_NAME = "AutoSEO.run";
+export const SITE_URL = "https://autoseo.run";
 export const SITE_DESCRIPTION =
-  "Rakazo is an open source Grok Bot alternative for persistent AI teammates that do real work. Your keys, your model, your machine.";
+  "Early access for SEO agencies and freelance link builders. An operator that prospects, drafts outreach, and tracks placements — you approve what goes out.";
 
-export const GITHUB_URL = "https://github.com/elie222/rakazo";
-export const GITHUB_API_REPO = "https://api.github.com/repos/elie222/rakazo";
-export const DOCS_URL = "https://github.com/elie222/rakazo/blob/main/docs/self-host.md";
-export const SETUP_PROMPT_URL = "https://github.com/elie222/rakazo/blob/main/SETUP_PROMPT.md";
-export const CHANGELOG_URL = "https://github.com/elie222/rakazo/releases";
-export const INBOX_ZERO_URL =
-  "https://www.getinboxzero.com/?utm_source=rakazo&utm_medium=website&utm_campaign=footer";
+export const APP_URL = "https://app.autoseo.run";
+export const CONTACT_EMAIL = "hello@autoseo.run";
+export const BOOKING_MAILTO = `mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent("AutoSEO.run fit call")}&body=${encodeURIComponent(
+  "Name:\nCompany / desk:\nSite:\nRole (agency / freelance / in-house):\nMonthly placement target:\nWhat you want to replace:\n",
+)}`;
+
+export const GITHUB_URL = "https://github.com/BCXTRUST/grok-bot-v2";
+export const GITHUB_API_REPO = "https://api.github.com/repos/BCXTRUST/grok-bot-v2";
+export const DOCS_URL = "/support/";
+export const SETUP_PROMPT_URL = "/apply/";
+export const CHANGELOG_URL = "/";
+export const INBOX_ZERO_URL = "https://autoseo.run";

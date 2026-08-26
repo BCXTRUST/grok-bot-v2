@@ -1,0 +1,170 @@
+---
+type Props = {
+  idPrefix?: string;
+  defaultIntent?: "apply" | "call";
+};
+
+const { idPrefix = "apply", defaultIntent = "apply" } = Astro.props;
+---
+
+<form class="apply-form" data-apply-form data-endpoint="/api/waitlist" novalidate>
+  <div class="apply-form__grid">
+    <label>
+      <span>Name</span>
+      <input id={`${idPrefix}-name`} name="name" type="text" autocomplete="name" maxlength="120" required />
+    </label>
+    <label>
+      <span>Work email</span>
+      <input
+        id={`${idPrefix}-email`}
+        name="email"
+        type="email"
+        inputmode="email"
+        autocomplete="email"
+        autocapitalize="none"
+        spellcheck="false"
+        maxlength="254"
+        required
+      />
+    </label>
+    <label>
+      <span>Agency or desk</span>
+      <input id={`${idPrefix}-company`} name="company" type="text" autocomplete="organization" maxlength="160" required />
+    </label>
+    <label>
+      <span>Site</span>
+      <input id={`${idPrefix}-website`} name="website" type="text" inputmode="url" autocomplete="url" maxlength="200" placeholder="https://" />
+    </label>
+    <label>
+      <span>You are</span>
+      <select id={`${idPrefix}-role`} name="role" required>
+        <option value="" selected disabled>Select</option>
+        <option value="agency">Agency owner / lead</option>
+        <option value="freelancer">Freelance link builder</option>
+        <option value="in-house">In-house SEO</option>
+        <option value="other">Other operator</option>
+      </select>
+    </label>
+    <label>
+      <span>Placements you need to land monthly</span>
+      <select id={`${idPrefix}-volume`} name="volume" required>
+        <option value="" selected disabled>Select</option>
+        <option value="under-5">Under 5</option>
+        <option value="5-15">5–15</option>
+        <option value="16-40">16–40</option>
+        <option value="40-plus">40+</option>
+      </select>
+    </label>
+    <label class="apply-form__wide">
+      <span>What you want to replace</span>
+      <select id={`${idPrefix}-setup`} name="currentSetup" required>
+        <option value="" selected disabled>Select</option>
+        <option value="vendor">A vendor / white-label partner</option>
+        <option value="hire">An in-house or freelance hire</option>
+        <option value="myself">Myself doing the grind</option>
+        <option value="marketplace">Guest-post marketplaces</option>
+        <option value="mix">A mix of the above</option>
+      </select>
+    </label>
+    <fieldset class="apply-form__wide apply-form__intent">
+      <legend>Next step if we match</legend>
+      <label class="apply-form__choice">
+        <input type="radio" name="intent" value="apply" checked={defaultIntent === "apply"} />
+        <span>Apply for early access</span>
+      </label>
+      <label class="apply-form__choice">
+        <input type="radio" name="intent" value="call" checked={defaultIntent === "call"} />
+        <span>Book a 20-minute fit call</span>
+      </label>
+    </fieldset>
+    <label class="apply-form__wide">
+      <span>The pain in one paragraph</span>
+      <textarea
+        id={`${idPrefix}-note`}
+        name="note"
+        rows="4"
+        maxlength="2000"
+        placeholder="Who you serve, what breaks at your current volume, what a good link means on your desk."
+        required
+      ></textarea>
+    </label>
+  </div>
+  <div class="waitlist-form__trap" hidden>
+    <label>
+      Contact note
+      <input name="contact-note" type="text" autocomplete="off" tabindex="-1" />
+    </label>
+  </div>
+  <div class="apply-form__footer">
+    <button class="button button--primary" type="submit" data-submit-label="Submit application">
+      Submit application
+    </button>
+    <p>We read every application. If it is not a fit, we say so.</p>
+  </div>
+  <p class="apply-form__status" data-apply-status aria-live="polite"></p>
+</form>
+
+<script>
+  document.querySelectorAll<HTMLFormElement>("[data-apply-form]").forEach((form) => {
+    const submit = form.querySelector<HTMLButtonElement>("button[type='submit']");
+    const status = form.querySelector<HTMLElement>("[data-apply-status]");
+    const trap = form.elements.namedItem("contact-note");
+
+    if (!submit || !status || !(trap instanceof HTMLInputElement)) return;
+    if (form.dataset.bound === "true") return;
+    form.dataset.bound = "true";
+
+    const submitLabel = submit.dataset.submitLabel || "Submit application";
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      status.classList.remove("is-error", "is-success");
+      status.textContent = "";
+
+      if (!form.reportValidity()) return;
+
+      const endpoint = form.dataset.endpoint;
+      if (!endpoint) return;
+
+      const data = new FormData(form);
+      submit.disabled = true;
+      submit.textContent = "Sending…";
+
+      try {
+        const response = await fetch(endpoint, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            name: data.get("name"),
+            email: data.get("email"),
+            company: data.get("company"),
+            website: data.get("website"),
+            role: data.get("role"),
+            volume: data.get("volume"),
+            currentSetup: data.get("currentSetup"),
+            intent: data.get("intent"),
+            note: data.get("note"),
+            contactNote: trap.value,
+          }),
+        });
+
+        if (!response.ok) throw new Error("Application failed");
+
+        form.reset();
+        const intent = String(data.get("intent") || "apply");
+        status.textContent =
+          intent === "call"
+            ? "Received. If you are a match, we will send a 20-minute fit-call slot."
+            : "Received. We will reply if you are a match for early access.";
+        status.classList.add("is-success");
+        submit.textContent = "Sent";
+        form.dispatchEvent(new CustomEvent("waitlist:joined", { bubbles: true, detail: { intent } }));
+      } catch {
+        status.textContent = "Couldn’t send. Try again, or email hello@autoseo.run.";
+        status.classList.add("is-error");
+        submit.disabled = false;
+        submit.textContent = submitLabel;
+      }
+    });
+  });
+</script>

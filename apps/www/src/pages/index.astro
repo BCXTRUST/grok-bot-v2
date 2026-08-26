@@ -1,25 +1,14 @@
 ---
-import Button from "../components/Button.astro";
 import Footer from "../components/Footer.astro";
-import GetStartedDialog from "../components/GetStartedDialog.astro";
 import Header from "../components/Header.astro";
-import { ProductDemo } from "../components/ProductDemo";
-import RosterBotAvatar from "../components/RosterBotAvatar.astro";
-import { DEMO_ROSTER } from "../demo";
-import { fetchGithubStars, formatStarCount } from "../github";
+import { OperatorDesk } from "../components/OperatorDesk";
 import BaseLayout from "../layouts/BaseLayout.astro";
 import {
-  DOCS_URL,
-  GITHUB_URL,
-  SETUP_PROMPT_URL,
   SITE_DESCRIPTION,
   SITE_NAME,
   SITE_URL,
 } from "../site";
 
-const stars = await fetchGithubStars();
-const starsLabel = stars === null ? "Star" : formatStarCount(stars);
-const setupAgentPrompt = `Set up Rakazo for me. Follow the setup prompt at ${SETUP_PROMPT_URL}`;
 const structuredData = {
   "@context": "https://schema.org",
   "@graph": [
@@ -35,201 +24,221 @@ const structuredData = {
       "@type": "SoftwareApplication",
       "@id": `${SITE_URL}/#software`,
       name: SITE_NAME,
-      url: `${SITE_URL}/`,
+      url: SITE_URL,
       description: SITE_DESCRIPTION,
       applicationCategory: "BusinessApplication",
-      applicationSubCategory: "AI agent platform",
-      operatingSystem: "Web, macOS, Linux, iOS, Android",
-      isAccessibleForFree: true,
-      codeRepository: GITHUB_URL,
-      license: `${GITHUB_URL}/blob/main/LICENSE`,
+      applicationSubCategory: "SEO and link building operations",
+      operatingSystem: "Web",
       offers: {
         "@type": "Offer",
-        price: "0",
-        priceCurrency: "USD",
+        availability: "https://schema.org/LimitedAvailability",
+        url: `${SITE_URL}/apply/`,
       },
     },
   ],
 };
 ---
 
-<BaseLayout title="Rakazo" description={SITE_DESCRIPTION} {structuredData}>
+<BaseLayout title="AutoSEO.run — for agencies and link builders" description={SITE_DESCRIPTION} {structuredData}>
   <div class="container">
-    <Header starsLabel={starsLabel} />
+    <Header />
 
     <main id="main">
-      <section class="hero">
-        <a class="hero__pill" href="#selfhost">
-          <span class="hero__badge">Apache-2.0</span>
-          <span>Open source alternative to Grok Bot<span class="hero__pill-tail"> — run it on your own machine</span></span>
-        </a>
-        <h1>AI teammates you actually own</h1>
+      <section class="hero hero--desk">
+        <p class="hero__pill">
+          <span class="hero__badge">Early access</span>
+          <span>Application first. Fit call only if we can actually help.</span>
+        </p>
+        <h1>Replace the link builder.<br />Keep the standards.</h1>
         <p class="lead">
-          Give a bot real work. It signs in to your tools, uses them the way you do, and comes back when it
-          needs you. Your keys, your model, your machine.
+          Built for SEO agencies and freelance operators who still have to land placements — without
+          feeding guest-post marketplaces, burning inboxes, or babysitting a junior who learned outreach
+          from a template pack.
         </p>
         <div class="hero__actions">
-          <button class="button button--primary" type="button" data-get-started-open>Get started</button>
-          <Button href={GITHUB_URL} variant="secondary" external>View on GitHub</Button>
-        </div>
-        <div class="hero__agent-setup">
-          <button class="setup-copy" type="button" data-setup-copy={setupAgentPrompt}>
-            <span class="setup-copy__prefix" aria-hidden="true">$</span>
-            <span class="setup-copy__label">Set up with your agent</span>
-            <svg class="setup-copy__icon" viewBox="0 0 24 24" aria-hidden="true">
-              <rect x="8" y="8" width="12" height="12" rx="2"></rect>
-              <path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"></path>
-            </svg>
+          <button class="button button--primary" type="button" data-get-started-open data-apply-intent="apply">
+            Apply for early access
+          </button>
+          <button class="button button--secondary" type="button" data-get-started-open data-apply-intent="call">
+            Book a fit call
           </button>
         </div>
+        <p class="hero__note">Not a DR package. Not unsupervised send. You approve what leaves the desk.</p>
       </section>
 
-      <section id="demo">
-        <ProductDemo client:load />
+      <section id="demo" class="desk-wrap">
+        <OperatorDesk />
       </section>
 
-      <section id="selfhost" class="section">
+      <section id="pain" class="section">
         <div class="section-intro">
-          <div class="eyebrow">Self-hosted</div>
-          <h2 class="section-heading">The computer is yours</h2>
+          <div class="eyebrow">The desk</div>
+          <h2 class="section-heading">You already know this job. You are tired of how it is staffed.</h2>
+        </div>
+        <div class="split-grid">
+          <article class="voice-card">
+            <p class="voice-card__who">Agency owners</p>
+            <h3>The vendor hit the metric. The client still did not move.</h3>
+            <ul>
+              <li>DR 50 on a site with no audience. Rankings ignore it. You still have to explain the report.</li>
+              <li>Twelve campaigns, twelve sheets, Slack asking “is it live yet?”</li>
+              <li>A hire takes months to train, then leaves — or scales by stripping the personalization that made replies happen.</li>
+              <li>Reply rates fall, so volume goes up, so filters trip, so the next campaign is harder than the last.</li>
+            </ul>
+          </article>
+          <article class="voice-card">
+            <p class="voice-card__who">Freelance link builders</p>
+            <h3>You are the strategist and the intern.</h3>
+            <ul>
+              <li>Prospecting, qualification, first-line research, follow-ups, live checks — the grind does not compound with your skill.</li>
+              <li>Template-only outreach sits around 2% replies. One real sentence about the prospect’s last piece is a different business.</li>
+              <li>Inboxes die when you push the same domain harder instead of adding capacity the right way.</li>
+              <li>You cannot take the next retainer without cloning yourself or dumping quality.</li>
+            </ul>
+          </article>
+        </div>
+      </section>
+
+      <section class="section quotes-band">
+          <div class="eyebrow">Notes from operator conversations</div>
+        <div class="quote-grid">
+          <blockquote>
+            <p>“They sent twenty placements. Traffic did not move. The anchors looked like a spreadsheet.”</p>
+            <cite>Composite · agency lead</cite>
+          </blockquote>
+          <blockquote>
+            <p>“I can land the links. I cannot research 80 prospects and still write like a human by Thursday.”</p>
+            <cite>Composite · independent operator</cite>
+          </blockquote>
+          <blockquote>
+            <p>“Marketplace sites look fine in Ahrefs until you open them. Then you are buying someone else’s footprint.”</p>
+            <cite>Composite · white-label delivery</cite>
+          </blockquote>
+        </div>
+      </section>
+
+      <section id="work" class="section">
+        <div class="section-intro">
+          <div class="eyebrow">How it works</div>
+          <h2 class="section-heading">An operator with a browser, an inbox, and your rules.</h2>
           <p class="section-copy">
-            Every bot gets a sandboxed browser and shell — running in your Docker, in your account, behind your
-            firewall. Sessions and credentials never leave it.
+            AutoSEO is not a catalog of sites for sale. It is a desk that does the work a strong junior
+            should: find, qualify, draft, follow, and log — then stop when judgment is required.
           </p>
         </div>
-        <div class="card-grid-3">
-          <article class="feature-card">
-            <h3>Any model, your key</h3>
-            <p>Point a bot at Claude, GPT, Grok, or a local model. Swap per bot — the cheap one triages, the smart one writes.</p>
+        <ol class="steps">
+          <li>
+            <span>01</span>
+            <h3>Brief the bar</h3>
+            <p>Client, niche, what a good link looks like, what is banned. Marketplace inventory stays off the table if you say so.</p>
+          </li>
+          <li>
+            <span>02</span>
+            <h3>It works the web</h3>
+            <p>Real browser. Real mailbox. Prospects get researched against live pages — not a first-name merge field.</p>
+          </li>
+          <li>
+            <span>03</span>
+            <h3>You hold send</h3>
+            <p>Drafts wait. Captcha, 2FA, and anything off-brief come back to you. Nothing unsupervised hits an editor.</p>
+          </li>
+          <li>
+            <span>04</span>
+            <h3>One status, every client</h3>
+            <p>Prospect → qualify → draft → live. The answer to “did it go live?” is on the desk, not in a buried tab.</p>
+          </li>
+        </ol>
+      </section>
+
+      <section class="section">
+        <div class="not-grid">
+          <article>
+            <h2>What this is</h2>
+            <ul>
+              <li>Capacity for operators who already know quality when they see it</li>
+              <li>Prospecting and qualification that can run while you take the client call</li>
+              <li>Outreach drafts with a reason to exist on that site, this week</li>
+              <li>A human gate on every send</li>
+            </ul>
           </article>
-          <article class="feature-card">
-            <h3>Readable routines</h3>
-            <p>Show a bot a workflow once and it saves a routine as plain Markdown you can read, edit, and commit.</p>
-          </article>
-          <article class="feature-card">
-            <h3>Approvals that hold</h3>
-            <p>Set what a bot may do alone and what it must ask about. Every action lands in an audit log you own.</p>
+          <article>
+            <h2>What this is not</h2>
+            <ul>
+              <li>A guest-post marketplace or DA/DR package</li>
+              <li>Reciprocal network links dressed up as editorial</li>
+              <li>Blast-and-pray sequences that train spam filters on your domain</li>
+              <li>A promise that volume alone moves rankings</li>
+            </ul>
           </article>
         </div>
       </section>
 
-      <section id="roster" class="section">
+      <section id="match" class="section">
         <div class="section-intro">
-          <div class="eyebrow">Bot Templates</div>
-          <h2 class="section-heading">Give each bot a job</h2>
+          <div class="eyebrow">Who we take</div>
+          <h2 class="section-heading">Early access is a filter, not a waitlist costume.</h2>
           <p class="section-copy">
-            Start a new bot and it interviews you — a few questions about the work, how you write, and where it
-            lives. Then it gets going.
+            We will not onboard every applicant. If the work is “buy 50 links and send a screenshot,” we are
+            the wrong room.
           </p>
         </div>
-        <div class="card-grid-4">
-          {DEMO_ROSTER.map((bot) => (
-            <article class="roster-card">
-              <RosterBotAvatar color={bot.color} name={bot.name} />
-              <h3>{bot.name}</h3>
-              <p>{bot.desc}</p>
-            </article>
-          ))}
-        </div>
-      </section>
-
-      <section id="open-source" class="section">
-        <div class="section-intro">
-          <div class="eyebrow">Open source</div>
-          <h2 class="section-heading">No pricing page. Just the repo.</h2>
-          <p class="section-copy">
-            Rakazo is Apache-2.0 licensed and runs on your own machine with your own model keys. Nothing is
-            gated, nothing phones home.
-          </p>
-        </div>
-        <div class="comparison-grid">
-          <article class="comparison-card">
-            <h3>Self-host</h3>
-            <p class="comparison-meta">Available today</p>
-            <div class="comparison-list">
-              <div>Docker runner and sandboxed browser</div>
-              <div>Bring your own model keys</div>
-              <div>Routines, memory, and audit log</div>
-              <div>Unlimited bots, no seats, no limits</div>
-              <div>Community support on GitHub</div>
-            </div>
-            <div class="comparison-actions">
-              <Button href={GITHUB_URL} size="sm" external>Star on GitHub</Button>
-              <Button href={DOCS_URL} variant="secondary" size="sm" external>Read the docs</Button>
-            </div>
+        <div class="match-grid">
+          <article class="match-card match-card--yes">
+            <h3>A match</h3>
+            <ul>
+              <li>Agencies with retainers who currently outsource or staff link building</li>
+              <li>Freelance builders landing roughly 5–40 placements a month and hitting a ceiling</li>
+              <li>Desks that already reject thin marketplace inventory</li>
+              <li>People who will review drafts instead of asking for fully dark send</li>
+            </ul>
           </article>
-          <article class="comparison-card comparison-card--muted">
-            <div class="comparison-kicker">
-              <h3>Cloud</h3>
-              <span class="comparison-badge">Coming soon</span>
-            </div>
-            <p class="comparison-meta">Bring your own keys, we run the computers</p>
-            <div class="comparison-list comparison-list--muted">
-              <div>Managed sandboxes, always on</div>
-              <div>Your keys, your model spend</div>
-              <div>Same bots, same routines, no migration</div>
-            </div>
-            <div class="comparison-actions">
-              <button class="button button--primary button--small" type="button" data-get-started-open>
-                Get started
-              </button>
-            </div>
+          <article class="match-card match-card--no">
+            <h3>Not a match</h3>
+            <ul>
+              <li>Shopping $50 “DR40” placements</li>
+              <li>Need it live tomorrow with no brief and no constraints</li>
+              <li>Want us to spam publishers so you do not have to</li>
+              <li>Measuring success only as link count, never as relevance or traffic on the linking page</li>
+            </ul>
           </article>
         </div>
       </section>
 
-      <section class="stats-band">
+      <section id="apply" class="stats-band apply-band">
         <div>
-          <h2>Meet your first bot</h2>
-          <p>Give Rakazo something you have been putting off and let it handle the follow-through.</p>
+          <h2>Apply. If we match, we talk.</h2>
+          <p>
+            Twenty minutes. No deck. We look at how you work, what you refuse to publish, and whether
+            AutoSEO belongs on your desk.
+          </p>
           <div class="cta-actions">
-            <button class="button button--primary" type="button" data-get-started-open>Get started</button>
-            <Button href={GITHUB_URL} variant="secondary" external>View on GitHub</Button>
+            <a class="button button--primary" href="/apply/">Open the application</a>
+            <button class="button button--secondary" type="button" data-get-started-open data-apply-intent="call">
+              Book a fit call
+            </button>
           </div>
         </div>
         <div class="stats-grid">
           <div>
-            <div class="stat-value">{starsLabel}</div>
-            <div class="stat-label">GitHub stars</div>
+            <div class="stat-value">Agencies</div>
+            <div class="stat-label">Replace the vendor, keep the bar</div>
           </div>
           <div>
-            <div class="stat-value">Apache-2.0</div>
-            <div class="stat-label">License</div>
+            <div class="stat-value">Freelancers</div>
+            <div class="stat-label">Scale without cloning the intern</div>
           </div>
           <div>
-            <div class="stat-value">Open source</div>
-            <div class="stat-label">No seats, no gates</div>
+            <div class="stat-value">Approval</div>
+            <div class="stat-label">You still hold send</div>
           </div>
           <div>
-            <div class="stat-value">Self-host</div>
-            <div class="stat-label">Your machine</div>
+            <div class="stat-value">By fit</div>
+            <div class="stat-label">Early access is not open signup</div>
           </div>
         </div>
       </section>
-
-      <GetStartedDialog />
     </main>
 
     <Footer />
   </div>
 </BaseLayout>
-
-<script>
-  const setupCopy = document.querySelector<HTMLButtonElement>("[data-setup-copy]");
-  const setupCopyLabel = setupCopy?.querySelector<HTMLElement>(".setup-copy__label");
-
-  setupCopy?.addEventListener("click", async () => {
-    const prompt = setupCopy.dataset.setupCopy;
-    if (!prompt || !setupCopyLabel) return;
-
-    try {
-      await navigator.clipboard.writeText(prompt);
-      setupCopyLabel.textContent = "Copied for your agent";
-      window.setTimeout(() => {
-        setupCopyLabel.textContent = "Set up with your agent";
-      }, 2400);
-    } catch {
-      setupCopyLabel.textContent = "Copy failed — try again";
-    }
-  });
-</script>

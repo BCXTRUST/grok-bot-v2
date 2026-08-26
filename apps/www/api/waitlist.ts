@@ -4,7 +4,7 @@ import {
   parseWaitlistBody,
 } from "../src/waitlist.js";
 
-const MAX_BODY_BYTES = 2_048;
+const MAX_BODY_BYTES = 8_192;
 
 function json(status: number, body: unknown) {
   return Response.json(body, {
@@ -67,9 +67,9 @@ async function fetchWaitlist(request: Request) {
     return json(400, { error: "Enter a valid email address" });
   }
 
-  const captured = await captureWaitlistSignup(email, process.env).catch(() => false);
+  const captured = await captureWaitlistSignup({ ...body, email }, process.env).catch(() => false);
   if (!captured) {
-    return json(503, { error: "Waitlist is temporarily unavailable" });
+    return json(503, { error: "Applications are temporarily unavailable" });
   }
 
   return json(200, { ok: true });
