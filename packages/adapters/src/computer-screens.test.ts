@@ -114,6 +114,14 @@ describe("Team Computer parallel screens", () => {
     expect(isComputerScreenUnavailable(new Error("cannot allocate another screen"))).toBe(true);
   });
 
+  it("turns a failed type/click command into a tool error object", async () => {
+    await expect(
+      withComputerScreenAvailability(async () => {
+        throw new Error("Command failed with exit status 1: xdotool type");
+      }),
+    ).resolves.toEqual({ error: expect.stringMatching(/exit status 1/) });
+  });
+
   it("lets a second Team bot use graphics after the first run releases the claim", async () => {
     const emulator = new ManagedSandboxEmulator();
     expect(emulator.describe().capabilities.multiScreen).toBe(false);

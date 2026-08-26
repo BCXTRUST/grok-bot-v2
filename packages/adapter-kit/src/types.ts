@@ -314,6 +314,8 @@ export interface AgentRunRequest {
     provider: string;
     id: string;
     apiKey?: string;
+    /** Tried once if `apiKey` is rejected with 401. */
+    fallbackApiKey?: string;
     baseUrl?: string;
     /** In-process OAuth credential from the encrypted store for this run. */
     oauth?: {

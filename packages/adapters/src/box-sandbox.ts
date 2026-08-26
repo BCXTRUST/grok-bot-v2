@@ -974,7 +974,7 @@ function boxActionCommand(action: Exclude<ComputerAction, { kind: "wait" }>): st
     return `DISPLAY=:0 xdotool key ${shellQuote(keys)}`;
   }
   if (action.kind === "clipboard") {
-    return `DISPLAY=:0 xdotool type --delay 1 -- ${shellQuote(action.text)}`;
+    return `DISPLAY=:0 xdotool type --clearmodifiers --delay 12 -- ${shellQuote(action.text)}`;
   }
   if (action.kind === "pointer") {
     const button = action.button === "right" ? "3" : "1";

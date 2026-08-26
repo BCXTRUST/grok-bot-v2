@@ -10,6 +10,7 @@ import type {
   ConnectorTool,
 } from "@rakazo/adapter-kit";
 import { builtinAgentTools, DELEGATION_TOOL_NAMES } from "./builtin-tools.js";
+import { forgetOpenRouterKeyInspection } from "./openrouter-inference-key.js";
 import { PiRuntimeCredentialStore, toOAuthCredential } from "./pi-credentials.js";
 import { registerLocalProvider } from "./pi-local-provider.js";
 import {
@@ -93,11 +94,14 @@ export class PiAgentRuntime implements AgentRuntime {
           return;
         }
 
-        const apiKey = request.model.oauth
+        let apiKey = request.model.oauth
           ? undefined
           : request.model.provider === OPENAI_COMPATIBLE_PROVIDER_ID
             ? request.model.apiKey || "local"
             : (request.model.apiKey ?? process.env.OPENROUTER_API_KEY);
+        const fallbackApiKey = request.model.oauth
+          ? undefined
+          : request.model.fallbackApiKey?.trim() || undefined;
         const toolDefs = request.tools.length ? request.tools : builtinAgentTools;
         model = preferComputerVisionModel(models, model, toolDefs);
         const nestedAgents = new Set<Agent>();
@@ -119,7 +123,7 @@ export class PiAgentRuntime implements AgentRuntime {
         const systemPrompt =
           request.instructions ||
           (toolDefs.some((tool) => tool.name === "computer_observe")
-            ? "You are a Rakazo bot with a real Linux desktop. Follow the latest user message on the live public web. Do not open tutorial or demo sites unless the user asked for a demo. Use computer_observe before clicking when the screen may have changed. Use computer_act for the visible browser, menus, and apps. Open the web with launch_app application=browser or open_path with an https URL — never type firefox in the terminal. Use list_apps to see installed programs. Never write Python, CDP, Playwright, Selenium, or other browser-automation scripts. Use shell and file tools for files and commands only. If a browser is already open, keep using it. The user may take control of the same desktop while you run. Be concise."
+            ? "You are a Rakazo bot with a real Linux desktop. Follow the latest user message on the live public web. Do not open tutorial or demo sites unless the user asked for a demo. Screenshots are returned as images — look at them. Use computer_observe before clicking when the screen may have changed. Use computer_act for the visible browser, menus, and apps. Click a text field before kind=type. Open the web with launch_app application=browser or open_path with an https URL — never type firefox in the terminal. If you see a file manager, application finder, or power menu, close it and launch_app the browser. Never ask the user to open a browser. Never say you cannot observe the desktop — call computer_observe again. Use list_apps to see installed programs. Never write Python, CDP, Playwright, Selenium, or other browser-automation scripts. Use shell and file tools for files and commands only. If a browser is already open, keep using it. The user may take control of the same desktop while you run. Be concise."
             : "You are a Rakazo bot with a persistent sandbox filesystem and shell. Be concise.");
 
         let currentAgent: Agent | undefined;
@@ -145,7 +149,10 @@ export class PiAgentRuntime implements AgentRuntime {
         const runAgent = async (messages: ReturnType<typeof toAgentHistory>) => {
           const agent = new Agent({
             streamFn: (m, ctx, options) => models.streamSimple(m, ctx, options),
-            getApiKey: async () => apiKey,
+            getApiKey: async () => {
+              host.apiKey = apiKey;
+              return apiKey;
+            },
             transformContext: async (next) => pruneComputerScreenshotContext(next),
             initialState: {
               systemPrompt,
@@ -213,6 +220,20 @@ export class PiAgentRuntime implements AgentRuntime {
 
         try {
           let result = await runAgent(history);
+          if (
+            isOpenRouterAuthFailure(result.error) &&
+            fallbackApiKey &&
+            fallbackApiKey !== apiKey
+          ) {
+            if (apiKey) forgetOpenRouterKeyInspection(apiKey);
+            apiKey = fallbackApiKey;
+            host.apiKey = fallbackApiKey;
+            queue.push({
+              type: "progress",
+              text: "The first model key was rejected — retrying with the deployment key…",
+            });
+            result = await runAgent(history);
+          }
           if (
             isThoughtSignatureFailure(result.error) ||
             isUsageAccountingFailure(result.error) ||
@@ -476,6 +497,14 @@ export function toAgentHistory(history: AgentRunRequest["history"], prompt: stri
 
 export function isThoughtSignatureFailure(message: string | undefined): boolean {
   return Boolean(message && /thought[_\s-]*signature/i.test(message));
+}
+
+export function isOpenRouterAuthFailure(message: string | undefined): boolean {
+  if (!message) return false;
+  return (
+    /\b401\b/.test(message) &&
+    /user not found|management\/provisioning|cannot run chat|rejected this api key/i.test(message)
+  );
 }
 
 export function isUsageAccountingFailure(message: string | undefined): boolean {

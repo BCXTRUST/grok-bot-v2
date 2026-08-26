@@ -697,4 +697,49 @@ describe("E2B computer backend", () => {
       /does not support multiple screens/,
     );
   });
+
+  it("falls back to xdotool when desktop.write fails", async () => {
+    const command = vi.fn(async (value: string) => {
+      if (String(value).includes("RAKAZO_SCREEN_INDEX=")) {
+        return { stdout: "RAKAZO_SCREEN_INDEX=0\n", stderr: "", exitCode: 0 };
+      }
+      return { stdout: "", stderr: "", exitCode: 0 };
+    });
+    const desktop = {
+      sandboxId: "e2b-type-fallback",
+      display: ":0",
+      commands: { run: command },
+      write: vi.fn(async () => {
+        throw new Error("Command failed with exit status 1");
+      }),
+      screenshot: vi.fn(async () => new Uint8Array([137, 80, 78, 71])),
+      getScreenSize: vi.fn(async () => ({ width: 1280, height: 800 })),
+      getCursorPosition: vi.fn(async () => ({ x: 1, y: 1 })),
+      getCurrentWindowId: vi.fn(async () => undefined),
+      wait: vi.fn(async () => undefined),
+    } as unknown as Sandbox;
+    const provider = new E2BSandboxProvider("test-key", {
+      create: vi.fn(async () => desktop),
+      connect: vi.fn(async () => desktop),
+      pause: vi.fn(async () => undefined),
+    });
+    const computer = await provider.provision(
+      {
+        botId: "bot-1",
+        homePath: "/unused",
+        providerRef: "e2b-type-fallback",
+        providerKind: "e2b",
+      },
+      context,
+    );
+    await provider.act(
+      computer,
+      { actions: [{ kind: "clipboard", text: "forum-user" }], observe: false },
+      context,
+    );
+    expect(desktop.write).toHaveBeenCalledWith("forum-user");
+    expect(command.mock.calls.some(([value]) => String(value).includes("xdotool type"))).toBe(
+      true,
+    );
+  });
 });

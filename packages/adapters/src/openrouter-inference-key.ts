@@ -9,6 +9,10 @@ export function resetOpenRouterKeyInspectionCache() {
   inspected.clear();
 }
 
+export function forgetOpenRouterKeyInspection(apiKey: string) {
+  inspected.delete(apiKey.trim());
+}
+
 export function looksLikeOpenRouterKey(value: string) {
   return value.trim().startsWith(OPENROUTER_KEY_PREFIX);
 }
@@ -84,9 +88,16 @@ export async function preferRunnableOpenRouterKey(options: {
 }): Promise<string | undefined> {
   const stored = options.storedKey?.trim() || undefined;
   const deployment = options.deploymentKey?.trim() || undefined;
-  if (!stored) return deployment;
-  if (!looksLikeOpenRouterKey(stored) || stored === deployment) return stored;
-  const kind = await inspectOpenRouterKeyKind(stored, options.fetchImpl ?? fetch);
-  if (kind === "management" || kind === "invalid") return deployment ?? stored;
-  return stored;
+  const fetchImpl = options.fetchImpl ?? fetch;
+  const candidates = [...new Set([stored, deployment].filter((key): key is string => Boolean(key)))];
+  if (candidates.length === 0) return undefined;
+
+  let unknown: string | undefined;
+  for (const key of candidates) {
+    if (!looksLikeOpenRouterKey(key)) return key;
+    const kind = await inspectOpenRouterKeyKind(key, fetchImpl);
+    if (kind === "inference") return key;
+    if (kind === "unknown" && !unknown) unknown = key;
+  }
+  return unknown ?? deployment ?? candidates[0];
 }

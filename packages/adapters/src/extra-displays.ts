@@ -259,6 +259,11 @@ export function parseExtraDisplayObservation(output: string): {
   };
 }
 
+/** Type into the focused widget. `--` stops xdotool treating leading dashes as flags. */
+export function xdotoolTypeCommand(display: string, text: string): string {
+  return `DISPLAY=${display} xdotool type --clearmodifiers --delay 12 -- ${shellQuote(text)}`;
+}
+
 export function extraDisplayActionCommand(
   layout: ExtraDisplayLayout,
   action: ComputerAction,
@@ -276,7 +281,7 @@ export function extraDisplayActionCommand(
     return `DISPLAY=${layout.display} xdotool key ${shellQuote(keys)}`;
   }
   if (action.kind === "clipboard") {
-    return `DISPLAY=${layout.display} xdotool type ${shellQuote(action.text)}`;
+    return xdotoolTypeCommand(layout.display, action.text);
   }
   if (action.kind === "pointer") {
     const button = action.button === "right" ? "3" : "1";
@@ -302,7 +307,7 @@ export function extraDisplayInputCommand(layout: ExtraDisplayLayout, input: Comp
     return `DISPLAY=${layout.display} xdotool key ${shellQuote(input.key)}`;
   }
   if (input.kind === "clipboard") {
-    return `DISPLAY=${layout.display} xdotool type ${shellQuote(input.text)}`;
+    return xdotoolTypeCommand(layout.display, input.text);
   }
   const button = input.button === "right" ? "3" : "1";
   if (input.type === "move") {

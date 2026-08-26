@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { describeToolActivity, preferComputerVisionModel } from "./pi-runtime.js";
+import {
+  describeToolActivity,
+  isOpenRouterAuthFailure,
+  preferComputerVisionModel,
+} from "./pi-runtime.js";
 
 describe("describeToolActivity", () => {
   it("summarizes builtin tools with their most informative argument", () => {
@@ -94,6 +98,18 @@ describe("preferComputerVisionModel", () => {
     ]);
     expect(chosen.id).toBe("openai/gpt-4.1-mini");
     expect(chosen.input).toContain("image");
+  });
+});
+
+describe("isOpenRouterAuthFailure", () => {
+  it("detects User not found and management-key 401s", () => {
+    expect(isOpenRouterAuthFailure('401: {"message":"User not found.","code":401}')).toBe(true);
+    expect(
+      isOpenRouterAuthFailure(
+        "The model provider rejected this API key (401). OpenRouter management/provisioning keys cannot run chat.",
+      ),
+    ).toBe(true);
+    expect(isOpenRouterAuthFailure("Provider finish_reason: error")).toBe(false);
   });
 });
 

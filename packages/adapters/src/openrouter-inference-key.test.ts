@@ -64,4 +64,44 @@ describe("openrouter inference keys", () => {
       "invalid",
     );
   });
+
+  it("uses a working deployment key when the stored key is invalid", async () => {
+    const fetchImpl: typeof fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const header = String(
+        init && typeof init === "object" && "headers" in init
+          ? (init.headers as { Authorization?: string }).Authorization
+          : "",
+      );
+      if (header.includes("sk-or-v1-dead")) {
+        return jsonResponse(401, { message: "User not found.", code: 401 });
+      }
+      return jsonResponse(200, { data: { is_management_key: false } });
+    }) as typeof fetch;
+    await expect(
+      preferRunnableOpenRouterKey({
+        storedKey: "sk-or-v1-dead",
+        deploymentKey: "sk-or-v1-inference",
+        fetchImpl,
+      }),
+    ).resolves.toBe("sk-or-v1-inference");
+  });
+
+  it("skips an unknown stored probe for a confirmed inference deployment key", async () => {
+    const fetchImpl: typeof fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const header = String(
+        init && typeof init === "object" && "headers" in init
+          ? (init.headers as { Authorization?: string }).Authorization
+          : "",
+      );
+      if (header.includes("sk-or-v1-stored")) throw new Error("network");
+      return jsonResponse(200, { data: { is_management_key: false } });
+    }) as typeof fetch;
+    await expect(
+      preferRunnableOpenRouterKey({
+        storedKey: "sk-or-v1-stored",
+        deploymentKey: "sk-or-v1-inference",
+        fetchImpl,
+      }),
+    ).resolves.toBe("sk-or-v1-inference");
+  });
 });

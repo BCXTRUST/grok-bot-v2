@@ -5,6 +5,7 @@ import type {
   AgentModelOAuthCredential,
   AgentRunRequest,
   AgentRuntime,
+  AgentToolExecutionResult,
   ArtifactStore,
   ComputerRef,
   ConnectorProvider,
@@ -167,8 +168,10 @@ import type { EncryptedSecretStore } from "./secrets.js";
 import { type TakeoverResumeCheckpoint, takeoverResumeFromRelease } from "./takeover-resume.js";
 import { getActiveTeachingSession, parsePlaybook } from "./teaching-session.js";
 import {
+  attachComputerScreenshotToThread,
   attachWorkspaceFileToThread,
   currentTurnFilesInstruction,
+  loadDesktopScreenshotImages,
   materializeCurrentTurnFiles,
 } from "./thread-artifacts.js";
 
@@ -674,7 +677,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
         const [discovered, currentTurnImages, memoryContext, scratchpadContext, recalled] =
           await Promise.all([
             discoveredPromise,
-            loadCurrentTurnImages(deps, turnBlocks, context),
+            loadVisionImagesForTurn(deps, turnBlocks, context),
             loadAgentMemoryContext(deps.memory, bot.id, context),
             loadAgentScratchpadContext(deps, {
               workspaceId: run.workspaceId,
@@ -765,7 +768,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
           ? [
               "You have a persistent Linux desktop. Use computer_observe before you click. Use computer_act to click, type, scroll, and press keys on the visible screen, including the Applications menu, taskbar, file manager, and terminals already on screen. On a Team Computer you have your own screen; other Team bots may run at the same time on theirs. Another user may interact with your screen while you run, so re-observe when it may have changed.",
               'To open a website or browser, call launch_app with application "browser" (optional uri) or open_path with the https URL. Call list_apps if you need the exact launcher name for another program. Never type firefox, google-chrome, or chromium in the shell — those binaries are often missing from PATH even when the app is installed in the menu.',
-              "If a browser window is already open, stay in it. If it is not, launch it with launch_app; do not hunt through terminals. Use shell and file tools only for files and commands, not for driving the GUI.",
+              "If a browser window is already open, stay in it. If it is not, launch it with launch_app; do not hunt through terminals. If computer_observe shows a file manager, application finder, or the power/shutdown menu, close that window and launch_app the browser. Never ask the user to open a browser. Never claim you cannot observe the desktop — call computer_observe again.",
+              "Click a text field before typing. Screenshots from observe/act are images in this turn and are also pasted into the chat so you can see the last frames on the next message. Use Google Web/All results, not Images or Short videos. For forum hunts stay on the results list; skip reCAPTCHA boards and continue.",
               "The latest user message is the task. Do it on the live public web. Do not open tutorial or demo sites (including the-internet.herokuapp.com) unless the user asked for a demo. Create accounts, sign in, and post when asked. If a site shows reCAPTCHA or another image captcha during a multi-site task, skip that site, log it, and continue — do not wait. Use request_takeover only for 2FA or payment you cannot complete when the user is present — not for ordinary forms or captchas you can skip.",
               "Never write Python, CDP, Playwright, Selenium, Puppeteer, or other browser-automation scripts. Do not click websites from the shell.",
             ].join(" ")
@@ -800,6 +804,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
         let toolCallStreak: ToolCallStreak = { key: undefined, count: 0 };
         let toolNameStreak: ToolNameStreak = { name: undefined, count: 0 };
         let lastComputerFrameId: string | undefined;
+        let publishedScreenshots = 0;
         let terminalCheckpointComplete = false;
         let liveDesktopTakeover = false;
         let approvalPausePending = false;
@@ -830,6 +835,56 @@ export function createRunExecutor(deps: ExecutorDeps) {
         ) => {
           const result = observationToolResult(observation, note, lastComputerFrameId);
           lastComputerFrameId = observation.frameId;
+          return result;
+        };
+        const publishDesktopFrame = async (result: unknown) => {
+          if (publishedScreenshots >= 4 || !deps.artifacts) return;
+          if (
+            !result ||
+            typeof result !== "object" ||
+            (result as { kind?: unknown }).kind !== "agent_tool_result" ||
+            !("content" in result)
+          ) {
+            return;
+          }
+          const image = (result as AgentToolExecutionResult).content.find(
+            (part) => part.type === "image",
+          );
+          if (!image) return;
+          const details = (result as AgentToolExecutionResult).details as {
+            frameId?: unknown;
+          };
+          const frameId =
+            typeof details?.frameId === "string"
+              ? details.frameId
+              : `frame-${publishedScreenshots + 1}`;
+          try {
+            const attached = await attachComputerScreenshotToThread(
+              { prisma: deps.prisma, artifacts: deps.artifacts },
+              {
+                workspaceId: run.workspaceId,
+                userId: run.userId,
+                botId: bot.id,
+                groupId: thread.groupId ?? undefined,
+                runId: run.id,
+                frameId,
+                mimeType: image.mimeType,
+                bytes: Uint8Array.from(Buffer.from(image.data, "base64")),
+                operationId: `${run.id}:screen:${frameId}`,
+              },
+            );
+            await publishMessage(deps, run, "bot", [attached.block]);
+            publishedScreenshots += 1;
+          } catch (error) {
+            console.error("desktop screenshot attach", error);
+          }
+        };
+        const screenResult = async (
+          work: () => Promise<unknown>,
+          finish?: (result: unknown) => Promise<unknown>,
+        ) => {
+          const result = await computerScreenToolResult(work, finish);
+          await publishDesktopFrame(result);
           return result;
         };
 
@@ -962,7 +1017,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             if (await getActiveTeachingSession(deps.prisma, run.workspaceId, run.botId)) {
               return { error: "Teaching is in progress. Stop teaching before using the computer." };
             }
-            return computerScreenToolResult(async () => {
+            return screenResult(async () => {
               await extendSandboxLease(deps, storedComputer, computer).catch(() => undefined);
               return formatObservation(await deps.sandbox.observe(computer, context));
             });
@@ -971,7 +1026,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             if (await getActiveTeachingSession(deps.prisma, run.workspaceId, run.botId)) {
               return { error: "Teaching is in progress. Stop teaching before using the computer." };
             }
-            return computerScreenToolResult(async () => {
+            return screenResult(async () => {
               await extendSandboxLease(deps, storedComputer, computer).catch(() => undefined);
               const result = await deps.sandbox.act(
                 computer,
@@ -1187,7 +1242,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             const command = String(args.command ?? args.cmd ?? "");
             const browserLaunch = graphical ? browserLaunchFromShellCommand(command) : null;
             if (browserLaunch) {
-              return computerScreenToolResult(async () => {
+              return screenResult(async () => {
                 await extendSandboxLease(deps, storedComputer, computer).catch(() => undefined);
                 const result = await deps.sandbox.act(
                   computer,
@@ -1242,7 +1297,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           }
           if (name === "open_path") {
             const requestedPath = String(args.path ?? "");
-            return computerScreenToolResult(async () => {
+            return screenResult(async () => {
               await extendSandboxLease(deps, storedComputer, computer).catch(() => undefined);
               const result = await deps.sandbox.act(
                 computer,
@@ -1267,7 +1322,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           }
           if (name === "launch_app") {
             const application = String(args.application ?? "");
-            return computerScreenToolResult(async () => {
+            return screenResult(async () => {
               await extendSandboxLease(deps, storedComputer, computer).catch(() => undefined);
               const result = await deps.sandbox.act(
                 computer,
@@ -1763,6 +1818,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 provider: credential?.provider ?? settings?.defaultModelProvider ?? "scripted",
                 id: credential?.defaultModel ?? settings?.defaultModelId ?? "scripted",
                 apiKey: resolved.oauth ? undefined : resolved.apiKey,
+                fallbackApiKey: resolved.oauth ? undefined : resolved.fallbackApiKey,
                 baseUrl: resolved.baseUrl,
                 oauth: resolved.oauth
                   ? { credential: resolved.oauth, persist: resolved.persistOAuth }
@@ -2448,6 +2504,7 @@ async function resolveModelKey(
   registerSecrets?: (values: string[]) => void,
 ): Promise<{
   apiKey?: string;
+  fallbackApiKey?: string;
   baseUrl?: string;
   oauth?: AgentModelOAuthCredential;
   persistOAuth?: (credential: AgentModelOAuthCredential) => Promise<void>;
@@ -2485,8 +2542,15 @@ async function resolveModelKey(
               storedKey: resolved.apiKey,
               deploymentKey: deps.deploymentModelKey,
             });
+      const fallbackApiKey =
+        !oauth && credential.provider === "openrouter"
+          ? [resolved.apiKey, deps.deploymentModelKey]
+              .map((key) => key?.trim())
+              .find((key) => key && key !== apiKey)
+          : undefined;
       return {
         apiKey: oauth ? undefined : apiKey,
+        fallbackApiKey,
         baseUrl,
         oauth,
         persistOAuth: oauth
@@ -2540,6 +2604,35 @@ async function withModelCredentialLock<T>(key: string, fn: () => Promise<T>): Pr
     release();
     if (modelCredentialLocks.get(key) === current) modelCredentialLocks.delete(key);
   }
+}
+
+async function loadVisionImagesForTurn(
+  deps: ExecutorDeps,
+  blocks: MessageBlock[] | undefined,
+  context: {
+    operationId: string;
+    traceId: string;
+    workspaceId: string;
+    userId: string;
+    botId: string;
+    runId: string;
+    signal: AbortSignal;
+  },
+) {
+  const [turnImages, desktopImages] = await Promise.all([
+    loadCurrentTurnImages(deps, blocks, context),
+    loadDesktopScreenshotImages(deps, context),
+  ]);
+  const merged: NonNullable<AgentRunRequest["currentTurnImages"]> = [];
+  const seen = new Set<string>();
+  for (const image of [...(turnImages ?? []), ...(desktopImages ?? [])]) {
+    const key = `${image.name}:${image.data.byteLength}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push(image);
+    if (merged.length >= 4) break;
+  }
+  return merged.length ? merged : undefined;
 }
 
 async function loadCurrentTurnImages(

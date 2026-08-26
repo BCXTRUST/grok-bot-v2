@@ -2,11 +2,13 @@ import { describe, expect, it } from "vitest";
 import { ComputerScreenUnavailableError } from "./computer-screens.js";
 import {
   allocateExtraDisplayCommand,
+  extraDisplayActionCommand,
   extraDisplayLayout,
   parseAllocatedExtraDisplay,
   parseExtraDisplayViewPassword,
   parseReleasedExtraDisplay,
   releaseExtraDisplayCommand,
+  xdotoolTypeCommand,
 } from "./extra-displays.js";
 
 describe("extra display ports", () => {
@@ -49,5 +51,13 @@ describe("extra display ports", () => {
     expect(() => parseExtraDisplayViewPassword("no password\n")).toThrow(
       ComputerScreenUnavailableError,
     );
+  });
+
+  it("types through xdotool without treating leading dashes as flags", () => {
+    const layout = extraDisplayLayout(0, ":0");
+    const command = extraDisplayActionCommand(layout, { kind: "clipboard", text: "-hello" });
+    expect(command).toBe(xdotoolTypeCommand(":0", "-hello"));
+    expect(command).toContain("xdotool type --clearmodifiers --delay 12 --");
+    expect(command).toContain("-hello");
   });
 });

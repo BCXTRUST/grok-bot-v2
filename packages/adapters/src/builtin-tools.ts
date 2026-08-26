@@ -18,7 +18,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "computer_act",
     description:
-      "Perform up to 24 ordered desktop actions on this bot's computer and return the resulting screen. Batch only predictable actions; stop before an outcome you need to inspect. Action kinds: click, move, down, up, type, key, scroll, wait.",
+      "Perform up to 24 ordered desktop actions on this bot's computer and return the resulting screen. Batch only predictable actions; stop before an outcome you need to inspect. Action kinds: click, move, down, up, type, key, scroll, wait. Click the target text field before kind=type. If typing fails, click the field again and type once more — do not type into the GUI from the shell.",
     inputSchema: {
       type: "object",
       properties: {

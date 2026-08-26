@@ -40,6 +40,7 @@ import {
   ensureExtraDisplayCommand,
   extraDisplayActionCommand,
   extraDisplayControlStartCommand,
+  xdotoolTypeCommand,
   extraDisplayControlStopCommand,
   extraDisplayInputCommand,
   extraDisplayLayout,
@@ -915,7 +916,16 @@ async function applyE2BAction(desktop: Sandbox, action: ComputerAction): Promise
     return;
   }
   if (action.kind === "clipboard") {
-    await desktop.write(action.text);
+    try {
+      await desktop.write(action.text);
+    } catch {
+      const typed = await desktop.commands.run(xdotoolTypeCommand(":0", action.text));
+      if (typed.exitCode !== 0) {
+        throw new Error(
+          typed.stderr?.trim() || typed.stdout?.trim() || "typing failed (exit status 1)",
+        );
+      }
+    }
     return;
   }
   if (action.kind === "scroll") {

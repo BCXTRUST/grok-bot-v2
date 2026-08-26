@@ -7,7 +7,7 @@ import type {
   SandboxProvider,
 } from "@rakazo/adapter-kit";
 import type { ComputerMode, MessageBlock } from "@rakazo/contracts";
-import { ATTACHMENT_MAX_BYTES } from "@rakazo/contracts";
+import { ATTACHMENT_MAX_BYTES, isAttachmentImageMimeType } from "@rakazo/contracts";
 import {
   attachmentExtensionForMimeType,
   inferAttachmentMimeType,
@@ -23,6 +23,84 @@ export type MaterializedThreadFile = {
   size: number;
   path: string;
 };
+
+export const DESKTOP_SCREENSHOT_PREFIX = "desktop-screen";
+
+export async function attachComputerScreenshotToThread(
+  deps: {
+    prisma: PrismaClient;
+    artifacts: ArtifactStore;
+  },
+  input: {
+    workspaceId: string;
+    userId: string;
+    botId: string;
+    groupId?: string;
+    runId: string;
+    frameId: string;
+    mimeType: "image/png" | "image/jpeg";
+    bytes: Uint8Array;
+    operationId: string;
+  },
+): Promise<{ artifactId: string; block: Extract<MessageBlock, { kind: "image" }> }> {
+  const extension = input.mimeType === "image/jpeg" ? "jpg" : "png";
+  const safeFrame = input.frameId.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 24) || "frame";
+  const attached = await attachWorkspaceFileToThread(deps, {
+    workspaceId: input.workspaceId,
+    userId: input.userId,
+    botId: input.botId,
+    groupId: input.groupId,
+    runId: input.runId,
+    filePath: `${DESKTOP_SCREENSHOT_PREFIX}-${safeFrame}.${extension}`,
+    bytes: input.bytes,
+    operationId: input.operationId,
+  });
+  if (attached.block.kind !== "image") {
+    throw new Error("desktop screenshot must be an image");
+  }
+  return { artifactId: attached.artifactId, block: attached.block };
+}
+
+export async function loadDesktopScreenshotImages(
+  deps: {
+    prisma: PrismaClient;
+    artifacts?: ArtifactStore;
+  },
+  context: AdapterContext & { botId: string },
+): Promise<
+  Array<{
+    name: string;
+    mimeType: "image/jpeg" | "image/png" | "image/webp" | "image/gif";
+    data: Uint8Array;
+  }>
+> {
+  if (!deps.artifacts) return [];
+  const rows = await deps.prisma.artifact.findMany({
+    where: {
+      workspaceId: context.workspaceId,
+      userId: context.userId,
+      botId: context.botId,
+      name: { startsWith: DESKTOP_SCREENSHOT_PREFIX },
+    },
+    orderBy: { createdAt: "desc" },
+    take: 2,
+  });
+  const images: Array<{
+    name: string;
+    mimeType: "image/jpeg" | "image/png" | "image/webp" | "image/gif";
+    data: Uint8Array;
+  }> = [];
+  for (const row of rows) {
+    if (!isAttachmentImageMimeType(row.mimeType)) continue;
+    const bytes = await deps.artifacts.get(row.storageKey, context);
+    images.push({
+      name: row.name,
+      mimeType: row.mimeType as "image/jpeg" | "image/png" | "image/webp" | "image/gif",
+      data: bytes,
+    });
+  }
+  return images;
+}
 
 export async function attachWorkspaceFileToThread(
   deps: {
