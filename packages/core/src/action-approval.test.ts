@@ -21,6 +21,7 @@ describe("toolRequiresApproval", () => {
   it("does not gate read-only or local work", () => {
     for (const name of [
       "list_files",
+      "list_apps",
       "computer_observe",
       "read_file",
       "write_file",

@@ -109,7 +109,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "open_path",
     description:
-      "Open a workspace file or an http(s) URL in its default graphical application on this bot's computer and return the resulting screen.",
+      "Open a workspace file or an http(s) URL in the desktop's default app and return the resulting screen. Prefer this for websites instead of typing a URL in the terminal.",
     inputSchema: {
       type: "object",
       properties: { path: { type: "string" } },
@@ -119,7 +119,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "launch_app",
     description:
-      "Launch an installed graphical application on this bot's computer, optionally with a URI, and return the resulting screen.",
+      'Launch an installed graphical application on this desktop and return the resulting screen. Use application "browser" to open Chrome or Firefox (whichever is installed). Do not start browsers from the shell — firefox is often missing from PATH even when the app menu shows it. Optional uri opens that page in the app.',
     inputSchema: {
       type: "object",
       properties: {
@@ -128,6 +128,12 @@ export const builtinAgentTools: ConnectorTool[] = [
       },
       required: ["application"],
     },
+  },
+  {
+    name: "list_apps",
+    description:
+      "List installed graphical applications on this desktop (name and launcher id). Pass a listed id or name to launch_app.",
+    inputSchema: { type: "object", properties: {} },
   },
   {
     name: "request_takeover",

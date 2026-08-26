@@ -16,9 +16,11 @@ describe("describeToolActivity", () => {
     expect(describeToolActivity("add_mcp_server", { name: "Linear" })).toBe(
       "Connecting MCP server: Linear",
     );
-    expect(describeToolActivity("run_subagent", { name: "scout", task: "…" })).toBe(
-      "Delegating to helper: scout",
+    expect(describeToolActivity("open_path", { path: "https://example.com" })).toBe(
+      "Opening https://example.com",
     );
+    expect(describeToolActivity("launch_app", { application: "browser" })).toBe("Opening browser");
+    expect(describeToolActivity("list_apps", {})).toBe("Listing installed apps");
   });
 
   it("names MCP server and remote tool", () => {

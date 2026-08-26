@@ -117,7 +117,7 @@ describe("e2b create options", () => {
         throw new Error("should not fall back");
       },
     });
-    expect(launched).toEqual(["google-chrome", "firefox"]);
+    expect(launched).toEqual(["google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "firefox"]);
   });
 });
 

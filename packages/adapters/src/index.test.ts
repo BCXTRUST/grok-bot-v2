@@ -152,6 +152,8 @@ describe("builtin tools", () => {
         "archive_bot",
         "mail_list",
         "mail_send",
+        "launch_app",
+        "list_apps",
       ]),
     );
   });

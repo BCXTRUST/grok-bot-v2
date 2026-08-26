@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import type { ComputerAction, ComputerInput } from "@rakazo/adapter-kit";
 import { ComputerScreenUnavailableError } from "./computer-screens.js";
 import { clampRounded, shellQuote } from "./computer-support.js";
+import { launchDesktopAppCommand } from "./desktop-apps.js";
 
 export const TEAM_EXTRA_DISPLAY_LIMIT = 8;
 
@@ -154,7 +155,7 @@ export function ensureExtraDisplayCommand(
     `  xdpyinfo -display ${layout.display} >/dev/null 2>&1 || exit 1`,
     `  if command -v fluxbox >/dev/null 2>&1; then HOME=${fluxHome} DISPLAY=${layout.display} fluxbox >${log}-fluxbox.log 2>&1 & fi`,
     `  if [ -d ${shellQuote(sharedProfile)} ]; then cp -a ${shellQuote(sharedProfile)}/. ${shellQuote(profile)}/; rm -f ${profile}/SingletonLock ${profile}/SingletonCookie ${profile}/SingletonSocket; fi`,
-    `  for browser in google-chrome google-chrome-stable chromium chromium-browser firefox; do`,
+    `  for browser in google-chrome google-chrome-stable chromium chromium-browser firefox firefox-esr; do`,
     `    if command -v "$browser" >/dev/null 2>&1; then`,
     `      DISPLAY=${layout.display} HOME=${shellQuote(env.homeDir)} "$browser" --user-data-dir=${shellQuote(profile)} >${log}-browser.log 2>&1 &`,
     `      break`,
@@ -293,7 +294,7 @@ export function extraDisplayActionCommand(
   if (action.kind === "open") {
     return `DISPLAY=${layout.display} xdg-open ${shellQuote(action.path)}`;
   }
-  return `DISPLAY=${layout.display} ${shellQuote(action.application)}${action.uri ? ` ${shellQuote(action.uri)}` : ""}`;
+  return launchDesktopAppCommand(layout.display, action.application, action.uri);
 }
 
 export function extraDisplayInputCommand(layout: ExtraDisplayLayout, input: ComputerInput): string {

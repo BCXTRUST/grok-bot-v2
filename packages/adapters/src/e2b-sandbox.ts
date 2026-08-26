@@ -33,6 +33,7 @@ import {
   PORTABLE_TRANSFER_BATCH_BYTES,
   shouldSkipPortableWorkspaceFile,
 } from "./computer-workspace.js";
+import { desktopApplicationCandidates, launchDesktopAppCommand } from "./desktop-apps.js";
 import {
   allocateExtraDisplayCommand,
   type ExtraDisplayLayout,
@@ -80,8 +81,10 @@ export function isUnrecoverableSandboxError(error: unknown): boolean {
 export const E2B_BROWSER_APPS = [
   "google-chrome",
   "google-chrome-stable",
-  "firefox",
   "chromium",
+  "chromium-browser",
+  "firefox",
+  "firefox-esr",
 ] as const;
 
 function isAlreadyRunningStreamError(error: unknown) {
@@ -930,7 +933,33 @@ async function applyE2BAction(desktop: Sandbox, action: ComputerAction): Promise
     await desktop.open(value);
     return;
   }
-  await desktop.launch(action.application, action.uri);
+  await launchE2BApplication(desktop, action.application, action.uri);
+}
+
+async function launchE2BApplication(
+  desktop: Sandbox,
+  application: string,
+  uri?: string,
+): Promise<void> {
+  for (const app of desktopApplicationCandidates(application)) {
+    try {
+      await desktop.launch(app, uri);
+      return;
+    } catch {
+      // try the next installed name
+    }
+  }
+  if (uri && /^https?:\/\//i.test(uri)) {
+    await desktop.open(uri).catch(() => undefined);
+  }
+  const result = await desktop.commands.run(launchDesktopAppCommand(":0", application, uri));
+  if (result.exitCode !== 0) {
+    throw new Error(
+      result.stderr?.trim() ||
+        result.stdout?.trim() ||
+        `${application} is not installed as a desktop app`,
+    );
+  }
 }
 
 async function* walkE2BWorkspace(

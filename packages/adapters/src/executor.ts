@@ -75,6 +75,10 @@ import {
   uncertainEffectResult,
 } from "./approval-effect.js";
 import { builtinAgentTools } from "./builtin-tools.js";
+import {
+  browserLaunchFromShellCommand,
+  listDesktopAppsCommand,
+} from "./desktop-apps.js";
 import { archiveSpawnedBot, spawnBot } from "./child-bots.js";
 import { ensureBotInbox, inboxRefFromBot, mailInstruction } from "./bot-inbox.js";
 import {
@@ -207,6 +211,7 @@ const GRAPHICAL_AGENT_TOOLS = new Set([
   "computer_act",
   "open_path",
   "launch_app",
+  "list_apps",
 ]);
 const BUILTIN_AGENT_TOOL_NAMES = new Set(builtinAgentTools.map((tool) => tool.name));
 
@@ -758,9 +763,11 @@ export function createRunExecutor(deps: ExecutorDeps) {
         const tools = [...builtins, ...exposedConnectorTools];
         const computerInstruction = graphical
           ? [
-              "You have a persistent computer. Use computer_observe and computer_act for its visible desktop, including browsers and installed applications. Use open_path and launch_app to open graphical files, URLs, and applications. Use the file tools and shell for precise filesystem and terminal work. On a Team Computer you have your own screen; other Team bots may run at the same time on theirs. Another user may interact with your screen while you run, so re-observe when it may have changed.",
-              "The latest user message is the task. Do it on the live public web. Do not open tutorial or demo sites (including the-internet.herokuapp.com) unless the user asked for a demo. Create accounts, sign in, and post when asked. Stay in the browser that is already open. If a site shows reCAPTCHA or another image captcha during a multi-site task, skip that site, log it, and continue — do not wait. Use request_takeover only for 2FA or payment you cannot complete when the user is present — not for ordinary forms or captchas you can skip.",
-              "Never write Python, CDP, Playwright, Selenium, Puppeteer, or other browser-automation scripts. Do not click websites from the shell. Drive the already-open desktop browser with computer_observe and computer_act only.",
+              "You have a persistent Linux desktop. Use computer_observe before you click. Use computer_act to click, type, scroll, and press keys on the visible screen, including the Applications menu, taskbar, file manager, and terminals already on screen. On a Team Computer you have your own screen; other Team bots may run at the same time on theirs. Another user may interact with your screen while you run, so re-observe when it may have changed.",
+              'To open a website or browser, call launch_app with application "browser" (optional uri) or open_path with the https URL. Call list_apps if you need the exact launcher name for another program. Never type firefox, google-chrome, or chromium in the shell — those binaries are often missing from PATH even when the app is installed in the menu.',
+              "If a browser window is already open, stay in it. If it is not, launch it with launch_app; do not hunt through terminals. Use shell and file tools only for files and commands, not for driving the GUI.",
+              "The latest user message is the task. Do it on the live public web. Do not open tutorial or demo sites (including the-internet.herokuapp.com) unless the user asked for a demo. Create accounts, sign in, and post when asked. If a site shows reCAPTCHA or another image captcha during a multi-site task, skip that site, log it, and continue — do not wait. Use request_takeover only for 2FA or payment you cannot complete when the user is present — not for ordinary forms or captchas you can skip.",
+              "Never write Python, CDP, Playwright, Selenium, Puppeteer, or other browser-automation scripts. Do not click websites from the shell.",
             ].join(" ")
           : "You have a persistent sandbox filesystem and shell. This backend does not provide model-visible graphical control, so use the file tools and shell.";
         const workspaceInstruction =
@@ -1178,6 +1185,33 @@ export function createRunExecutor(deps: ExecutorDeps) {
           }
           if (name === "shell") {
             const command = String(args.command ?? args.cmd ?? "");
+            const browserLaunch = graphical ? browserLaunchFromShellCommand(command) : null;
+            if (browserLaunch) {
+              return computerScreenToolResult(async () => {
+                await extendSandboxLease(deps, storedComputer, computer).catch(() => undefined);
+                const result = await deps.sandbox.act(
+                  computer,
+                  {
+                    actions: [
+                      {
+                        kind: "launch",
+                        application: browserLaunch.application,
+                        uri: browserLaunch.uri,
+                      },
+                    ],
+                    observe: true,
+                    settleMs: 1200,
+                  },
+                  context,
+                );
+                return result.observation
+                  ? formatObservation(
+                      result.observation,
+                      `opened the desktop browser instead of running ${command} in the terminal`,
+                    )
+                  : { ok: true };
+              }, finish);
+            }
             const cwd = resolveBotWorkspaceCwd(
               computerMode,
               bot.id,
@@ -1191,6 +1225,20 @@ export function createRunExecutor(deps: ExecutorDeps) {
               context,
             );
             return finish(result);
+          }
+          if (name === "list_apps") {
+            const result = await runSandboxCommand(
+              deps.sandbox,
+              computer,
+              ["bash", "-lc", listDesktopAppsCommand()],
+              undefined,
+              context,
+            );
+            return finish({
+              ok: result.code === 0,
+              apps: result.stdout.trim(),
+              error: result.code === 0 ? undefined : result.stderr.trim() || "could not list apps",
+            });
           }
           if (name === "open_path") {
             const requestedPath = String(args.path ?? "");
@@ -1208,7 +1256,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                     },
                   ],
                   observe: true,
-                  settleMs: 600,
+                  settleMs: 1200,
                 },
                 context,
               );
@@ -1232,7 +1280,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                     },
                   ],
                   observe: true,
-                  settleMs: 600,
+                  settleMs: 1200,
                 },
                 context,
               );

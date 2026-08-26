@@ -134,6 +134,8 @@ describe("narrateTool", () => {
     expect(narrateTool("WebSearch")).toBe("searching the web");
     expect(narrateTool("screenshot")).toBe("looking at the screen");
     expect(narrateTool("computer_observe")).toBe("looking at the screen");
+    expect(narrateTool("launch_app")).toBe("opening an app");
+    expect(narrateTool("list_apps")).toBe("listing apps");
     expect(narrateTool("write_file")).toBe("writing a file");
     expect(narrateTool("run_subagent")).toBe("starting a subagent");
   });

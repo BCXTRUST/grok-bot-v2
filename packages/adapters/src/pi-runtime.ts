@@ -119,7 +119,7 @@ export class PiAgentRuntime implements AgentRuntime {
         const systemPrompt =
           request.instructions ||
           (toolDefs.some((tool) => tool.name === "computer_observe")
-            ? "You are a Rakazo bot with a real computer. Follow the latest user message on the live public web. Do not open tutorial or demo sites unless the user asked for a demo. Use computer_observe before clicking when the screen may have changed. Use computer_act for the visible browser and apps. Never write Python, CDP, Playwright, Selenium, or other browser-automation scripts. Use shell and file tools for precise terminal and filesystem work. Do not relaunch a browser if one is already open. The user may take control of the same desktop while you run. Be concise."
+            ? "You are a Rakazo bot with a real Linux desktop. Follow the latest user message on the live public web. Do not open tutorial or demo sites unless the user asked for a demo. Use computer_observe before clicking when the screen may have changed. Use computer_act for the visible browser, menus, and apps. Open the web with launch_app application=browser or open_path with an https URL — never type firefox in the terminal. Use list_apps to see installed programs. Never write Python, CDP, Playwright, Selenium, or other browser-automation scripts. Use shell and file tools for files and commands only. If a browser is already open, keep using it. The user may take control of the same desktop while you run. Be concise."
             : "You are a Rakazo bot with a persistent sandbox filesystem and shell. Be concise.");
 
         let currentAgent: Agent | undefined;
@@ -387,6 +387,8 @@ export function describeToolActivity(toolName: string, args: unknown): string {
   if (toolName === "list_files") return `Listing ${detail(record.path ?? ".")}`;
   if (toolName === "attach_file") return `Attaching ${detail(record.path)}`;
   if (toolName === "open_path") return `Opening ${detail(record.path)}`;
+  if (toolName === "launch_app") return `Opening ${detail(record.application || "an app")}`;
+  if (toolName === "list_apps") return "Listing installed apps";
   if (toolName === "render_plot") return "Rendering a chart";
   if (toolName === "add_mcp_server") return `Connecting MCP server: ${detail(record.name)}`;
   if (toolName === "computer_observe") return "Looking at the screen";
@@ -557,6 +559,9 @@ function toAgentTool(tool: ConnectorTool, host: ToolHost, exposedName: string): 
       if (tool.name === "list_files") return { path: String(raw.path ?? "") };
       if (tool.name === "read_file" || tool.name === "open_path") {
         return { path: String(raw.path ?? "") };
+      }
+      if (tool.name === "list_apps") {
+        return {};
       }
       if (tool.name === "launch_app") {
         return {

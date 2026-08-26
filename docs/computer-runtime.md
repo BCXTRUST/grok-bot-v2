@@ -25,7 +25,7 @@ Each workspace gets one Team Computer by default, so bots share its browser sess
 - execution: commands inside the machine;
 - files: list/read/write plus complete workspace import/export.
 
-The model gets `computer_observe`, batched `computer_act`, `open_path`, `launch_app`, `shell`, and file tools. An action can settle and return the resulting screenshot in one call. Identical consecutive frames keep their metadata but omit duplicate image bytes from model context.
+The model gets `computer_observe`, batched `computer_act`, `open_path`, `launch_app`, `list_apps`, `shell`, and file tools. `launch_app` with `application: "browser"` opens Chrome or Firefox (whichever is installed), including desktop-menu apps whose binaries are missing from PATH. Typing `firefox` in `shell` is rewritten to that launcher. An action can settle and return the resulting screenshot in one call. Identical consecutive frames keep their metadata but omit duplicate image bytes from model context.
 
 Human input and agent input may coexist on distinct Team screens. Clicking the computer opens a larger watch-only view; the bot keeps driving. “Take control” grants the user an exclusive control lease on that bot’s screen so the embedded viewer accepts input. If that bot is mid-run, takeover pauses it in place (`waiting_takeover`) without exporting the workspace or restarting the browser. “I’m done” hands the same live desktop back to the bot. Skip remains for bot-requested protected input. `request_takeover` is still available when the model explicitly needs protected input or human judgment.
 

@@ -9,6 +9,7 @@ const APPROVAL_EXEMPT_TOOLS = new Set([
   "shell",
   "open_path",
   "launch_app",
+  "list_apps",
   "remember",
   "request_takeover",
   "run_subagent",
