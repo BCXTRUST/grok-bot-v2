@@ -56,7 +56,7 @@ describe("describeToolActivity", () => {
 describe("preferComputerVisionModel", () => {
   const textOnly = { id: "deepseek/deepseek-v4-flash-0731", provider: "openrouter", input: ["text"] };
   const vision = {
-    id: "google/gemini-2.5-flash",
+    id: "openai/gpt-4.1-mini",
     provider: "openrouter",
     input: ["text", "image"],
   };
@@ -90,7 +90,7 @@ describe("preferComputerVisionModel", () => {
     const chosen = preferComputerVisionModel(empty as never, textOnly as never, [
       { name: "computer_observe" } as never,
     ]);
-    expect(chosen.id).toBe("google/gemini-2.5-flash");
+    expect(chosen.id).toBe("openai/gpt-4.1-mini");
     expect(chosen.input).toContain("image");
   });
 });

@@ -63,6 +63,7 @@ import {
   explainThoughtSignatureFailure,
   isThoughtSignatureFailure,
   isUsageAccountingFailure,
+  isProviderFinishReasonError,
   PiAgentRuntime,
   summarizeCompletedTools,
   thoughtSignatureContinueNote,
@@ -85,9 +86,11 @@ describe("Gemini thought-signature recovery", () => {
     expect(isThoughtSignatureFailure("Corrupted thought signature")).toBe(true);
     expect(isThoughtSignatureFailure("Function call is missing a thought_signature")).toBe(true);
     expect(isThoughtSignatureFailure("command timed out")).toBe(false);
-    expect(
-      isUsageAccountingFailure("Cannot read properties of undefined (reading 'totalTokens')"),
-    ).toBe(true);
+    expect(isUsageAccountingFailure("Cannot read properties of undefined (reading 'totalTokens')")).toBe(
+      true,
+    );
+    expect(isProviderFinishReasonError("Provider finish_reason: error")).toBe(true);
+    expect(isProviderFinishReasonError("command timed out")).toBe(false);
   });
 
   it("keeps prior assistant replies as assistant turns", () => {

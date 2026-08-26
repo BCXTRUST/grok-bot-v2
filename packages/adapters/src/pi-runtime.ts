@@ -213,12 +213,18 @@ export class PiAgentRuntime implements AgentRuntime {
 
         try {
           let result = await runAgent(history);
-          if (isThoughtSignatureFailure(result.error) || isUsageAccountingFailure(result.error)) {
+          if (
+            isThoughtSignatureFailure(result.error) ||
+            isUsageAccountingFailure(result.error) ||
+            isProviderFinishReasonError(result.error)
+          ) {
             queue.push({
               type: "progress",
               text: isThoughtSignatureFailure(result.error)
                 ? "Model lost tool context — continuing on the live desktop…"
-                : "Model usage stats were missing — continuing on the live desktop…",
+                : isProviderFinishReasonError(result.error)
+                  ? "The vision model aborted a screenshot turn — continuing on the live desktop…"
+                  : "Model usage stats were missing — continuing on the live desktop…",
             });
             result = await runAgent([
               ...history,
@@ -238,7 +244,11 @@ export class PiAgentRuntime implements AgentRuntime {
             return;
           }
           if (!streamed) {
-            const fallback = assistantText(result.messages.at(-1)) || "I finished the work.";
+            const fallback =
+              assistantText(result.messages.at(-1)) ||
+              (toolDefs.some((tool) => tool.name === "computer_observe")
+                ? "I looked at the screen but did not finish the task."
+                : "I finished the work.");
             queue.push({ type: "text", text: fallback });
             streamed = fallback;
           }
@@ -264,7 +274,7 @@ export class PiAgentRuntime implements AgentRuntime {
   }
 }
 
-const DEFAULT_COMPUTER_VISION_MODEL = "google/gemini-2.5-flash";
+const DEFAULT_COMPUTER_VISION_MODEL = "openai/gpt-4.1-mini";
 
 function modelAcceptsImages(model: { input?: readonly string[] }) {
   return !model.input || model.input.includes("image");
@@ -468,6 +478,10 @@ export function isThoughtSignatureFailure(message: string | undefined): boolean 
 
 export function isUsageAccountingFailure(message: string | undefined): boolean {
   return Boolean(message && /totalTokens/i.test(message));
+}
+
+export function isProviderFinishReasonError(message: string | undefined): boolean {
+  return Boolean(message && /finish_reason:\s*error/i.test(message));
 }
 
 export function explainThoughtSignatureFailure() {
