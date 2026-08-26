@@ -1,6 +1,26 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title">
-  <title id="title">AutoSEO.run</title>
-  <rect width="64" height="64" rx="16" fill="#1a1612"/>
-  <path d="M18 44V20h12.4c6.6 0 10.6 3.4 10.6 8.6 0 3.4-1.8 6-4.8 7.3L42 44h-6.4l-5.2-7.8H24V44H18Zm6-13.2h6c3.2 0 5-1.5 5-3.8s-1.8-3.8-5-3.8H24v7.6Z" fill="#f4ead8"/>
-  <circle cx="48" cy="46" r="4" fill="#c9844a"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="autoseo-mark-title">
+  <title id="autoseo-mark-title">AutoSEO.run</title>
+  <defs>
+    <linearGradient id="autoseo-mark-fill" x1="6" y1="4" x2="58" y2="60" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#6366F1" />
+      <stop offset="1" stop-color="#2563EB" />
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="16" fill="url(#autoseo-mark-fill)" />
+  <path
+    d="M16 43 L28 31 L36 39 L48 27"
+    fill="none"
+    stroke="#FFFFFF"
+    stroke-width="5"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <path
+    d="M40 27 H48 V35"
+    fill="none"
+    stroke="#FFFFFF"
+    stroke-width="5"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
 </svg>
