@@ -212,10 +212,12 @@ export class PiAgentRuntime implements AgentRuntime {
 
         try {
           let result = await runAgent(history);
-          if (isThoughtSignatureFailure(result.error)) {
+          if (isThoughtSignatureFailure(result.error) || isUsageAccountingFailure(result.error)) {
             queue.push({
               type: "progress",
-              text: "Model lost tool context — continuing on the live desktop…",
+              text: isThoughtSignatureFailure(result.error)
+                ? "Model lost tool context — continuing on the live desktop…"
+                : "Model usage stats were missing — continuing on the live desktop…",
             });
             result = await runAgent([
               ...history,
@@ -410,6 +412,15 @@ function stableToolNameHash(name: string): string {
   return (hash >>> 0).toString(36);
 }
 
+const EMPTY_ASSISTANT_USAGE = {
+  input: 0,
+  output: 0,
+  cacheRead: 0,
+  cacheWrite: 0,
+  totalTokens: 0,
+  cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+};
+
 export function toAgentHistory(history: AgentRunRequest["history"], prompt: string) {
   const last = history.at(-1);
   const prior = last?.role === "user" && last.content === prompt ? history.slice(0, -1) : history;
@@ -421,6 +432,10 @@ export function toAgentHistory(history: AgentRunRequest["history"], prompt: stri
             role: "assistant" as const,
             content: [{ type: "text" as const, text: message.content }],
             timestamp: Date.now(),
+            // Pi estimates context from assistant.usage.totalTokens. Thread history
+            // has no usage; omitting it throws and aborts the computer turn.
+            usage: EMPTY_ASSISTANT_USAGE,
+            stopReason: "stop" as const,
           }
         : { role: "user" as const, content: message.content, timestamp: Date.now() },
     );
@@ -428,6 +443,10 @@ export function toAgentHistory(history: AgentRunRequest["history"], prompt: stri
 
 export function isThoughtSignatureFailure(message: string | undefined): boolean {
   return Boolean(message && /thought[_\s-]*signature/i.test(message));
+}
+
+export function isUsageAccountingFailure(message: string | undefined): boolean {
+  return Boolean(message && /totalTokens/i.test(message));
 }
 
 export function explainThoughtSignatureFailure() {

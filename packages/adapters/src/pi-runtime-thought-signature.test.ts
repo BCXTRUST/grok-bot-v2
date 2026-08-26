@@ -62,6 +62,7 @@ vi.mock("./pi-openai-compatible-provider.js", () => ({
 import {
   explainThoughtSignatureFailure,
   isThoughtSignatureFailure,
+  isUsageAccountingFailure,
   PiAgentRuntime,
   summarizeCompletedTools,
   thoughtSignatureContinueNote,
@@ -84,6 +85,9 @@ describe("Gemini thought-signature recovery", () => {
     expect(isThoughtSignatureFailure("Corrupted thought signature")).toBe(true);
     expect(isThoughtSignatureFailure("Function call is missing a thought_signature")).toBe(true);
     expect(isThoughtSignatureFailure("command timed out")).toBe(false);
+    expect(
+      isUsageAccountingFailure("Cannot read properties of undefined (reading 'totalTokens')"),
+    ).toBe(true);
   });
 
   it("keeps prior assistant replies as assistant turns", () => {
@@ -101,6 +105,8 @@ describe("Gemini thought-signature recovery", () => {
         role: "assistant",
         content: [{ type: "text", text: "I opened the signup page." }],
         timestamp: expect.any(Number),
+        usage: expect.objectContaining({ totalTokens: 0 }),
+        stopReason: "stop",
       },
     ]);
   });
