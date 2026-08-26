@@ -175,11 +175,16 @@ export async function createAgentMailInboxProvider(options: {
 }): Promise<AgentInboxProvider | undefined> {
   const apiKey = options.apiKey?.trim();
   if (!apiKey) return undefined;
-  const { AgentMailClient } = await import("agentmail");
-  return new AgentMailInboxProvider(
-    new AgentMailClient({ apiKey }) as unknown as AgentMailSdk,
-    options.domain?.trim() || undefined,
-  );
+  try {
+    const { AgentMailClient } = await import("agentmail");
+    return new AgentMailInboxProvider(
+      new AgentMailClient({ apiKey }) as unknown as AgentMailSdk,
+      options.domain?.trim() || undefined,
+    );
+  } catch (error) {
+    console.error("AgentMail SDK failed to load", error);
+    return undefined;
+  }
 }
 
 function isLimitExceeded(error: unknown) {

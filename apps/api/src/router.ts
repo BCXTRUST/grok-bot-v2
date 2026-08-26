@@ -202,7 +202,10 @@ async function withBotInbox(
     { prisma: deps.prisma, inbox: deps.inbox },
     { id: bot.id, name: bot.name, workspaceId: bot.workspaceId, userId: actor.userId },
     computerContext(actor, bot.id, "inbox"),
-  ).catch(() => null);
+  ).catch((error) => {
+    console.error("bot inbox provision failed", bot.id, error);
+    return null;
+  });
   return { ...bot, inboxAddress: inbox?.address ?? bot.inboxAddress };
 }
 

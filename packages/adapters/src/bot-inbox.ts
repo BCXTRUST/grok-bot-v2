@@ -97,7 +97,7 @@ export async function ensureBotInbox(
     where: { id: bot.id, workspaceId: bot.workspaceId, userId: bot.userId },
     select: { inboxProvider: true, inboxId: true, inboxAddress: true },
   });
-  return confirmed ? inboxRefFromBot(confirmed) : provisioned;
+  return (confirmed ? inboxRefFromBot(confirmed) : null) ?? provisioned;
 }
 
 export async function ensureMissingBotInboxes(

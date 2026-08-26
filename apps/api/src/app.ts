@@ -123,6 +123,13 @@ export async function createApp(
     apiKey: env.agentMailApiKey,
     domain: env.agentMailDomain,
   });
+  if (!inbox) {
+    console.warn(
+      env.agentMailApiKey
+        ? "AgentMail inbox provider is unavailable"
+        : "AgentMail inbox provider disabled (set AGENTMAIL_API_KEY)",
+    );
+  }
   const artifacts = new LocalArtifactStore(env.dataDir);
   const memory = new MarkdownMemoryStore(prisma);
   const mcp = new McpConnector(
@@ -307,6 +314,7 @@ export async function createApp(
       jobs: jobKind,
       realtime: realtime.describe().id,
       revision: env.gitSha ?? null,
+      inbox: Boolean(inbox),
     }),
   );
 
