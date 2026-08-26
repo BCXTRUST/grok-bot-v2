@@ -21,6 +21,7 @@ import {
   routineWakeupJob,
   runContinueJob,
 } from "@rakazo/adapter-kit";
+import { preferRunnableOpenRouterKey } from "./openrouter-inference-key.js";
 import type { MessageBlock, RunStatus } from "@rakazo/contracts";
 import { ATTACHMENT_MAX_BYTES, isAttachmentImageMimeType } from "@rakazo/contracts";
 import {
@@ -2400,8 +2401,15 @@ async function resolveModelKey(
       const oauth = resolved.secret.kind === "oauth" ? resolved.secret.credential : undefined;
       const baseUrl =
         resolved.secret.kind === "openai_compatible" ? resolved.secret.baseUrl : undefined;
+      const apiKey =
+        oauth || credential.provider !== "openrouter"
+          ? resolved.apiKey
+          : await preferRunnableOpenRouterKey({
+              storedKey: resolved.apiKey,
+              deploymentKey: deps.deploymentModelKey,
+            });
       return {
-        apiKey: resolved.apiKey,
+        apiKey: oauth ? undefined : apiKey,
         baseUrl,
         oauth,
         persistOAuth: oauth
@@ -2429,7 +2437,7 @@ async function resolveModelKey(
               });
             }
           : undefined,
-        redact: [...secretValuesToRedact(resolved.secret), resolved.apiKey].filter(
+        redact: [...secretValuesToRedact(resolved.secret), resolved.apiKey, apiKey].filter(
           (value): value is string => Boolean(value),
         ),
       };

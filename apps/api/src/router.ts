@@ -19,6 +19,7 @@ import {
   acquireComputerExecutionLease,
   applyTeachingDesktopInput,
   archiveBot,
+  assertOpenRouterInferenceKey,
   buildMcpCredentialBlob,
   buildModelConnectPlaintext,
   type ComposioProvider,
@@ -434,6 +435,9 @@ export function createRouter(deps: RouterDeps) {
         let plaintext: string;
         try {
           plaintext = buildModelConnectPlaintext(input);
+          if (input.provider === "openrouter") {
+            await assertOpenRouterInferenceKey(plaintext);
+          }
         } catch (error) {
           throw new ORPCError("BAD_REQUEST", {
             message: error instanceof Error ? error.message : "Invalid model connection",
@@ -2910,6 +2914,15 @@ async function persistModelCredential(
   },
 ) {
   throwIfAborted(input.signal);
+  if (input.provider === "openrouter") {
+    try {
+      await assertOpenRouterInferenceKey(input.plaintext);
+    } catch (error) {
+      throw new ORPCError("BAD_REQUEST", {
+        message: error instanceof Error ? error.message : "Invalid model connection",
+      });
+    }
+  }
   const stored = await deps.secrets.put(input.plaintext, {
     operationId: "cred",
     traceId: "cred",

@@ -41,6 +41,7 @@ export * from "./mcp-transport.js";
 export * from "./memory-provider-factory.js";
 export * from "./model-connect.js";
 export * from "./openai-compatible-url.js";
+export * from "./openrouter-inference-key.js";
 export * from "./openai-voice.js";
 export * from "./pi-models.js";
 export * from "./pi-oauth.js";

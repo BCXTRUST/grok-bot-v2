@@ -29,12 +29,14 @@ import {
   pipedreamConfigFromEnv,
   ScriptedAgentRuntime,
   WorkspaceMemoryProviderResolver,
+  warnIfOpenRouterKeyCannotChat,
 } from "@rakazo/adapters";
 import { resolveEncryptionKey } from "@rakazo/core";
 import { createDb, createThreadEvents } from "@rakazo/db";
 import { MarkdownMemoryStore } from "@rakazo/memory";
 
 async function main() {
+  await warnIfOpenRouterKeyCannotChat(process.env.OPENROUTER_API_KEY);
   const databaseUrl = process.env.DATABASE_URL;
   if (!databaseUrl) throw new Error("DATABASE_URL is required");
   const { prisma, pool } = createDb(databaseUrl);

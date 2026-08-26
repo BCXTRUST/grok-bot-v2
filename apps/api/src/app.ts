@@ -38,6 +38,7 @@ import {
   type RemoteConnectorDependencies,
   ScriptedAgentRuntime,
   WorkspaceMemoryProviderResolver,
+  warnIfOpenRouterKeyCannotChat,
 } from "@rakazo/adapters";
 import { blockedAuthPaths, createAuth } from "@rakazo/auth";
 import { createDb, createThreadEvents, type PrismaClient, requireMembership } from "@rakazo/db";
@@ -115,6 +116,7 @@ export async function createApp(
     prisma,
   });
   const secrets = new EncryptedSecretStore(env.encryptionKey);
+  await warnIfOpenRouterKeyCannotChat(env.openRouterKey);
   const mcpOAuth = new McpOAuthBroker(prisma, secrets, remoteConnectors);
   const memoryProviders = new WorkspaceMemoryProviderResolver(prisma, secrets);
   const oauthLogins = new PiOAuthLogins();
