@@ -103,6 +103,14 @@ export async function checkpointComputerWorkspace(
   }
 }
 
+/** Workspace export stops desktop browsers so profiles copy cleanly. That wipes a filled
+ *  captcha or login page, so takeover waits must keep the live desktop. */
+export function shouldCheckpointComputerBeforePause(
+  reason: "approval" | "ask" | "takeover",
+): boolean {
+  return reason !== "takeover";
+}
+
 export async function checkpointAndRecordComputerWorkspace(
   deps: { home: AgentHomeStore; sandbox: SandboxProvider; prisma: PrismaClient },
   computerRecord: { id: string; homeKey: string },

@@ -81,7 +81,7 @@ import {
   type PluginConnectionRow,
   planLiveConnectionSync,
 } from "./composio-connector.js";
-import { scheduleComputerSleep } from "./computer-idle.js";
+import { scheduleComputerSleep, touchRunningComputer } from "./computer-idle.js";
 import {
   acquireComputerExecutionLease,
   ComputerBusyError,
@@ -100,7 +100,10 @@ import {
   teamBotWorkspaceDirectory,
 } from "./computer-support.js";
 import { observationToolResult, parseComputerActions } from "./computer-tools.js";
-import { checkpointAndRecordComputerWorkspace } from "./computer-workspace.js";
+import {
+  checkpointAndRecordComputerWorkspace,
+  shouldCheckpointComputerBeforePause,
+} from "./computer-workspace.js";
 import { handoffToGroupBot, loadGroupContext } from "./group-handoff.js";
 import {
   COMPACTION_BATCH_SIZE,
@@ -179,6 +182,21 @@ const MAX_CONSECUTIVE_IDENTICAL_TOOL_CALLS = 6;
 // Backstop for a stuck agent that varies its arguments each call (so the exact-match cap above
 // never trips) but keeps hammering the same tool without ever narrating progress in between.
 const MAX_CONSECUTIVE_SAME_TOOL_CALLS = 20;
+
+async function extendSandboxLease(
+  deps: { sandbox: SandboxProvider; jobs: JobPublisher },
+  computerRecord: { id: string; homeKey: string; providerRef: string | null },
+  computer: ComputerRef,
+): Promise<void> {
+  const providerRef = computer.providerRef || computerRecord.providerRef;
+  if (!providerRef) return;
+  await touchRunningComputer(deps, {
+    id: computerRecord.id,
+    homeKey: computerRecord.homeKey,
+    providerRef,
+    kind: computer.kind,
+  });
+}
 const GRAPHICAL_AGENT_TOOLS = new Set([
   "computer_observe",
   "computer_act",
@@ -684,7 +702,9 @@ export function createRunExecutor(deps: ExecutorDeps) {
         const computerMode = parseComputerMode(storedComputer.scope);
         const computer = await provisionComputer(deps, storedComputer.id, context, "bot");
         screenRelease = { computer, context };
-        scheduleComputerSleep(deps.jobs, storedComputer.id);
+        await extendSandboxLease(deps, storedComputer, computer).catch(() => {
+          scheduleComputerSleep(deps.jobs, storedComputer.id);
+        });
         const currentTurnFiles = deps.artifacts
           ? await materializeCurrentTurnFiles(
               { prisma: deps.prisma, artifacts: deps.artifacts, sandbox: deps.sandbox },
@@ -924,15 +944,17 @@ export function createRunExecutor(deps: ExecutorDeps) {
             if (await getActiveTeachingSession(deps.prisma, run.workspaceId, run.botId)) {
               return { error: "Teaching is in progress. Stop teaching before using the computer." };
             }
-            return computerScreenToolResult(async () =>
-              formatObservation(await deps.sandbox.observe(computer, context)),
-            );
+            return computerScreenToolResult(async () => {
+              await extendSandboxLease(deps, storedComputer, computer).catch(() => undefined);
+              return formatObservation(await deps.sandbox.observe(computer, context));
+            });
           }
           if (name === "computer_act") {
             if (await getActiveTeachingSession(deps.prisma, run.workspaceId, run.botId)) {
               return { error: "Teaching is in progress. Stop teaching before using the computer." };
             }
             return computerScreenToolResult(async () => {
+              await extendSandboxLease(deps, storedComputer, computer).catch(() => undefined);
               const result = await deps.sandbox.act(
                 computer,
                 {
@@ -1162,6 +1184,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           if (name === "open_path") {
             const requestedPath = String(args.path ?? "");
             return computerScreenToolResult(async () => {
+              await extendSandboxLease(deps, storedComputer, computer).catch(() => undefined);
               const result = await deps.sandbox.act(
                 computer,
                 {
@@ -1186,6 +1209,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           if (name === "launch_app") {
             const application = String(args.application ?? "");
             return computerScreenToolResult(async () => {
+              await extendSandboxLease(deps, storedComputer, computer).catch(() => undefined);
               const result = await deps.sandbox.act(
                 computer,
                 {
@@ -1757,7 +1781,13 @@ export function createRunExecutor(deps: ExecutorDeps) {
                   controlRunId: null,
                 },
               });
-              await checkpointAndRecordComputerWorkspace(deps, storedComputer, computer, context);
+              // Exporting the workspace kills Chrome/Firefox so profiles copy. That
+              // destroys the filled captcha page the user was just asked to finish.
+              if (shouldCheckpointComputerBeforePause("takeover")) {
+                await checkpointAndRecordComputerWorkspace(deps, storedComputer, computer, context);
+              } else {
+                await extendSandboxLease(deps, storedComputer, computer).catch(() => undefined);
+              }
               if (!(await holdComputerExecutionLeaseForTakeover(deps.prisma, computerLease))) {
                 throw new Error("Computer lease expired before takeover");
               }
