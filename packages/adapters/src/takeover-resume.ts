@@ -8,7 +8,7 @@ export function takeoverResumeFromRelease(reason: unknown): {
     return {
       checkpoint: "takeover-skipped",
       promptNote:
-        "The user skipped the login. Continue without treating the login as complete. Do not request takeover again unless you still cannot proceed.",
+        "The user skipped this screen. Do not treat the site as complete. Skip it, log that it was blocked, and continue the overall task on a different site. Do not request takeover again for the same page.",
     };
   }
   return {

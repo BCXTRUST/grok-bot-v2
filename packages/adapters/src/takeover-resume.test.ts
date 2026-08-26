@@ -13,7 +13,7 @@ describe("takeoverResumeFromRelease", () => {
   it("tells the bot the login was skipped", () => {
     const resume = takeoverResumeFromRelease("skipped");
     expect(resume.checkpoint).toBe("takeover-skipped");
-    expect(resume.promptNote).toMatch(/skipped the login/i);
+    expect(resume.promptNote).toMatch(/skipped this screen/i);
     expect(resume.promptNote).not.toMatch(/finished the login/i);
   });
 

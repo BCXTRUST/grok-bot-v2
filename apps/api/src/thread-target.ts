@@ -248,7 +248,12 @@ export async function threadSnapshot(
       messages: messagesWithLiveEvents(messagePage.messages, liveEvents),
       olderCursor: messagePage.olderCursor,
       run: run ? mapRun(run) : null,
-      computer: toComputerStatus(target.botId, target.bot.computer, busyBotName),
+      computer: (() => {
+        const computer = toComputerStatus(target.botId, target.bot.computer, busyBotName);
+        return run?.status === "waiting_takeover"
+          ? { ...computer, takeoverRequested: true }
+          : computer;
+      })(),
     };
   }
 

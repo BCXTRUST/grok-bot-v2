@@ -132,7 +132,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "request_takeover",
     description:
-      "Ask the user to take over the computer screen for login or human judgment. Protected input stays off the thread.",
+      "Ask the user to take over the computer screen for 2FA or payment you cannot complete. Do not use this for reCAPTCHA or other skippable captchas on a multi-site task — skip that site and continue. Protected input stays off the thread.",
     inputSchema: {
       type: "object",
       properties: { reason: { type: "string" } },

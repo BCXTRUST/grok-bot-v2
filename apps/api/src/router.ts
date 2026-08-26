@@ -1246,6 +1246,9 @@ export function createRouter(deps: RouterDeps) {
           !controlLeaseId ||
           controlBotId !== bot.id
         ) {
+          if (input.reason === "skipped" || input.reason === "done") {
+            await resumeWaitingTakeoverRun(deps, context.actor.workspaceId, bot.id, input.reason);
+          }
           return { ok: true as const };
         }
         if (bot.computer.providerRef) {
@@ -1277,6 +1280,9 @@ export function createRouter(deps: RouterDeps) {
           });
 
         await enqueueTakeoverContinuation(deps.jobs, released.runId);
+        if (!released.runId && (input.reason === "skipped" || input.reason === "done")) {
+          await resumeWaitingTakeoverRun(deps, context.actor.workspaceId, bot.id, input.reason);
+        }
         scheduleComputerSleep(deps.jobs, bot.computer.id);
         return { ok: true as const };
       }),
@@ -2844,7 +2850,35 @@ async function computerStatus(
     botId,
     botName: bot.name,
   });
-  return toComputerStatus(botId, bot.computer, busyBotName);
+  const status = toComputerStatus(botId, bot.computer, busyBotName);
+  if (status.takeoverRequested) return status;
+  const waiting = await deps.prisma.run.findFirst({
+    where: { botId, workspaceId: actor.workspaceId, status: "waiting_takeover" },
+    select: { id: true },
+  });
+  return waiting ? { ...status, takeoverRequested: true } : status;
+}
+
+async function resumeWaitingTakeoverRun(
+  deps: RouterDeps,
+  workspaceId: string,
+  botId: string,
+  reason: "skipped" | "done",
+): Promise<void> {
+  const waiting = await deps.prisma.run.findFirst({
+    where: { botId, workspaceId, status: "waiting_takeover" },
+    orderBy: { createdAt: "desc" },
+    select: { id: true },
+  });
+  if (!waiting) return;
+  const resumed = await deps.prisma.run.updateMany({
+    where: { id: waiting.id, status: "waiting_takeover" },
+    data: {
+      status: "queued",
+      checkpoint: reason === "skipped" ? "takeover-skipped" : "takeover",
+    },
+  });
+  if (resumed.count === 1) await enqueueTakeoverContinuation(deps.jobs, waiting.id);
 }
 
 async function expireStaleComputerControl(
