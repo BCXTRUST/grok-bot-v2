@@ -424,12 +424,14 @@ export function createRunExecutor(deps: ExecutorDeps) {
       if (!run) return;
       if (isTerminal(run.status as RunStatus)) return;
       const resumeCheckpoint =
-        run.checkpoint === "takeover" || run.checkpoint === "takeover-skipped"
+        run.checkpoint === "takeover" ||
+        run.checkpoint === "takeover-skipped" ||
+        run.checkpoint === "user-takeover"
           ? run.checkpoint
           : null;
       const resumeFromTakeover = run.status === "waiting_takeover" || Boolean(resumeCheckpoint);
       const takeoverResume = resumeFromTakeover
-        ? takeoverResumeFromRelease(resumeCheckpoint === "takeover-skipped" ? "skipped" : "done")
+        ? takeoverResumeFromRelease(resumeCheckpoint ?? "takeover")
         : null;
 
       const fence = nextFence(run.leaseFence);
@@ -1740,6 +1742,10 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 still.leaseFence !== fence
               ) {
                 leaseValid = false;
+                if (still?.status === "waiting_takeover") {
+                  retainComputerLease = true;
+                  liveDesktopTakeover = true;
+                }
                 return;
               }
             }
@@ -2062,6 +2068,18 @@ export function createRunExecutor(deps: ExecutorDeps) {
             console.error("history.compact enqueue failed", error);
           }
         } catch (error) {
+          const waitingTakeover =
+            liveDesktopTakeover ||
+            (
+              await deps.prisma.run.findUnique({
+                where: { id: runId },
+                select: { status: true },
+              })
+            )?.status === "waiting_takeover";
+          if (waitingTakeover) {
+            retainComputerLease = true;
+            liveDesktopTakeover = true;
+          }
           if (!terminalCheckpointComplete && !liveDesktopTakeover) {
             await checkpointAndRecordComputerWorkspace(
               deps,
@@ -2136,6 +2154,16 @@ export function createRunExecutor(deps: ExecutorDeps) {
         }
       } finally {
         clearInterval(heartbeat);
+        if (!retainComputerLease) {
+          const waitingTakeover =
+            (
+              await deps.prisma.run.findUnique({
+                where: { id: runId },
+                select: { status: true },
+              })
+            )?.status === "waiting_takeover";
+          if (waitingTakeover) retainComputerLease = true;
+        }
         if (!retainComputerLease) {
           if (screenRelease) {
             await deps.sandbox

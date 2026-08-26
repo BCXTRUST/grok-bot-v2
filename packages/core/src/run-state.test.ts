@@ -8,6 +8,11 @@ describe("run state machine", () => {
     expect(canTransition("waiting_takeover", "running")).toBe(false);
   });
 
+  it("allows the user to pause a leased or running computer onto takeover", () => {
+    expect(canTransition("running", "waiting_takeover")).toBe(true);
+    expect(canTransition("leased", "waiting_takeover")).toBe(true);
+  });
+
   it("rejects rewriting a completed run", () => {
     expect(() => assertTransition("completed", "running")).toThrow(/illegal/i);
   });

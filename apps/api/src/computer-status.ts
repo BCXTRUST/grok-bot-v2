@@ -2,7 +2,7 @@ import type { ComputerStatus } from "@rakazo/contracts";
 import { ACTIVE_RUN_STATUSES, computerScreenSize } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 
-/** Mirrors computer.takeover: an execution lease blocks user control unless waiting_takeover. */
+/** Mirrors computer.takeover: an execution lease pauses that bot for user control unless already waiting. */
 export function executionBlocksUserTakeover(input: {
   hasLease: boolean;
   leaseExpiresAt: Date | null | undefined;

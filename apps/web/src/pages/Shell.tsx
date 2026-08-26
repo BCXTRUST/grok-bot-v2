@@ -1371,14 +1371,12 @@ export function ShellPage() {
 
   async function openComputer() {
     if (!active) return;
-    const needsTakeover = !userHoldsComputerControl(computer, active.id);
-    const blocked = computerTakeoverBlocked(computer, snapshot?.run?.status);
     try {
       computerVisible.current = true;
       setComputerOpen(true);
       await bootComputer({
-        takeControl: needsTakeover && !blocked,
-        overlay: (needsTakeover && !blocked) || computer?.state !== "running",
+        takeControl: false,
+        overlay: computer?.state !== "running",
         force: computer?.state !== "running",
       });
       await refreshComputerScreen(active.id, true);
@@ -1387,11 +1385,27 @@ export function ShellPage() {
     }
   }
 
+  async function takeOverComputer() {
+    if (!active) return;
+    try {
+      computerVisible.current = true;
+      setComputerOpen(true);
+      await bootComputer({
+        takeControl: true,
+        overlay: true,
+        force: computer?.state !== "running",
+      });
+      await refreshComputerScreen(active.id, true);
+    } catch {
+      // Keep the watch overlay if the desktop is already open.
+    }
+  }
+
   async function releaseComputer(reason?: ComputerReleaseReason) {
     if (!active) return;
-    setComputerOpen(false);
     await rpc.computer.release({ botId: active.id, reason }).catch(() => undefined);
     await refreshThread(active.id);
+    await refreshComputerScreen(active.id, true);
   }
 
   const embeddedScreenUrl = embeddableScreenUrl(screenUrl, window.location.href);
@@ -1948,11 +1962,9 @@ export function ShellPage() {
                       ? "You have control"
                       : computerError
                         ? computerError
-                        : computer?.busyBotName
-                          ? `${computer.busyBotName} is using it`
-                          : computer?.state === "suspended"
-                            ? "Asleep"
-                            : computerLabel(computer?.mode, active.name)}
+                        : computer?.state === "suspended"
+                          ? "Asleep"
+                          : computerLabel(computer?.mode, active.name)}
                   </span>
                   {hasControl ? (
                     <ComputerReleaseActions
@@ -1966,7 +1978,7 @@ export function ShellPage() {
                       size="sm"
                       disabled={takeoverBlocked}
                       title={takeoverBlocked ? "Stop the bot first" : undefined}
-                      onClick={() => void openComputer()}
+                      onClick={() => void takeOverComputer()}
                     >
                       Take control
                     </Button>
@@ -2482,9 +2494,7 @@ export function ShellPage() {
                   size="sm"
                   disabled={takeoverBlocked}
                   title={takeoverBlocked ? "Stop the bot first" : undefined}
-                  onClick={() =>
-                    void bootComputer({ takeControl: true, overlay: false }).catch(() => undefined)
-                  }
+                  onClick={() => void takeOverComputer().catch(() => undefined)}
                 >
                   Take control
                 </Button>
@@ -2956,18 +2966,13 @@ function ComputerReleaseActions({
   takeoverRequested: boolean;
   onRelease: (reason?: ComputerReleaseReason) => Promise<void>;
 }) {
-  if (!takeoverRequested) {
-    return (
-      <Button type="button" variant="outline" size="sm" onClick={() => void onRelease()}>
-        Release
-      </Button>
-    );
-  }
   return (
     <div className="flex items-center gap-2">
-      <Button type="button" variant="outline" size="sm" onClick={() => void onRelease("skipped")}>
-        Skip
-      </Button>
+      {takeoverRequested ? (
+        <Button type="button" variant="outline" size="sm" onClick={() => void onRelease("skipped")}>
+          Skip
+        </Button>
+      ) : null}
       <Button type="button" size="sm" onClick={() => void onRelease("done")}>
         I’m done
       </Button>

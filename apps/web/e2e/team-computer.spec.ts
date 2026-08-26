@@ -124,7 +124,9 @@ test("user control leaves another Team bot's screen available", async ({ page },
   await captureScreenshot(page, testInfo, "47-team-computer-control-released");
 });
 
-test("an active Team bot must be stopped before user takeover", async ({ page }, testInfo) => {
+test("user can watch a running Team bot and take control without stopping it", async ({
+  page,
+}, testInfo) => {
   const stamp = Date.now();
 
   await signup(
@@ -140,56 +142,39 @@ test("an active Team bot must be stopped before user takeover", async ({ page },
   await expect
     .poll(async () => (await threadSnapshot(page, chiefId)).run?.status ?? "idle")
     .toBe("running");
-  await captureScreenshot(page, testInfo, "48-active-team-bot-blocks-takeover");
+  await captureScreenshot(page, testInfo, "48-active-team-bot-watchable");
   await expect
     .poll(
       async () => (await rpc<{ state: string }>(page, "computer/status", { botId: chiefId })).state,
     )
     .toBe("running");
-  await expect
-    .poll(
-      async () =>
-        (
-          await rpc<{ busyBotName: string | null }>(page, "computer/status", {
-            botId: chiefId,
-          })
-        ).busyBotName,
-    )
-    .not.toBeNull();
 
   const takeover = await rpcResponse(page, "computer/takeover", { botId: chiefId });
-  expect(takeover.ok).toBe(false);
-  expect(takeover.status).toBe(409);
+  expect(takeover.ok).toBe(true);
+  await expect
+    .poll(async () => (await threadSnapshot(page, chiefId)).run?.status ?? "idle")
+    .toBe("waiting_takeover");
+
+  await rpc(page, "computer/release", { botId: chiefId, reason: "done" });
   await expect
     .poll(async () => (await threadSnapshot(page, chiefId)).run?.status ?? "idle")
     .toBe("running");
 
   await page.getByTitle("Agent computer").click();
-  const takeControl = page.getByRole("button", { name: /Take control/i }).first();
-  await expect(takeControl).toBeDisabled();
-  await expect(page.getByText(/is using it/i).first()).toBeVisible();
-  await captureScreenshot(page, testInfo, "48b-take-control-blocked-while-busy");
+  await page.getByRole("button", { name: "Open computer" }).click();
+  await expect(page.getByRole("button", { name: "Close computer" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Take control", exact: true }).last()).toBeVisible();
+  await captureScreenshot(page, testInfo, "48b-watch-running-computer");
 
-  // Stop through the shell so the client refreshes computer status (API stop alone
-  // does not emit a terminal thread event).
-  await page.getByRole("button", { name: "Stop", exact: true }).click();
-  await waitForIdle(page, chiefId);
-  await expect
-    .poll(
-      async () =>
-        (
-          await rpc<{ busyBotName: string | null }>(page, "computer/status", {
-            botId: chiefId,
-          })
-        ).busyBotName,
-    )
-    .toBeNull();
+  const takeControl = page.getByRole("button", { name: /Take control/i }).last();
   await expect(takeControl).toBeEnabled();
   await takeControl.click();
-  await expect(
-    page.getByTestId("side-panel").getByText("You have control", { exact: true }),
-  ).toBeVisible();
-  await captureScreenshot(page, testInfo, "49-team-computer-takeover-after-stop");
+  await expect(page.getByText("You have control", { exact: true }).last()).toBeVisible();
+  await expect(page.getByRole("button", { name: "I’m done", exact: true }).last()).toBeVisible();
+  await captureScreenshot(page, testInfo, "49-team-computer-takeover-while-busy");
+  await page.getByRole("button", { name: "I’m done", exact: true }).last().click();
+  await expect(page.getByRole("button", { name: "Close computer" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "I’m done", exact: true })).toBeHidden();
   await rpc(page, "computer/release", { botId: chiefId });
 });
 
@@ -275,14 +260,6 @@ async function waitForRun(page: Page, botId: string, runId: string) {
       },
     )
     .toBe(true);
-}
-
-async function waitForIdle(page: Page, botId: string) {
-  await expect
-    .poll(async () => (await threadSnapshot(page, botId)).run?.status ?? "idle", {
-      timeout: realSandboxTimeout(90_000, 20_000),
-    })
-    .toBe("idle");
 }
 
 function threadSnapshot(page: Page, botId: string) {

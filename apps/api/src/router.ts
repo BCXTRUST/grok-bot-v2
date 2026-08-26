@@ -36,6 +36,7 @@ import {
   enqueueTakeoverContinuation,
   expireComputerControl,
   hasActiveComputerControl,
+  holdComputerExecutionLeaseForTakeover,
   isScratchpadStatus,
   listPiCatalog,
   listScratchpadItems,
@@ -98,6 +99,7 @@ import {
   parseComputerMode,
   type ThreadEvents,
   touchGroupUpdatedAt,
+  USER_TAKEOVER_CHECKPOINT,
 } from "@rakazo/db";
 import { createOwnedArtifact, getOwnedArtifact, getWorkspaceArtifact } from "./artifacts.js";
 import {
@@ -1153,6 +1155,7 @@ export function createRouter(deps: RouterDeps) {
           : null;
         const waitingForTakeover =
           executionRun?.botId === bot.id && executionRun.status === "waiting_takeover";
+        let pausedForUser = false;
         if (
           executionBlocksUserTakeover({
             hasLease: Boolean(executionLease),
@@ -1160,8 +1163,27 @@ export function createRouter(deps: RouterDeps) {
             runStatus: executionRun?.status,
           })
         ) {
-          throw new ORPCError("CONFLICT", { message: "Stop the bot first" });
+          if (!executionLease || executionRun?.botId !== bot.id) {
+            throw new ORPCError("CONFLICT", { message: "Stop the bot first" });
+          }
+          const paused = await deps.events.pauseActiveRunForUserTakeover({
+            workspaceId: context.actor.workspaceId,
+            botId: bot.id,
+            runId: executionLease.runId,
+            reason: "User took control",
+          });
+          if (!paused) {
+            throw new ORPCError("CONFLICT", { message: "Stop the bot first" });
+          }
+          await holdComputerExecutionLeaseForTakeover(deps.prisma, {
+            computerId: bot.computer.id,
+            botId: bot.id,
+            runId: executionLease.runId,
+            fence: executionLease.fence,
+          });
+          pausedForUser = true;
         }
+        const bindControlRun = waitingForTakeover || pausedForUser;
         const executionLeaseActive = Boolean(
           executionLease && executionLease.expiresAt.getTime() > Date.now(),
         );
@@ -1187,7 +1209,7 @@ export function createRouter(deps: RouterDeps) {
             controlLeaseId: leaseId,
             controlLeaseExpiresAt: expiresAt,
             controlBotId: bot.id,
-            controlRunId: waitingForTakeover ? executionLease?.runId : null,
+            controlRunId: bindControlRun ? executionLease?.runId : null,
             state: "running",
           },
         });
@@ -1228,7 +1250,10 @@ export function createRouter(deps: RouterDeps) {
             threadId: bot.thread.id,
             botId: bot.id,
             type: "computer.takeover.granted",
-            payload: { leaseId, takeoverRequested: waitingForTakeover },
+            payload: {
+              leaseId,
+              takeoverRequested: waitingForTakeover && !pausedForUser,
+            },
           });
         }
         scheduleComputerSleep(deps.jobs, bot.computer.id);
@@ -2851,11 +2876,14 @@ async function computerStatus(
     botName: bot.name,
   });
   const status = toComputerStatus(botId, bot.computer, busyBotName);
-  if (status.takeoverRequested) return status;
   const waiting = await deps.prisma.run.findFirst({
     where: { botId, workspaceId: actor.workspaceId, status: "waiting_takeover" },
-    select: { id: true },
+    select: { id: true, checkpoint: true },
   });
+  if (waiting?.checkpoint === USER_TAKEOVER_CHECKPOINT) {
+    return { ...status, takeoverRequested: false };
+  }
+  if (status.takeoverRequested) return status;
   return waiting ? { ...status, takeoverRequested: true } : status;
 }
 
@@ -2868,14 +2896,20 @@ async function resumeWaitingTakeoverRun(
   const waiting = await deps.prisma.run.findFirst({
     where: { botId, workspaceId, status: "waiting_takeover" },
     orderBy: { createdAt: "desc" },
-    select: { id: true },
+    select: { id: true, checkpoint: true },
   });
   if (!waiting) return;
+  const resumeCheckpoint =
+    reason === "skipped"
+      ? "takeover-skipped"
+      : waiting.checkpoint === USER_TAKEOVER_CHECKPOINT
+        ? USER_TAKEOVER_CHECKPOINT
+        : "takeover";
   const resumed = await deps.prisma.run.updateMany({
     where: { id: waiting.id, status: "waiting_takeover" },
     data: {
       status: "queued",
-      checkpoint: reason === "skipped" ? "takeover-skipped" : "takeover",
+      checkpoint: resumeCheckpoint,
     },
   });
   if (resumed.count === 1) await enqueueTakeoverContinuation(deps.jobs, waiting.id);

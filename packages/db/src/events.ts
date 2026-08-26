@@ -3,8 +3,9 @@ import {
   type MessageBlock,
   MessageBlock as MessageBlockSchema,
   type ProductEvent,
+  type RunStatus,
 } from "@rakazo/contracts";
-import { isApprovalAskBlock } from "@rakazo/core";
+import { assertTransition, isApprovalAskBlock } from "@rakazo/core";
 import type { Prisma, PrismaClient } from "./client.js";
 import {
   assertRunCanWriteHistory,
@@ -36,6 +37,7 @@ export interface ThreadEvents {
   notify(threadId: string, seq: number): Promise<void>;
   pauseRunForInput(input: PauseRunForInput): Promise<boolean>;
   pauseRunForTakeover(input: PauseRunForTakeover): Promise<boolean>;
+  pauseActiveRunForUserTakeover(input: PauseActiveRunForUserTakeover): Promise<boolean>;
   sendUserMessage(input: SendUserMessageInput): Promise<SendUserMessageResult>;
   follow(threadId: string, cursor: number, signal?: AbortSignal): AsyncGenerator<ProductEvent>;
 }
@@ -102,6 +104,16 @@ export interface PauseRunForTakeover {
   reason: string;
 }
 
+/** Checkpoint for a user-initiated pause so resume does not look like a finished login. */
+export const USER_TAKEOVER_CHECKPOINT = "user-takeover";
+
+export interface PauseActiveRunForUserTakeover {
+  workspaceId: string;
+  botId: string;
+  runId: string;
+  reason: string;
+}
+
 export interface AnswerRunInput {
   workspaceId: string;
   threadId: string;
@@ -147,6 +159,7 @@ export function createThreadEvents(
     notify: (threadId, seq) => notifyRealtime(realtime, threadId, seq),
     pauseRunForInput: (input) => pauseRunForInput(prisma, input, realtime),
     pauseRunForTakeover: (input) => pauseRunForTakeover(prisma, input, realtime),
+    pauseActiveRunForUserTakeover: (input) => pauseActiveRunForUserTakeover(prisma, input, realtime),
     sendUserMessage: (input) => sendUserMessage(prisma, input, realtime),
     follow: (threadId, cursor, signal) =>
       followThreadEvents(prisma, threadId, cursor, realtime, signal, options.catchUpMs),
@@ -600,6 +613,62 @@ export async function pauseRunForTakeover(
   return true;
 }
 
+export async function pauseActiveRunForUserTakeover(
+  prisma: PrismaClient,
+  input: PauseActiveRunForUserTakeover,
+  realtime?: RealtimeFanout,
+): Promise<boolean> {
+  const committed = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    const run = await tx.run.findFirst({
+      where: {
+        id: input.runId,
+        workspaceId: input.workspaceId,
+        botId: input.botId,
+        status: { in: ["running", "leased"] },
+      },
+      select: { id: true, threadId: true, status: true },
+    });
+    if (!run) return null;
+    await tx.$queryRaw`SELECT id FROM threads WHERE id = ${run.threadId} FOR UPDATE`;
+    assertTransition(run.status as RunStatus, "waiting_takeover");
+    const paused = await tx.run.updateMany({
+      where: {
+        id: run.id,
+        workspaceId: input.workspaceId,
+        botId: input.botId,
+        status: { in: ["running", "leased"] },
+      },
+      data: {
+        status: "waiting_takeover",
+        leaseOwner: null,
+        leaseExpiresAt: null,
+        checkpoint: USER_TAKEOVER_CHECKPOINT,
+      },
+    });
+    if (paused.count !== 1) return null;
+
+    await tx.attempt.updateMany({
+      where: { runId: run.id, status: "running" },
+      data: { status: "waiting_takeover", finishedAt: new Date() },
+    });
+
+    const waitingEvent = await appendEventInTransaction(tx, {
+      workspaceId: input.workspaceId,
+      threadId: run.threadId,
+      botId: input.botId,
+      type: "computer.takeover.requested",
+      runId: run.id,
+      payload: { reason: input.reason },
+    });
+    await tx.event.deleteMany({ where: { runId: run.id, type: "thread.progress" } });
+    return { threadId: waitingEvent.threadId, seq: waitingEvent.seq };
+  });
+
+  if (!committed) return false;
+  await notifyRealtime(realtime, committed.threadId, committed.seq);
+  return true;
+}
+
 export async function finalizeComputerControlRelease(
   prisma: PrismaClient,
   input: FinalizeComputerControlReleaseInput,
@@ -624,6 +693,23 @@ export async function finalizeComputerControlRelease(
     });
     if (cleared.count !== 1) return null;
 
+    const waitingRun = input.runId
+      ? await tx.run.findFirst({
+          where: {
+            id: input.runId,
+            workspaceId: input.workspaceId,
+            botId: input.botId,
+            status: "waiting_takeover",
+          },
+          select: { checkpoint: true },
+        })
+      : null;
+    const resumeCheckpoint =
+      input.reason === "skipped" || input.reason === "expired"
+        ? "takeover-skipped"
+        : waitingRun?.checkpoint === USER_TAKEOVER_CHECKPOINT
+          ? USER_TAKEOVER_CHECKPOINT
+          : "takeover";
     const resumed = input.runId
       ? await tx.run.updateMany({
           where: {
@@ -634,10 +720,7 @@ export async function finalizeComputerControlRelease(
           },
           data: {
             status: "queued",
-            checkpoint:
-              input.reason === "skipped" || input.reason === "expired"
-                ? "takeover-skipped"
-                : "takeover",
+            checkpoint: resumeCheckpoint,
           },
         })
       : { count: 0 };
