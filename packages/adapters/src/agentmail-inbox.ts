@@ -113,6 +113,12 @@ export class AgentMailInboxProvider implements AgentInboxProvider {
             "AgentMail inbox limit reached. Delete unused inboxes or upgrade the plan, then retry.",
           );
         }
+        const existingId = this.domain ? `${username}@${this.domain}` : username;
+        const existing = await this.client.inboxes.get(existingId).catch(() => undefined);
+        if (existing) {
+          const reused = toInboxRef(existing);
+          if (inboxAddressFitsName(reused.address, request.name)) return reused;
+        }
       }
     }
     throw lastError instanceof Error

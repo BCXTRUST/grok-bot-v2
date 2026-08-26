@@ -137,6 +137,32 @@ describe("AgentMail inbox adapter", () => {
     expect(created).toHaveBeenCalledTimes(1);
   });
 
+  it("reuses an existing natural address when create says it is taken", async () => {
+    const created = vi.fn(async () => {
+      throw new Error("username taken");
+    });
+    const get = vi.fn(async () => ({
+      inboxId: "roman.s@faircroft.us",
+      email: "roman.s@faircroft.us",
+    }));
+    const provider = new AgentMailInboxProvider(
+      {
+        inboxes: {
+          create: created,
+          get,
+          messages: {} as never,
+        },
+      },
+      "faircroft.us",
+    );
+    const inbox = await provider.provision(
+      { botId: "bot-new", name: "Roman Schreiber", workspaceId: "ws" },
+      context,
+    );
+    expect(inbox.address).toBe("roman.s@faircroft.us");
+    expect(get).toHaveBeenCalledWith("roman.s@faircroft.us");
+  });
+
   it("replaces an idempotent machine address with firstname.last-initial", async () => {
     const deleted = vi.fn(async () => undefined);
     const created = vi
