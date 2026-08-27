@@ -12,13 +12,21 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "computer_observe",
     description:
-      "Capture the current screen of this bot's computer. Returns frame metadata and an image. Observe before coordinate-based actions and whenever another actor may have changed the desktop.",
-    inputSchema: { type: "object", properties: {} },
+      'Capture the current screen of this bot\'s computer. Returns an image plus metadata: screen width/height, cursor, the active window, and the list of open windows. computer_act already returns a fresh screenshot, so only observe when you did NOT just act, when the screen may have changed on its own (loading, another user), or when you are unsure — this avoids redundant screenshots. Call with {"help": true} for the full step-by-step computer-and-browser guide.',
+    inputSchema: {
+      type: "object",
+      properties: {
+        help: {
+          type: "boolean",
+          description: "Return the full computer-use guide instead of a screenshot.",
+        },
+      },
+    },
   },
   {
     name: "computer_act",
     description:
-      "Perform up to 24 ordered desktop actions on this bot's computer and return the resulting screen. Batch only predictable actions; stop before an outcome you need to inspect. Action kinds: click, move, down, up, type, key, scroll, wait.",
+      "Perform up to 24 ordered desktop actions on this bot's computer and return the resulting screen (set observe:false to skip the screenshot for a purely mechanical batch). Batch only actions whose result you can predict; stop before an outcome you must inspect. Kinds: click {x,y,button?,double?}, move {x,y}, down/up {x,y,button?} (a down→move→up sequence performs a drag), type {text}, key {key,modifiers?} (e.g. Enter, or Tab+alt to switch windows, l+ctrl to focus the browser address bar), scroll {direction,amount?} (move over the target first — scroll happens at the cursor), wait {ms}. Coordinates are screen pixels from the top-left.",
     inputSchema: {
       type: "object",
       properties: {

@@ -28,6 +28,8 @@ import {
   appendToolCallSegment,
   assertTransition,
   blocksToAgentHistoryText,
+  COMPUTER_USE_GUIDE,
+  COMPUTER_USE_SUMMARY,
   connectorKindFromToolName,
   containsSecret,
   createStreamingRedactor,
@@ -728,7 +730,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
         };
         const tools = [...builtins, ...exposedConnectorTools];
         const computerInstruction = graphical
-          ? "You have a persistent computer. Use computer_observe and computer_act for its visible desktop, including browsers and installed applications. Use open_path and launch_app to open graphical files, URLs, and applications. Use the file tools and shell for precise filesystem and terminal work. On a Team Computer you have your own screen; other Team bots may run at the same time on theirs. Another user may interact with your screen while you run, so re-observe when it may have changed."
+          ? `You have a persistent computer. Use open_path and launch_app to open graphical files, URLs, and applications, and the file tools and shell for precise filesystem and terminal work.\n${COMPUTER_USE_SUMMARY}`
           : "You have a persistent sandbox filesystem and shell. This backend does not provide model-visible graphical control, so use the file tools and shell.";
         const workspaceInstruction =
           computerMode === "team"
@@ -918,6 +920,13 @@ export function createRunExecutor(deps: ExecutorDeps) {
           const finish = async (result: unknown) =>
             (await persistEffectResult(result)) ? result : uncertainEffectResult(name);
           if (name === "computer_observe") {
+            if (args.help === true) {
+              return {
+                kind: "agent_tool_result" as const,
+                content: [{ type: "text" as const, text: COMPUTER_USE_GUIDE }],
+                details: { help: true },
+              };
+            }
             if (await getActiveTeachingSession(deps.prisma, run.workspaceId, run.botId)) {
               return { error: "Teaching is in progress. Stop teaching before using the computer." };
             }

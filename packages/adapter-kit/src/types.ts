@@ -105,6 +105,13 @@ export type ComputerAction =
   | { kind: "open"; path: string }
   | { kind: "launch"; application: string; uri?: string };
 
+export interface ComputerWindow {
+  id: string;
+  title?: string;
+  /** True for the window that currently has input focus. */
+  focused?: boolean;
+}
+
 export interface ComputerObservation {
   frameId: string;
   capturedAt: string;
@@ -114,6 +121,8 @@ export interface ComputerObservation {
   height: number;
   cursor?: { x: number; y: number };
   activeWindow?: { id: string; title?: string };
+  /** Open windows on the desktop, so the bot can reason about and switch between them. */
+  windows?: ComputerWindow[];
 }
 
 export interface ComputerActionRequest {

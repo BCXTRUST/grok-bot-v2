@@ -38,6 +38,30 @@ describe("computer tool bridge", () => {
     ]);
   });
 
+  it("includes the open window list in the observation text and details", () => {
+    const observation = computerObservation(Uint8Array.from([9, 9, 9]), {
+      mimeType: "image/png",
+      width: 1280,
+      height: 800,
+      windows: [
+        { id: "1", title: "Chromium", focused: true },
+        { id: "2", title: "File Manager" },
+      ],
+    });
+    const result = observationToolResult(observation);
+    const text = result.content.find((part) => part.type === "text") as
+      | { type: "text"; text: string }
+      | undefined;
+    expect(text?.text).toContain("Chromium (focused)");
+    expect(text?.text).toContain("File Manager");
+    expect(result.details).toMatchObject({
+      windows: [
+        { id: "1", title: "Chromium", focused: true },
+        { id: "2", title: "File Manager" },
+      ],
+    });
+  });
+
   it("does not resend an unchanged screenshot", () => {
     const observation = computerObservation(Uint8Array.from([1, 2, 3]), {
       mimeType: "image/png",

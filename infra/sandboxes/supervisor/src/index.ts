@@ -753,6 +753,9 @@ async function observeContainer(container: Docker.Container, display = ":1") {
     'wid="$(xdotool getactivewindow 2>/dev/null || true)"',
     'printf "WINDOW %s\\n" "$wid"',
     'printf "TITLE %s\\n" "$(test -n "$wid" && xdotool getwindowname "$wid" 2>/dev/null || true)"',
+    // Enumerate open, named, visible windows so the bot can reason about and switch between them.
+    'windows="$(for w in $(xdotool search --onlyvisible --name ".*" 2>/dev/null | head -n 40); do t="$(xdotool getwindowname "$w" 2>/dev/null || true)"; if [ -n "$t" ]; then printf "%s\\t%s\\n" "$w" "$t"; fi; done 2>/dev/null | head -n 15 || true)"',
+    'printf "WINLIST\\n%s\\nWINLIST_END\\n" "$windows"',
     'printf "IMAGE "',
     "import -window root png:- 2>/dev/null | base64 -w0",
     'printf "\\n"',
