@@ -198,6 +198,7 @@ export class DockerSandboxProvider implements SandboxProvider {
       height: number;
       cursor?: { x: number; y: number };
       activeWindow?: { id: string; title?: string };
+      windows?: Array<{ id: string; title?: string; focused?: boolean }>;
     };
     return computerObservation(Uint8Array.from(Buffer.from(body.image, "base64")), {
       mimeType: body.mimeType,
@@ -205,6 +206,7 @@ export class DockerSandboxProvider implements SandboxProvider {
       height: body.height,
       cursor: body.cursor,
       activeWindow: body.activeWindow,
+      ...(body.windows?.length ? { windows: body.windows } : {}),
     });
   }
 

@@ -269,4 +269,25 @@ describe("sandbox supervisor input containment", () => {
     });
     expect(() => parseObservation("GEOM 1280 800\nIMAGE ")).toThrow(/no image/);
   });
+
+  it("parses the open window list and marks the focused window", () => {
+    const parsed = parseObservation(
+      [
+        "GEOM 1280 800",
+        "CURSOR X=1 Y=2",
+        "WINDOW 42",
+        "TITLE Chromium",
+        "WINLIST",
+        "42\tChromium",
+        "43\tFile Manager",
+        "43\tFile Manager",
+        "WINLIST_END",
+        "IMAGE AQID",
+      ].join("\n"),
+    );
+    expect(parsed.windows).toEqual([
+      { id: "42", title: "Chromium", focused: true },
+      { id: "43", title: "File Manager" },
+    ]);
+  });
 });

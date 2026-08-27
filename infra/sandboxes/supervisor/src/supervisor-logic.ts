@@ -285,6 +285,7 @@ export function parseObservation(output: string) {
   const cursorY = Number(cursorLine.match(/Y=(\d+)/)?.[1]);
   const windowId = output.match(/^WINDOW\s*(.*)$/m)?.[1]?.trim();
   const title = output.match(/^TITLE\s*(.*)$/m)?.[1]?.trim();
+  const windows = parseWindowList(output, windowId);
   const image = output.match(/^IMAGE\s+([A-Za-z0-9+/=]+)$/m)?.[1];
   if (!image) throw new Error("screen capture returned no image");
   return {
@@ -296,5 +297,27 @@ export function parseObservation(output: string) {
       ? { cursor: { x: cursorX, y: cursorY } }
       : {}),
     ...(windowId ? { activeWindow: { id: windowId, ...(title ? { title } : {}) } } : {}),
+    ...(windows.length ? { windows } : {}),
   };
+}
+
+function parseWindowList(output: string, activeWindowId?: string) {
+  const block = output.match(/^WINLIST\n([\s\S]*?)\nWINLIST_END$/m)?.[1];
+  if (!block) return [] as Array<{ id: string; title?: string; focused?: boolean }>;
+  const windows: Array<{ id: string; title?: string; focused?: boolean }> = [];
+  const seen = new Set<string>();
+  for (const line of block.split("\n")) {
+    const tab = line.indexOf("\t");
+    if (tab <= 0) continue;
+    const id = line.slice(0, tab).trim();
+    const windowTitle = line.slice(tab + 1).trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    windows.push({
+      id,
+      ...(windowTitle ? { title: windowTitle } : {}),
+      ...(activeWindowId && id === activeWindowId ? { focused: true } : {}),
+    });
+  }
+  return windows;
 }
