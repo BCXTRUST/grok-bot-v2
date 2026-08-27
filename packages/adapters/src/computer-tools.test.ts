@@ -50,4 +50,20 @@ describe("computer tool bridge", () => {
       expect.objectContaining({ type: "text", text: expect.stringContaining("unchanged") }),
     ]);
   });
+
+  it("names open windows so the model can close Files without asking", () => {
+    const observation = computerObservation(Uint8Array.from([1, 2, 3]), {
+      mimeType: "image/png",
+      width: 1280,
+      height: 800,
+      windows: [
+        { id: "1", title: "Files", focused: true },
+        { id: "2", title: "Living with chronic pain" },
+      ],
+    });
+    const result = observationToolResult(observation);
+    const text = result.content.find((part) => part.type === "text");
+    expect(text && "text" in text ? text.text : "").toContain("Files (focused)");
+    expect(text && "text" in text ? text.text : "").toContain("Living with chronic pain");
+  });
 });

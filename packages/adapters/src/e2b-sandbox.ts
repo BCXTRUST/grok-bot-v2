@@ -21,8 +21,12 @@ import {
   boundedSandboxCommandTimeoutMs,
   exposeBrowserDesktopCommand,
   focusBrowserAndOpenUrlCommand,
+  focusedWindowLabelCommand,
+  isFileManagerLabel,
   isHttpUrl,
+  listVisibleWindowsCommand,
   looksLikeDesktopBrowserApp,
+  parseVisibleWindows,
 } from "@rakazo/core";
 import { sandboxIdleMs } from "./computer-idle.js";
 import { ComputerScreenUnavailableError, screenSessionKey } from "./computer-screens.js";
@@ -104,14 +108,34 @@ export async function openDesktopBrowser(desktop: {
   await exposeBrowserDesktop(desktop);
 }
 
-async function exposeBrowserDesktop(desktop: {
-  display?: string;
-  commands?: { run: (command: string) => Promise<unknown> };
-}): Promise<void> {
+async function exposeBrowserDesktop(
+  desktop: {
+    display?: string;
+    commands?: { run: (command: string) => Promise<unknown> };
+  },
+  display = desktop.display ?? ":0",
+): Promise<void> {
   if (!desktop.commands?.run) return;
-  await desktop.commands
-    .run(exposeBrowserDesktopCommand(desktop.display ?? ":0"))
-    .catch(() => undefined);
+  await desktop.commands.run(exposeBrowserDesktopCommand(display)).catch(() => undefined);
+}
+
+async function maybeClearFileManager(
+  desktop: Sandbox,
+  display = desktop.display ?? ":0",
+): Promise<void> {
+  const probe = await desktop.commands
+    .run(focusedWindowLabelCommand(display))
+    .catch(() => ({ stdout: "" }));
+  if (isFileManagerLabel(typeof probe.stdout === "string" ? probe.stdout : "")) {
+    await exposeBrowserDesktop(desktop, display);
+  }
+}
+
+async function listDesktopWindows(desktop: Sandbox, display = desktop.display ?? ":0") {
+  const listed = await desktop.commands
+    .run(listVisibleWindowsCommand(display))
+    .catch(() => ({ stdout: "" }));
+  return parseVisibleWindows(typeof listed.stdout === "string" ? listed.stdout : "");
 }
 
 export class E2BSandboxProvider implements SandboxProvider {
@@ -411,18 +435,24 @@ export class E2BSandboxProvider implements SandboxProvider {
       screenSessionKey(context),
       context.screenLeaseId,
     );
-    if (layout.isPrimary) return observeE2BDesktop(desktop, context);
+    if (layout.isPrimary) {
+      await maybeClearFileManager(desktop);
+      return observeE2BDesktop(desktop, context);
+    }
     await this.ensureExtraDisplay(desktop, layout, context);
+    await maybeClearFileManager(desktop, layout.display);
     const result = await desktop.commands.run(observeExtraDisplayCommand(layout), {
       signal: context.signal,
     });
     if (result.exitCode !== 0) throw new Error(result.stderr || "extra display observation failed");
     const parsed = parseExtraDisplayObservation(result.stdout);
+    const windows = await listDesktopWindows(desktop, layout.display);
     return computerObservation(parsed.image, {
       mimeType: "image/png",
       width: 1280,
       height: 800,
       cursor: parsed.cursor,
+      ...(windows.length ? { windows } : {}),
     });
   }
 
@@ -435,7 +465,10 @@ export class E2BSandboxProvider implements SandboxProvider {
     );
     const actions = boundedComputerActions(request.actions);
     let completed = 0;
-    if (!layout.isPrimary) await this.ensureExtraDisplay(desktop, layout, context);
+    if (!layout.isPrimary) {
+      await this.ensureExtraDisplay(desktop, layout, context);
+      await maybeClearFileManager(desktop, layout.display);
+    } else await maybeClearFileManager(desktop);
     for (const action of actions) {
       if (context.signal.aborted)
         throw context.signal.reason ?? new Error("computer action aborted");
@@ -721,12 +754,14 @@ async function observeE2BDesktop(
   const title = windowId
     ? await desktop.getWindowTitle(windowId).catch(() => undefined)
     : undefined;
+  const windows = await listDesktopWindows(desktop);
   return computerObservation(image, {
     mimeType: "image/png",
     width: size.width,
     height: size.height,
     cursor,
     activeWindow: windowId ? { id: windowId, title } : undefined,
+    ...(windows.length ? { windows } : {}),
   });
 }
 

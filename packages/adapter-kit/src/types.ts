@@ -114,6 +114,7 @@ export interface ComputerObservation {
   height: number;
   cursor?: { x: number; y: number };
   activeWindow?: { id: string; title?: string };
+  windows?: Array<{ id: string; title?: string; focused?: boolean }>;
 }
 
 export interface ComputerActionRequest {

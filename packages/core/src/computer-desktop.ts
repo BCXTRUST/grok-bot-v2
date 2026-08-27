@@ -106,3 +106,51 @@ export function openPathDesktopCommand(display: string, pathOrUrl: string): stri
   }
   return `DISPLAY=${display} xdg-open ${posixShellQuote(pathOrUrl)}`;
 }
+
+export function focusedWindowLabelCommand(display: string): string {
+  return [
+    `DISPLAY=${display} xdotool getactivewindow getwindowclassname 2>/dev/null || true`,
+    `DISPLAY=${display} xdotool getactivewindow getwindowname 2>/dev/null || true`,
+  ].join("; ");
+}
+
+export function isFileManagerLabel(label: string): boolean {
+  return /nautilus|thunar|pcmanfm|nemo|caja|dolphin|\bfiles\b|file manager/i.test(label);
+}
+
+export function listVisibleWindowsCommand(display: string): string {
+  return [
+    `focus=$(DISPLAY=${display} xdotool getwindowfocus 2>/dev/null || true)`,
+    `DISPLAY=${display} xdotool search --onlyvisible --name . 2>/dev/null | while read -r id; do`,
+    `  name=$(DISPLAY=${display} xdotool getwindowname "$id" 2>/dev/null | tr '\\n' ' ')`,
+    `  focused=0`,
+    `  [ "$id" = "$focus" ] && focused=1`,
+    `  printf '%s\\t%s\\t%s\\n' "$id" "$focused" "$name"`,
+    "done",
+  ].join("\n");
+}
+
+export function parseVisibleWindows(
+  stdout: string,
+): Array<{ id: string; title?: string; focused?: boolean }> {
+  return stdout
+    .split("\n")
+    .map((line) => line.trimEnd())
+    .filter(Boolean)
+    .flatMap((line) => {
+      const [id, focused, ...titleParts] = line.split("\t");
+      if (!id) return [];
+      const title = titleParts.join("\t").trim();
+      return [
+        {
+          id,
+          ...(title ? { title } : {}),
+          ...(focused === "1" ? { focused: true } : {}),
+        },
+      ];
+    })
+    .slice(0, 16);
+}
+
+export const COMPUTER_AUTONOMY_INSTRUCTION =
+  "Never ask the user to close windows, click the desktop, or tell you how to proceed. Close overlapping file-manager windows yourself, raise the browser, type into the address bar, and keep working until the task is done. Only request_takeover for CAPTCHA, password entry, or payment.";

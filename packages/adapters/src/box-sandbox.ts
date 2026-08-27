@@ -28,9 +28,13 @@ import type {
 import {
   boundedSandboxCommandTimeoutMs,
   exposeBrowserDesktopCommand,
+  focusedWindowLabelCommand,
+  isFileManagerLabel,
   isHttpUrl,
+  listVisibleWindowsCommand,
   looksLikeDesktopBrowserApp,
   openPathDesktopCommand,
+  parseVisibleWindows,
 } from "@rakazo/core";
 import { SingleScreenClaimTracker } from "./computer-screens.js";
 import {
@@ -317,6 +321,22 @@ export class BoxSandboxProvider implements SandboxProvider {
   async observe(computer: ComputerRef, context: AdapterContext): Promise<ComputerObservation> {
     const id = this.id(computer);
     this.screens.claim(id, context);
+    const focused = await this.runCommand(
+      id,
+      focusedWindowLabelCommand(":0"),
+      undefined,
+      15_000,
+      context.signal,
+    ).catch(() => ({ stdout: "" }));
+    if (isFileManagerLabel(focused.stdout ?? "")) {
+      await this.runCommand(
+        id,
+        exposeBrowserDesktopCommand(":0"),
+        undefined,
+        15_000,
+        context.signal,
+      ).catch(() => undefined);
+    }
     const imagePath = `/tmp/rakazo-observe-${randomUUID()}.png`;
     try {
       const result = await this.runCommand(
@@ -331,7 +351,14 @@ export class BoxSandboxProvider implements SandboxProvider {
       }
       const image = await this.readRemoteFile(id, imagePath, context.signal);
       if (!image.byteLength) throw new Error("Box screenshot did not contain image data");
-      return parseBoxObservation(image, result.stdout);
+      const listed = await this.runCommand(
+        id,
+        listVisibleWindowsCommand(":0"),
+        undefined,
+        15_000,
+        context.signal,
+      ).catch(() => ({ stdout: "" }));
+      return parseBoxObservation(image, result.stdout, listed.stdout);
     } finally {
       await this.rawCommand(id, `rm -f -- ${shellQuote(imagePath)}`, 10).catch(() => undefined);
     }
@@ -913,7 +940,11 @@ function observeBoxCommand(imagePath: string): string {
   ].join("\n");
 }
 
-function parseBoxObservation(image: Uint8Array, metadata: string): ComputerObservation {
+function parseBoxObservation(
+  image: Uint8Array,
+  metadata: string,
+  windowList = "",
+): ComputerObservation {
   const number = (name: string, fallback: number) =>
     Number(metadata.match(new RegExp(`(?:^|\\n)${name}=(\\d+)`))?.[1]) || fallback;
   const windowId = metadata.match(/(?:^|\n)WINDOW=(\d+)/)?.[1];
@@ -921,12 +952,14 @@ function parseBoxObservation(image: Uint8Array, metadata: string): ComputerObser
   const title = encodedTitle ? Buffer.from(encodedTitle, "base64").toString("utf8") : undefined;
   const x = metadata.match(/(?:^|\n)X=(\d+)/)?.[1];
   const y = metadata.match(/(?:^|\n)Y=(\d+)/)?.[1];
+  const windows = parseVisibleWindows(windowList);
   return computerObservation(image, {
     mimeType: "image/png",
     width: number("WIDTH", 1920),
     height: number("HEIGHT", 1080),
     ...(x && y ? { cursor: { x: Number(x), y: Number(y) } } : {}),
     ...(windowId ? { activeWindow: { id: windowId, title } } : {}),
+    ...(windows.length ? { windows } : {}),
   });
 }
 

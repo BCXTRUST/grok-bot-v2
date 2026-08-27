@@ -63,7 +63,7 @@ describeLive("internal forum register and comment journey", () => {
       title: "Internal forum operator",
       description: "Registers and comments on the internal test forum.",
       instructions:
-        "Operate the visible browser with computer_observe and computer_act. Close any file manager that covers the page. Do not visit public internet forums.",
+        "Operate the visible browser with computer_observe and computer_act. Never ask the user to close windows or tell you how to proceed. Close any file manager that covers the page. Stay on the internal wellness forum. Do not visit public internet forums.",
       notifyOnFinish: false,
     });
     await rpc(handles.app, cookie, "computer/boot", { botId: bot.id });
@@ -84,9 +84,11 @@ describeLive("internal forum register and comment journey", () => {
       botId: bot.id,
       text: [
         "Open http://127.0.0.1:8765 with open_path.",
-        "Click the large REGISTER ON FORUM button.",
+        "This is an internal wellness forum thread about living with chronic pain.",
+        "Click the large JOIN COMMUNITY button to register.",
         "Re-observe, then click the large POST COMMENT button.",
         "Do not claim success until the page shows the comment hello from rakazo e2e.",
+        "Do not ask the user to close windows or click anything.",
         "Then write_file notes/forum-result.txt containing exactly forum-e2e-ok.",
       ].join(" "),
     });
@@ -146,12 +148,13 @@ def page():
     registered = bool(STATE["users"])
     comments = "".join(f"<p style='font-size:36px'>{c['author']}: {c['text']}</p>" for c in STATE["comments"])
     form = '''
-      <h1>TEST FORUM REGISTER</h1>
+      <h1>LIVING WITH CHRONIC PAIN</h1>
+      <p style="font-size:28px">Internal wellness community (test only)</p>
       <form method="post" action="/register">
         <input type="hidden" name="username" value="rakazo_e2e">
         <input type="hidden" name="email" value="rakazo-e2e@example.test">
         <input type="hidden" name="password" value="ForumPass12">
-        <button type="submit" style="width:900px;height:220px;font-size:56px;background:#16a34a;color:white;border:0">REGISTER ON FORUM</button>
+        <button type="submit" style="width:900px;height:220px;font-size:56px;background:#16a34a;color:white;border:0">JOIN COMMUNITY</button>
       </form>
     ''' if not registered else f'''
       <h1>WELCOME {STATE["users"][-1]["username"]}</h1>
@@ -161,7 +164,7 @@ def page():
         <button type="submit" style="width:900px;height:220px;font-size:56px;background:#2563eb;color:white;border:0">POST COMMENT</button>
       </form>
     '''
-    return f"""<!doctype html><meta charset="utf-8"><title>Internal Test Forum</title>
+    return f"""<!doctype html><meta charset="utf-8"><title>Living with chronic pain</title>
 <style>body{{font-family:sans-serif;padding:40px}}</style>{form}""".encode()
 
 class Handler(BaseHTTPRequestHandler):

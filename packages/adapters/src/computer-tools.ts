@@ -69,14 +69,20 @@ export function observationToolResult(
     height: observation.height,
     cursor: observation.cursor,
     activeWindow: observation.activeWindow,
+    windows: observation.windows,
   };
   const unchanged = previousFrameId === observation.frameId;
+  const windowLine = observation.windows?.length
+    ? `\nOpen windows: ${observation.windows
+        .map((window) => `${window.title || window.id}${window.focused ? " (focused)" : ""}`)
+        .join("; ")}`
+    : "";
   return {
     kind: "agent_tool_result",
     content: [
       {
         type: "text",
-        text: `${note}${unchanged ? " (screen unchanged)" : ""}\n${JSON.stringify(details)}`,
+        text: `${note}${unchanged ? " (screen unchanged)" : ""}${windowLine}\n${JSON.stringify(details)}`,
       },
       ...(unchanged
         ? []

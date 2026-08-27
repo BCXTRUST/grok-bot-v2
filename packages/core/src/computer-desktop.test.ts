@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
+  COMPUTER_AUTONOMY_INSTRUCTION,
   exposeBrowserDesktopCommand,
+  isFileManagerLabel,
   isHttpUrl,
   looksLikeDesktopBrowserApp,
   openHttpUrlCommand,
   openPathDesktopCommand,
+  parseVisibleWindows,
 } from "./computer-desktop.js";
 
 describe("computer desktop window helpers", () => {
@@ -38,5 +41,18 @@ describe("computer desktop window helpers", () => {
       "'https://example.test/a?q=hello world'",
     );
     expect(exposeBrowserDesktopCommand(":2")).toContain("DISPLAY=:2");
+  });
+
+  it("detects file-manager labels and parses the visible window list", () => {
+    expect(isFileManagerLabel("Nautilus\nFiles")).toBe(true);
+    expect(isFileManagerLabel("Google-chrome\nChronic pain forum")).toBe(false);
+    expect(
+      parseVisibleWindows("42\t1\tFiles\n7\t0\tLiving with chronic pain - Chromium\n"),
+    ).toEqual([
+      { id: "42", title: "Files", focused: true },
+      { id: "7", title: "Living with chronic pain - Chromium" },
+    ]);
+    expect(COMPUTER_AUTONOMY_INSTRUCTION).toMatch(/Never ask the user to close windows/);
+    expect(COMPUTER_AUTONOMY_INSTRUCTION).toMatch(/request_takeover/);
   });
 });
