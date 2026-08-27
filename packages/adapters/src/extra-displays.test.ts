@@ -60,6 +60,7 @@ describe("extra display ports", () => {
     });
     expect(openUrl).toContain("google-chrome");
     expect(openUrl).toContain("windowquit");
+    expect(openUrl).toContain("ctrl+l");
     expect(openUrl).not.toMatch(/^DISPLAY=:2 xdg-open /);
     const openFile = extraDisplayActionCommand(layout, { kind: "open", path: "notes/forums.csv" });
     expect(openFile).toContain("xdg-open");

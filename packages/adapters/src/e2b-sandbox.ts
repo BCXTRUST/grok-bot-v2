@@ -20,6 +20,7 @@ import type {
 import {
   boundedSandboxCommandTimeoutMs,
   exposeBrowserDesktopCommand,
+  focusBrowserAndOpenUrlCommand,
   isHttpUrl,
   looksLikeDesktopBrowserApp,
 } from "@rakazo/core";
@@ -823,18 +824,22 @@ async function applyE2BAction(desktop: Sandbox, action: ComputerAction): Promise
       ? action.path.trim()
       : workspacePath(E2B_WORKSPACE, action.path);
     if (isHttpUrl(value)) {
-      let launched = false;
-      for (const app of E2B_BROWSER_APPS) {
-        try {
-          await desktop.launch(app, value);
-          launched = true;
-          break;
-        } catch {
-          // try the next installed browser
-        }
-      }
-      if (!launched) await desktop.open(value);
-      await exposeBrowserDesktop(desktop);
+      await desktop.commands
+        .run(focusBrowserAndOpenUrlCommand(desktop.display ?? ":0", value))
+        .catch(async () => {
+          let launched = false;
+          for (const app of E2B_BROWSER_APPS) {
+            try {
+              await desktop.launch(app, value);
+              launched = true;
+              break;
+            } catch {
+              // try the next installed browser
+            }
+          }
+          if (!launched) await desktop.open(value);
+          await exposeBrowserDesktop(desktop);
+        });
       return;
     }
     await desktop.open(value);

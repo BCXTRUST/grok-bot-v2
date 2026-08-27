@@ -127,6 +127,7 @@ describe("sandbox supervisor input containment", () => {
     expect("argv" in step ? step.argv[0] : "").toBe("bash");
     expect("argv" in step ? step.argv.at(-1) : "").toContain("google-chrome");
     expect("argv" in step ? step.argv.at(-1) : "").toContain("windowquit");
+    expect("argv" in step ? step.argv.at(-1) : "").toContain("ctrl+l");
     const file = containerActionStep({ kind: "open", path: "notes/forums.csv" });
     expect("argv" in file ? file.argv.at(-1) : "").toContain("xdg-open");
     expect("argv" in file ? file.argv.at(-1) : "").not.toContain("windowquit");

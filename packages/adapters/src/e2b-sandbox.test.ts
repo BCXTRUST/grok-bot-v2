@@ -499,10 +499,10 @@ describe("E2B computer backend", () => {
       { actions: [{ kind: "open", path: "https://example.test/forum" }], observe: false },
       context,
     );
-    expect(desktop.launch).toHaveBeenCalledWith("google-chrome", "https://example.test/forum");
+    expect(command.mock.calls.some(([value]) => String(value).includes("ctrl+l"))).toBe(true);
+    expect(
+      command.mock.calls.some(([value]) => String(value).includes("https://example.test/forum")),
+    ).toBe(true);
     expect(desktop.open).not.toHaveBeenCalled();
-    expect(command.mock.calls.some(([value]) => String(value).includes("windowactivate"))).toBe(
-      true,
-    );
   });
 });

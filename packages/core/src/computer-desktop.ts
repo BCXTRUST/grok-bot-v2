@@ -76,9 +76,33 @@ export function exposeBrowserDesktopCommand(display: string): string {
   ].join("\n");
 }
 
+/** Put the URL in the visible browser, even if Chrome is already on another page. */
+export function focusBrowserAndOpenUrlCommand(display: string, url: string): string {
+  const quotedUrl = posixShellQuote(url.trim());
+  const browsers = BROWSER_WINDOW_CLASSES.map(posixShellQuote).join(" ");
+  return [
+    openHttpUrlCommand(display, url),
+    "sleep 0.5",
+    exposeBrowserDesktopCommand(display),
+    "id=",
+    `for class in ${browsers}; do`,
+    `  id=$(DISPLAY=${display} xdotool search --onlyvisible --class "$class" 2>/dev/null | awk 'NR==1{print; exit}')`,
+    '  if [ -n "$id" ]; then break; fi',
+    "done",
+    'if [ -n "$id" ]; then',
+    `  DISPLAY=${display} xdotool windowactivate --sync "$id"`,
+    "  sleep 0.2",
+    `  DISPLAY=${display} xdotool key ctrl+l`,
+    "  sleep 0.15",
+    `  DISPLAY=${display} xdotool type --delay 1 -- ${quotedUrl}`,
+    `  DISPLAY=${display} xdotool key Return`,
+    "fi",
+  ].join("\n");
+}
+
 export function openPathDesktopCommand(display: string, pathOrUrl: string): string {
   if (isHttpUrl(pathOrUrl)) {
-    return `${openHttpUrlCommand(display, pathOrUrl)}\n${exposeBrowserDesktopCommand(display)}`;
+    return focusBrowserAndOpenUrlCommand(display, pathOrUrl);
   }
   return `DISPLAY=${display} xdg-open ${posixShellQuote(pathOrUrl)}`;
 }

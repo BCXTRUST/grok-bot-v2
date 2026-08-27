@@ -23,6 +23,7 @@ describe("computer desktop window helpers", () => {
     expect(command).toContain("opened=0");
     expect(command).toContain("windowquit");
     expect(command).toContain("windowactivate");
+    expect(command).toContain("ctrl+l");
     expect(command.indexOf("google-chrome")).toBeLessThan(command.indexOf("windowquit"));
   });
 

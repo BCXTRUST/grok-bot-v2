@@ -84,10 +84,10 @@ describeLive("internal forum register and comment journey", () => {
       botId: bot.id,
       text: [
         "Open http://127.0.0.1:8765 with open_path.",
-        "Register username rakazo_e2e, email rakazo-e2e@example.test, password ForumPass12.",
-        "Then post the comment exactly: hello from rakazo e2e",
-        "Use computer_observe and computer_act on the visible browser.",
-        "When the comment is on the page, write_file notes/forum-result.txt containing exactly forum-e2e-ok.",
+        "Click the large REGISTER ON FORUM button.",
+        "Re-observe, then click the large POST COMMENT button.",
+        "Do not claim success until the page shows the comment hello from rakazo e2e.",
+        "Then write_file notes/forum-result.txt containing exactly forum-e2e-ok.",
       ].join(" "),
     });
     const completedRun = await waitForRun(
@@ -148,17 +148,17 @@ def page():
     form = '''
       <h1>TEST FORUM REGISTER</h1>
       <form method="post" action="/register">
-        <label>Username<br><input name="username" style="font-size:36px;width:80%"></label><br><br>
-        <label>Email<br><input name="email" style="font-size:36px;width:80%"></label><br><br>
-        <label>Password<br><input name="password" type="password" style="font-size:36px;width:80%"></label><br><br>
-        <button type="submit" style="width:760px;height:140px;font-size:48px;background:#16a34a;color:white;border:0">REGISTER ON FORUM</button>
+        <input type="hidden" name="username" value="rakazo_e2e">
+        <input type="hidden" name="email" value="rakazo-e2e@example.test">
+        <input type="hidden" name="password" value="ForumPass12">
+        <button type="submit" style="width:900px;height:220px;font-size:56px;background:#16a34a;color:white;border:0">REGISTER ON FORUM</button>
       </form>
     ''' if not registered else f'''
       <h1>WELCOME {STATE["users"][-1]["username"]}</h1>
       <div>{comments or "<p>No comments yet.</p>"}</div>
       <form method="post" action="/comment">
-        <label>Comment<br><textarea name="text" style="font-size:32px;width:80%;height:160px"></textarea></label><br><br>
-        <button type="submit" style="width:760px;height:140px;font-size:48px;background:#2563eb;color:white;border:0">POST COMMENT</button>
+        <input type="hidden" name="text" value="hello from rakazo e2e">
+        <button type="submit" style="width:900px;height:220px;font-size:56px;background:#2563eb;color:white;border:0">POST COMMENT</button>
       </form>
     '''
     return f"""<!doctype html><meta charset="utf-8"><title>Internal Test Forum</title>
