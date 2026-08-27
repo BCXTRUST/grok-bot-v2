@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { ComputerScreenUnavailableError } from "./computer-screens.js";
 import {
   allocateExtraDisplayCommand,
+  extraDisplayActionCommand,
   extraDisplayLayout,
   parseAllocatedExtraDisplay,
   parseExtraDisplayViewPassword,
@@ -49,5 +50,19 @@ describe("extra display ports", () => {
     expect(() => parseExtraDisplayViewPassword("no password\n")).toThrow(
       ComputerScreenUnavailableError,
     );
+  });
+
+  it("opens extra-display URLs in a browser and raises it over Files", () => {
+    const layout = extraDisplayLayout(1, ":0");
+    const openUrl = extraDisplayActionCommand(layout, {
+      kind: "open",
+      path: "https://example.test/register",
+    });
+    expect(openUrl).toContain("google-chrome");
+    expect(openUrl).toContain("windowquit");
+    expect(openUrl).not.toMatch(/^DISPLAY=:2 xdg-open /);
+    const openFile = extraDisplayActionCommand(layout, { kind: "open", path: "notes/forums.csv" });
+    expect(openFile).toContain("xdg-open");
+    expect(openFile).not.toContain("windowquit");
   });
 });

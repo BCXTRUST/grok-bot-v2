@@ -4,6 +4,7 @@ export * from "./async.js";
 export * from "./attachments.js";
 export * from "./bot-sections.js";
 export * from "./compose-update.js";
+export * from "./computer-desktop.js";
 export * from "./cron.js";
 export * from "./events.js";
 export * from "./group-mentions.js";

@@ -17,7 +17,12 @@ import type {
   ScreenRequest,
   ScreenSession,
 } from "@rakazo/adapter-kit";
-import { boundedSandboxCommandTimeoutMs } from "@rakazo/core";
+import {
+  boundedSandboxCommandTimeoutMs,
+  exposeBrowserDesktopCommand,
+  isHttpUrl,
+  looksLikeDesktopBrowserApp,
+} from "@rakazo/core";
 import { sandboxIdleMs } from "./computer-idle.js";
 import { ComputerScreenUnavailableError, screenSessionKey } from "./computer-screens.js";
 import {
@@ -82,16 +87,30 @@ export const E2B_BROWSER_APPS = ["google-chrome", "firefox", "chromium"] as cons
 export async function openDesktopBrowser(desktop: {
   launch: (application: string, uri?: string) => Promise<void>;
   open: (fileOrUrl: string) => Promise<void>;
+  display?: string;
+  commands?: { run: (command: string) => Promise<unknown> };
 }): Promise<void> {
   for (const app of E2B_BROWSER_APPS) {
     try {
       await desktop.launch(app);
+      await exposeBrowserDesktop(desktop);
       return;
     } catch {
       // try the next installed browser
     }
   }
   await desktop.open("https://www.google.com").catch(() => undefined);
+  await exposeBrowserDesktop(desktop);
+}
+
+async function exposeBrowserDesktop(desktop: {
+  display?: string;
+  commands?: { run: (command: string) => Promise<unknown> };
+}): Promise<void> {
+  if (!desktop.commands?.run) return;
+  await desktop.commands
+    .run(exposeBrowserDesktopCommand(desktop.display ?? ":0"))
+    .catch(() => undefined);
 }
 
 export class E2BSandboxProvider implements SandboxProvider {
@@ -222,6 +241,7 @@ export class E2BSandboxProvider implements SandboxProvider {
     if (computer.fresh) await desktop.files.makeDir(E2B_WORKSPACE);
     const profilesChanged = await configurePortableBrowserProfiles(desktop);
     if (!computer.fresh && profilesChanged) await openDesktopBrowser(desktop);
+    await exposeBrowserDesktop(desktop);
   }
 
   async *execute(
@@ -799,13 +819,34 @@ async function applyE2BAction(desktop: Sandbox, action: ComputerAction): Promise
     return;
   }
   if (action.kind === "open") {
-    const value = /^https?:\/\//i.test(action.path)
-      ? action.path
+    const value = isHttpUrl(action.path)
+      ? action.path.trim()
       : workspacePath(E2B_WORKSPACE, action.path);
+    if (isHttpUrl(value)) {
+      let launched = false;
+      for (const app of E2B_BROWSER_APPS) {
+        try {
+          await desktop.launch(app, value);
+          launched = true;
+          break;
+        } catch {
+          // try the next installed browser
+        }
+      }
+      if (!launched) await desktop.open(value);
+      await exposeBrowserDesktop(desktop);
+      return;
+    }
     await desktop.open(value);
     return;
   }
   await desktop.launch(action.application, action.uri);
+  if (
+    looksLikeDesktopBrowserApp(action.application) ||
+    (action.uri !== undefined && isHttpUrl(action.uri))
+  ) {
+    await exposeBrowserDesktop(desktop);
+  }
 }
 
 async function* walkE2BWorkspace(

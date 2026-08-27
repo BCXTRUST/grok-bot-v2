@@ -1,5 +1,11 @@
 import { createHash } from "node:crypto";
 import type { ComputerAction, ComputerInput } from "@rakazo/adapter-kit";
+import {
+  exposeBrowserDesktopCommand,
+  isHttpUrl,
+  looksLikeDesktopBrowserApp,
+  openPathDesktopCommand,
+} from "@rakazo/core";
 import { ComputerScreenUnavailableError } from "./computer-screens.js";
 import { clampRounded, shellQuote } from "./computer-support.js";
 
@@ -291,9 +297,16 @@ export function extraDisplayActionCommand(
     return `DISPLAY=${layout.display} xdotool mousemove ${action.x} ${action.y} click ${button}`;
   }
   if (action.kind === "open") {
-    return `DISPLAY=${layout.display} xdg-open ${shellQuote(action.path)}`;
+    return openPathDesktopCommand(layout.display, action.path);
   }
-  return `DISPLAY=${layout.display} ${shellQuote(action.application)}${action.uri ? ` ${shellQuote(action.uri)}` : ""}`;
+  const launch = `DISPLAY=${layout.display} ${shellQuote(action.application)}${action.uri ? ` ${shellQuote(action.uri)}` : ""}`;
+  if (
+    looksLikeDesktopBrowserApp(action.application) ||
+    (action.uri !== undefined && isHttpUrl(action.uri))
+  ) {
+    return `${launch}\n${exposeBrowserDesktopCommand(layout.display)}`;
+  }
+  return launch;
 }
 
 export function extraDisplayInputCommand(layout: ExtraDisplayLayout, input: ComputerInput): string {

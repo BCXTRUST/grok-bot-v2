@@ -25,7 +25,13 @@ import type {
   ScreenRequest,
   ScreenSession,
 } from "@rakazo/adapter-kit";
-import { boundedSandboxCommandTimeoutMs } from "@rakazo/core";
+import {
+  boundedSandboxCommandTimeoutMs,
+  exposeBrowserDesktopCommand,
+  isHttpUrl,
+  looksLikeDesktopBrowserApp,
+  openPathDesktopCommand,
+} from "@rakazo/core";
 import { SingleScreenClaimTracker } from "./computer-screens.js";
 import {
   boundedComputerActions,
@@ -997,24 +1003,34 @@ function boxActionCommand(action: Exclude<ComputerAction, { kind: "wait" }>): st
     return `DISPLAY=:0 xdotool mousemove ${action.x} ${action.y} click ${button}`;
   }
   if (action.kind === "open") {
-    const target = /^https?:\/\//i.test(action.path)
-      ? action.path
+    const target = isHttpUrl(action.path)
+      ? action.path.trim()
       : workspacePath(BOX_WORKSPACE, action.path);
-    return `nohup env DISPLAY=:0 xdg-open ${shellQuote(target)} >/tmp/rakazo-open.log 2>&1 &`;
+    return `bash -lc ${shellQuote(openPathDesktopCommand(":0", target))}`;
   }
   const applications =
     action.application === "browser"
       ? ["google-chrome-stable", "google-chrome", "chromium", "firefox"]
       : [action.application];
-  return [
+  const launch = [
+    "launched=0",
     `for app in ${applications.map(shellQuote).join(" ")}; do`,
     '  if command -v "$app" >/dev/null 2>&1; then',
     `    nohup env DISPLAY=:0 "$app"${action.uri ? ` ${shellQuote(action.uri)}` : ""} >/tmp/rakazo-app.log 2>&1 &`,
-    "    exit 0",
+    "    launched=1",
+    "    break",
     "  fi",
     "done",
-    "exit 1",
+    '[ "$launched" = 1 ] || exit 1',
   ].join("\n");
+  if (
+    looksLikeDesktopBrowserApp(action.application) ||
+    action.application === "browser" ||
+    (action.uri !== undefined && isHttpUrl(action.uri))
+  ) {
+    return `${launch}\n${exposeBrowserDesktopCommand(":0")}`;
+  }
+  return launch;
 }
 
 function isAbortError(error: unknown): boolean {

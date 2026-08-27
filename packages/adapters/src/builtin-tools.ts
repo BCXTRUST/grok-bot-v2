@@ -109,7 +109,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "open_path",
     description:
-      "Open a workspace file or an http(s) URL in its default graphical application on this bot's computer and return the resulting screen.",
+      "Open a workspace file or an http(s) URL on this bot's computer and return the resulting screen. http(s) URLs open in a browser; overlapping file-manager windows are closed and the browser is raised so clicks land on the page.",
     inputSchema: {
       type: "object",
       properties: { path: { type: "string" } },

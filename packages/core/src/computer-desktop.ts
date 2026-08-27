@@ -1,0 +1,84 @@
+/** Default graphical browsers to try before falling back to xdg-open. */
+export const DESKTOP_BROWSER_APPS = [
+  "google-chrome",
+  "google-chrome-stable",
+  "chromium",
+  "chromium-browser",
+  "firefox",
+] as const;
+
+const FILE_MANAGER_CLASSES = [
+  "Nautilus",
+  "org.gnome.Nautilus",
+  "Thunar",
+  "Pcmanfm",
+  "pcmanfm",
+  "Caja",
+  "Nemo",
+  "dolphin",
+  "Dolphin",
+] as const;
+
+const BROWSER_WINDOW_CLASSES = [
+  "google-chrome",
+  "Google-chrome",
+  "Chromium",
+  "chromium",
+  "firefox",
+  "Firefox",
+  "Navigator",
+] as const;
+
+export function isHttpUrl(value: string): boolean {
+  return /^https?:\/\//i.test(value.trim());
+}
+
+export function looksLikeDesktopBrowserApp(application: string): boolean {
+  return /chrome|chromium|firefox|browser/i.test(application);
+}
+
+function posixShellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'"'"'`)}'`;
+}
+
+/** Open an http(s) URL in a real browser instead of xdg-open (which often raises Files). */
+export function openHttpUrlCommand(display: string, url: string): string {
+  const quotedUrl = posixShellQuote(url.trim());
+  const apps = DESKTOP_BROWSER_APPS.map(posixShellQuote).join(" ");
+  return [
+    "opened=0",
+    `for app in ${apps}; do`,
+    '  if command -v "$app" >/dev/null 2>&1; then',
+    `    nohup env DISPLAY=${display} "$app" ${quotedUrl} >/tmp/rakazo-browser.log 2>&1 &`,
+    "    opened=1",
+    "    break",
+    "  fi",
+    "done",
+    `if [ "$opened" = 0 ]; then env DISPLAY=${display} xdg-open ${quotedUrl}; fi`,
+  ].join("\n");
+}
+
+/** Close overlapping file-manager windows and raise a visible browser. */
+export function exposeBrowserDesktopCommand(display: string): string {
+  const fileManagers = FILE_MANAGER_CLASSES.map(posixShellQuote).join(" ");
+  const browsers = BROWSER_WINDOW_CLASSES.map(posixShellQuote).join(" ");
+  return [
+    `for class in ${fileManagers}; do`,
+    `  DISPLAY=${display} xdotool search --onlyvisible --class "$class" windowquit 2>/dev/null || true`,
+    "done",
+    `for class in ${browsers}; do`,
+    `  id=$(DISPLAY=${display} xdotool search --onlyvisible --class "$class" 2>/dev/null | awk 'NR==1{print; exit}')`,
+    `  if [ -n "$id" ]; then`,
+    `    DISPLAY=${display} xdotool windowactivate --sync "$id" windowraise "$id" 2>/dev/null || true`,
+    "    break",
+    "  fi",
+    "done",
+  ].join("\n");
+}
+
+export function openPathDesktopCommand(display: string, pathOrUrl: string): string {
+  if (isHttpUrl(pathOrUrl)) {
+    return `${openHttpUrlCommand(display, pathOrUrl)}\n${exposeBrowserDesktopCommand(display)}`;
+  }
+  return `DISPLAY=${display} xdg-open ${posixShellQuote(pathOrUrl)}`;
+}
