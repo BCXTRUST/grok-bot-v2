@@ -96,7 +96,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "shell",
     description:
-      "Run a command inside this bot's computer. cwd defaults to the bot's folder on a Team Computer and the workspace root on a Private Computer.",
+      "Run a command inside this bot's computer. The command must finish. Start HTTP servers and other daemons with nohup ... >/tmp/server.log 2>&1 & — never leave flask, http.server, or python *.py servers in the foreground. cwd defaults to the bot's folder on a Team Computer and the workspace root on a Private Computer.",
     inputSchema: {
       type: "object",
       properties: {
