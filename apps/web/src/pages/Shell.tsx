@@ -1897,11 +1897,7 @@ export function ShellPage() {
             {panel === "computer" && active ? (
               <div>
                 <div className="relative aspect-[16/10] overflow-hidden rounded-[14px] bg-[#0E0E10]">
-                  {computerOpen ? (
-                    <div className="grid h-full place-items-center text-sm text-[#6C6C70]">
-                      Open in full window
-                    </div>
-                  ) : computer?.kind === "desktop" ? (
+                  {computer?.kind === "desktop" ? (
                     <div className="grid h-full place-items-center px-6 text-center text-sm text-[#6C6C70]">
                       This bot runs on this computer, not a Linux desktop. Shell and files use your
                       home folder.
@@ -1917,11 +1913,7 @@ export function ShellPage() {
                     />
                   ) : (
                     <div className="grid h-full place-items-center text-sm text-[#6C6C70]">
-                      {computerPlaceholder(
-                        computer?.state,
-                        booting,
-                        computerLabel(computer?.mode, active.name),
-                      )}
+                      {computerPlaceholder(computer?.state, booting)}
                     </div>
                   )}
                   <button
@@ -2533,9 +2525,7 @@ export function ShellPage() {
               </>
             ) : (
               <div className="grid h-full place-items-center text-sm text-[#6C6C70]">
-                {computer?.state === "suspended"
-                  ? "Computer is asleep"
-                  : computerLabel(computer?.mode, active.name)}
+                {computerPlaceholder(computer?.state, booting)}
               </div>
             )}
           </div>
@@ -4161,13 +4151,9 @@ function screenIframeSandbox(url: string | null) {
   }
 }
 
-function computerPlaceholder(
-  state: ComputerStatus["state"] | undefined,
-  booting: boolean,
-  label: string,
-) {
+function computerPlaceholder(state: ComputerStatus["state"] | undefined, booting: boolean) {
   if (state === "booting" || booting) return "Booting live desktop…";
-  if (state === "running") return label;
+  if (state === "running") return "Connecting desktop…";
   if (state === "suspended") return "Computer is asleep — take control to wake it";
   if (state === "error") return "Computer failed to boot";
   return "Computer is stopped";
