@@ -369,7 +369,9 @@ export function createRouter(deps: RouterDeps) {
           },
           update: {
             ...(input.signupsEnabled === undefined ? {} : { signupsEnabled: input.signupsEnabled }),
-            ...(input.signupAllowlist ? { signupAllowlist: input.signupAllowlist.join(",") } : {}),
+            ...(input.signupAllowlist === undefined
+              ? {}
+              : { signupAllowlist: input.signupAllowlist.join(",") }),
             ...(input.computerHost === undefined ? {} : { computerHost: input.computerHost }),
           },
         });

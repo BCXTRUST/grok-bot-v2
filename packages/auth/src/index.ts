@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { emailAllowed, parseAllowlist, signupsOpen } from "@rakazo/core";
+import { emailAllowed, resolveSignupPolicy } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
@@ -29,7 +29,9 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
     database: prismaAdapter(prisma, { provider: "postgresql" }),
     emailAndPassword: {
       enabled: true,
-      disableSignUp: !signupsOpen(env.signupsEnabled),
+      // Live open/closed state comes from deployment settings on each sign-up.
+      disableSignUp: false,
+      minPasswordLength: 8,
     },
     user: {
       deleteUser: {
@@ -72,12 +74,23 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
       before: async (ctx) => {
         const path = String((ctx as { path?: string }).path ?? "");
         if (!path.includes("sign-up")) return;
-        const allowlist = parseAllowlist(env.signupAllowlist);
+        const stored = await prisma.deploymentSettings.findUnique({
+          where: { id: "default" },
+          select: { signupsEnabled: true, signupAllowlist: true },
+        });
+        const policy = resolveSignupPolicy({
+          envEnabled: env.signupsEnabled,
+          envAllowlist: env.signupAllowlist,
+          stored,
+        });
+        if (!policy.open) {
+          throw new APIError("BAD_REQUEST", { message: "Sign-ups are closed" });
+        }
         const email =
           typeof ctx.body === "object" && ctx.body && "email" in ctx.body
             ? String((ctx.body as { email?: string }).email ?? "")
             : "";
-        if (email && !emailAllowed(email, allowlist)) {
+        if (email && !emailAllowed(email, policy.allowlist)) {
           throw new APIError("BAD_REQUEST", { message: "Email is not allowed to register" });
         }
       },

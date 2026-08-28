@@ -2,6 +2,17 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { authClient } from "../lib/auth";
 
+function friendlyAuthError(message?: string) {
+  if (!message) return "Could not continue";
+  if (/not allowed to register/i.test(message)) {
+    return "This server is not accepting this email. Ask the owner to open sign-ups.";
+  }
+  if (/sign-ups are closed/i.test(message)) return "Sign-ups are closed on this server.";
+  if (/too many requests/i.test(message)) return "Too many tries. Wait a minute and try again.";
+  if (/invalid email or password/i.test(message)) return "Email or password is wrong.";
+  return message;
+}
+
 export function AuthPage({ mode }: { mode: "in" | "up" }) {
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
@@ -25,7 +36,7 @@ export function AuthPage({ mode }: { mode: "in" | "up" }) {
         : await authClient.signIn.email({ email, password });
     setPending(false);
     if (result.error) {
-      setError(result.error.message ?? "Could not continue");
+      setError(friendlyAuthError(result.error.message));
       return;
     }
     navigate(mode === "up" ? "/onboarding" : "/app");
