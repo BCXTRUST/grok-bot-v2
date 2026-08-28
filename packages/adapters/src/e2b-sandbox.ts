@@ -207,12 +207,9 @@ export class E2BSandboxProvider implements SandboxProvider {
   private async initializeStream(desktop: Sandbox) {
     await desktop.commands.run(primaryStreamCleanupCommand()).catch(() => undefined);
     await desktop.stream.start({ requireAuth: true });
-    try {
-      await desktop.commands.run("x11vnc -R viewonly");
-    } catch (error) {
-      await desktop.stream.stop().catch(() => undefined);
-      throw error;
-    }
+    // Watch mode prefers view-only; if the live x11vnc cannot take that
+    // remote command, keep the stream so the preview still has a URL.
+    await desktop.commands.run("x11vnc -R viewonly").catch(() => undefined);
     const current = this.boxes.get(desktop.sandboxId);
     if (current !== desktop) {
       if (!current) await desktop.stream.stop().catch(() => undefined);

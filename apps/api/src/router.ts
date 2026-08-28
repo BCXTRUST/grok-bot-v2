@@ -32,6 +32,7 @@ import {
   enqueueTakeoverContinuation,
   expireComputerControl,
   hasActiveComputerControl,
+  isComputerScreenUnavailable,
   isScratchpadStatus,
   listPiCatalog,
   listScratchpadItems,
@@ -1359,25 +1360,33 @@ export function createRouter(deps: RouterDeps) {
         ) {
           return { url: null };
         }
-        const session = await deps.sandbox.connectScreen(
-          toComputerRef(bot.computer),
-          {
-            view: "stream",
-            interactive:
-              hasActiveComputerControl(bot.computer) && bot.computer.controlBotId === bot.id,
-            controlToken:
-              bot.computer.controlBotId === bot.id
-                ? (bot.computer.controlLeaseId ?? undefined)
-                : undefined,
-          },
-          await computerScreenContext(
-            deps.prisma,
-            context.actor,
-            bot.computer.id,
-            bot.id,
-            "screen",
-          ),
-        );
+        let session: { url: string | null };
+        try {
+          session = await deps.sandbox.connectScreen(
+            toComputerRef(bot.computer),
+            {
+              view: "stream",
+              interactive:
+                hasActiveComputerControl(bot.computer) && bot.computer.controlBotId === bot.id,
+              controlToken:
+                bot.computer.controlBotId === bot.id
+                  ? (bot.computer.controlLeaseId ?? undefined)
+                  : undefined,
+            },
+            await computerScreenContext(
+              deps.prisma,
+              context.actor,
+              bot.computer.id,
+              bot.id,
+              "screen",
+            ),
+          );
+        } catch (error) {
+          if (!isComputerScreenUnavailable(error)) {
+            console.error("computer screenUrl", error);
+          }
+          return { url: null };
+        }
         if (!session.url) return { url: null };
         scheduleComputerSleep(deps.jobs, bot.computer.id);
         const viewUrl = withViewOnly(
