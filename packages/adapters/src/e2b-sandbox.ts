@@ -599,14 +599,10 @@ export class E2BSandboxProvider implements SandboxProvider {
     layout: ReturnType<typeof extraDisplayLayout>,
     context: AdapterContext,
   ): Promise<string> {
-    const script = `${ensurePrimaryViewCommand(layout, randomBytes(9).toString("base64url"))}\n`;
-    await desktop.files.makeDir("/tmp/rakazo").catch(() => undefined);
-    await desktop.files.write([
-      { path: "/tmp/rakazo/ensure-primary-view.sh", data: new TextEncoder().encode(script) },
-    ]);
-    const result = await desktop.commands.run("bash /tmp/rakazo/ensure-primary-view.sh", {
-      timeoutMs: 60_000,
-    });
+    const result = await desktop.commands.run(
+      ensurePrimaryViewCommand(layout, randomBytes(9).toString("base64url")),
+      { timeoutMs: 30_000 },
+    );
     if (result.exitCode !== 0) {
       throw new ComputerScreenUnavailableError(
         String(result.stderr || result.stdout || "primary view failed").slice(0, 500),
