@@ -76,7 +76,7 @@ describe("E2B computer backend", () => {
       if (value.includes("hang")) {
         throw new TimeoutError("command timed out");
       }
-      if (value.includes("RAKAZO_SCREEN_PASSWORD=")) {
+      if (value.includes("ensure-primary-view.sh") || value.includes("RAKAZO_SCREEN_PASSWORD=")) {
         return {
           stdout: "RAKAZO_SCREEN_PASSWORD=watch-secret\n",
           stderr: "",
@@ -229,7 +229,7 @@ describe("E2B computer backend", () => {
     expect(screen.url).toMatch(/^https:\/\/6080-desktop\.test\/vnc\.html\?/);
     expect(screen.url).toContain("view_only=true");
     expect(screen.url).toContain("password=watch-secret");
-    expect(command.mock.calls.some(([value]) => String(value).includes("screen-primary.lock"))).toBe(
+    expect(command.mock.calls.some(([value]) => String(value).includes("ensure-primary-view.sh"))).toBe(
       true,
     );
 
@@ -283,7 +283,7 @@ describe("E2B computer backend", () => {
       if (value.includes("RAKAZO_SCREEN_INDEX=")) {
         return { stdout: "RAKAZO_SCREEN_INDEX=0\n", stderr: "", exitCode: 0 };
       }
-      if (value.includes("RAKAZO_SCREEN_PASSWORD=")) {
+      if (value.includes("ensure-primary-view.sh") || value.includes("RAKAZO_SCREEN_PASSWORD=")) {
         return { stdout: "RAKAZO_SCREEN_PASSWORD=watch-secret\n", stderr: "", exitCode: 0 };
       }
       return { stdout: "", stderr: "", exitCode: 0 };
@@ -293,6 +293,10 @@ describe("E2B computer backend", () => {
       display: ":0",
       getHost: (port: number) => `${port}-desktop.test`,
       commands: { run: command },
+      files: {
+        makeDir: vi.fn(async () => undefined),
+        write: vi.fn(async () => undefined),
+      },
       stream: {
         start: vi.fn(async () => undefined),
         stop: vi.fn(async () => undefined),
@@ -351,7 +355,7 @@ describe("E2B computer backend", () => {
         };
       }
       if (value.includes("command -v Xvfb")) return { stdout: "", stderr: "", exitCode: 0 };
-      if (value.includes("RAKAZO_SCREEN_PASSWORD=")) {
+      if (value.includes("ensure-primary-view.sh") || value.includes("RAKAZO_SCREEN_PASSWORD=")) {
         return {
           stdout: "RAKAZO_SCREEN_PASSWORD=test-view-password\n",
           stderr: "",
