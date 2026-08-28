@@ -131,6 +131,39 @@ export function extraDisplayLayout(index: number, primaryDisplay: string): Extra
   };
 }
 
+/** View-only noVNC for the vendor primary display when the SDK stream URL is missing. */
+export function ensurePrimaryViewCommand(layout: ExtraDisplayLayout, viewPassword: string): string {
+  if (!layout.isPrimary) {
+    throw new Error("ensurePrimaryViewCommand only applies to the primary display");
+  }
+  const log = "/tmp/rakazo/screen-primary";
+  const passwordFile = "/tmp/rakazo/view-password-primary";
+  const passwordAuthFile = "/tmp/rakazo-view-primary.vncpass";
+  return [
+    "set -eu",
+    "mkdir -p /tmp/rakazo /tmp/.X11-unix",
+    "exec 8>/tmp/rakazo/screen-primary.lock",
+    "flock 8",
+    `if [ -s ${shellQuote(passwordFile)} ]; then view_password=$(cat ${shellQuote(passwordFile)}); else umask 077; view_password=${shellQuote(viewPassword)}; printf %s "$view_password" >${shellQuote(passwordFile)}; fi`,
+    `if xdpyinfo -display ${layout.display} >/dev/null 2>&1 && (echo >/dev/tcp/127.0.0.1/${layout.viewVncPort}) >/dev/null 2>&1 && (echo >/dev/tcp/127.0.0.1/${layout.viewPort}) >/dev/null 2>&1; then printf 'RAKAZO_SCREEN_PASSWORD=%s\\n' "$view_password"; exit 0; fi`,
+    `xdpyinfo -display ${layout.display} >/dev/null 2>&1 || exit 1`,
+    `pkill -f '^x11vnc .* -rfbport ${layout.viewVncPort}' || true`,
+    `pkill -f '^/usr/bin/python3 .*websockify.*${layout.viewPort}' || true`,
+    `pkill -f 'novnc_proxy.*--listen ${layout.viewPort}' || true`,
+    `x11vnc -storepasswd "$view_password" ${shellQuote(passwordAuthFile)} >/dev/null`,
+    `x11vnc -display ${layout.display} -forever -shared -viewonly -rfbauth ${shellQuote(passwordAuthFile)} -listen 127.0.0.1 -rfbport ${layout.viewVncPort} -xkb -ncache 0 >${log}-x11vnc.log 2>&1 &`,
+    `if command -v websockify >/dev/null 2>&1; then`,
+    `  websockify --web=/usr/share/novnc 0.0.0.0:${layout.viewPort} 127.0.0.1:${layout.viewVncPort} >${log}-novnc.log 2>&1 &`,
+    `elif [ -d /opt/noVNC/utils ]; then`,
+    `  (cd /opt/noVNC/utils && nohup ./novnc_proxy --vnc localhost:${layout.viewVncPort} --listen ${layout.viewPort} --web /opt/noVNC >${log}-novnc.log 2>&1 &)`,
+    `else`,
+    `  exit 1`,
+    `fi`,
+    `for i in $(seq 1 50); do if (echo >/dev/tcp/127.0.0.1/${layout.viewVncPort}) >/dev/null 2>&1 && (echo >/dev/tcp/127.0.0.1/${layout.viewPort}) >/dev/null 2>&1; then printf 'RAKAZO_SCREEN_PASSWORD=%s\\n' "$view_password"; exit 0; fi; sleep 0.1; done`,
+    "exit 1",
+  ].join("\n");
+}
+
 export function ensureExtraDisplayCommand(
   layout: ExtraDisplayLayout,
   env: ExtraDisplayEnvironment,
