@@ -475,8 +475,8 @@ export function ShellPage() {
     return snap;
   }
 
-  async function refreshComputerScreen(id: string) {
-    if (!computerVisible.current) return null;
+  async function refreshComputerScreen(id: string, force = false) {
+    if (!force && !computerVisible.current) return null;
     const request = ++screenRequest.current;
     const screen = await rpc.computer.screenUrl({ botId: id }).catch(() => ({ url: null }));
     if (
@@ -1261,10 +1261,10 @@ export function ShellPage() {
       const snap = await refreshThread(botId).catch(() => null);
       if (cancelled || activeBotId.current !== botId) return;
       const state = snap?.computer?.state;
-      const screen = state === "running" ? await refreshComputerScreen(botId) : null;
+      const screen = state === "running" ? await refreshComputerScreen(botId, true) : null;
       if (cancelled || activeBotId.current !== botId) return;
       const action = computerPanelAutoBoot(state, screen);
-      if (action === "wait") {
+      if (action === "wait" || action === "recover-screen") {
         if (state === "running") autoBooted.current = botId;
         return;
       }
@@ -1280,6 +1280,24 @@ export function ShellPage() {
       cancelled = true;
     };
   }, [panel, active?.id]);
+
+  useEffect(() => {
+    if (panel !== "computer" && !computerOpen) return;
+    if (!active || computer?.state !== "running" || screenUrl) return;
+    const botId = active.id;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const pull = async () => {
+      const url = await refreshComputerScreen(botId, true).catch(() => null);
+      if (cancelled || url) return;
+      timer = setTimeout(() => void pull(), 1500);
+    };
+    void pull();
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [panel, computerOpen, active?.id, computer?.state, screenUrl]);
 
   useEffect(() => {
     setComputerOpen(false);
