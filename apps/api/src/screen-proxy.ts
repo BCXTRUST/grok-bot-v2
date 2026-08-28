@@ -9,6 +9,10 @@ export interface ScreenProxyOptions {
   proxyExternal?: boolean;
 }
 
+export function proxiesExternalDesktop(kind: string | undefined) {
+  return kind === "box" || kind === "e2b";
+}
+
 export function addScreenProxyCapability(
   url: string,
   secret: string,
@@ -23,7 +27,7 @@ export function addScreenProxyCapability(
       const policy = parsed.searchParams.get("view_only") === "false" ? "control" : "view";
       const token = sealScreenTarget(parsed.toString(), secret, policy, expiresAt);
       const origin = new URL(proxyOrigin).origin;
-      return `${origin}${SCREEN_PROXY_REMOTE_PREFIX}/${policy}/${expiresAt}.${token}${parsed.pathname || "/"}`;
+      return `${origin}${SCREEN_PROXY_REMOTE_PREFIX}/${policy}/${expiresAt}.${token}${parsed.pathname || "/"}${novncViewerSearch(parsed)}`;
     }
     if (parsed.protocol !== "http:" || !parsed.hostname || !parsed.port) return url;
     const expiresAt = now + SCREEN_PROXY_TTL_MS;
@@ -55,4 +59,20 @@ function sealScreenTarget(
 
 function screenProxyKey(secret: string) {
   return createHash("sha256").update(secret).digest();
+}
+
+/** Query params noVNC reads from the iframe URL. Secrets stay out of the encrypted path. */
+export function novncViewerSearch(parsed: URL): string {
+  const params = new URLSearchParams();
+  params.set("autoconnect", parsed.searchParams.get("autoconnect") || "true");
+  const resize = parsed.searchParams.get("resize");
+  if (resize) params.set("resize", resize);
+  const reconnect = parsed.searchParams.get("reconnect");
+  if (reconnect) params.set("reconnect", reconnect);
+  const viewOnly = parsed.searchParams.get("view_only");
+  if (viewOnly) params.set("view_only", viewOnly);
+  const password = parsed.searchParams.get("password") || parsed.searchParams.get("authKey");
+  if (password) params.set("password", password);
+  const query = params.toString();
+  return query ? `?${query}` : "";
 }
