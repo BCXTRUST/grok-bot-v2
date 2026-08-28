@@ -76,6 +76,6 @@ describe("computer tool bridge", () => {
     });
     const result = observationToolResult(observation);
     const text = result.content.find((part) => part.type === "text");
-    expect(text && "text" in text ? text.text : "").toContain("request_takeover");
+    expect(text && "text" in text ? text.text : "").toContain("Leave with open_path");
   });
 });
