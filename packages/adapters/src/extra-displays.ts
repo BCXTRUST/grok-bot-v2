@@ -131,6 +131,9 @@ export function extraDisplayLayout(index: number, primaryDisplay: string): Extra
   };
 }
 
+export const PRIMARY_WATCH_VIEW_PORT = 6090;
+export const PRIMARY_WATCH_VNC_PORT = 5910;
+
 function tcpListenReadyCommand(port: number): string {
   return `python3 -c 'import socket,sys;s=socket.socket();s.settimeout(0.2);s.connect(("127.0.0.1",int(sys.argv[1])))' ${port} >/dev/null 2>&1`;
 }
@@ -143,27 +146,33 @@ export function ensurePrimaryViewCommand(layout: ExtraDisplayLayout, viewPasswor
   const log = "/tmp/rakazo/screen-primary";
   const passwordFile = "/tmp/rakazo/view-password-primary";
   const passwordAuthFile = "/tmp/rakazo-view-primary.vncpass";
+  const viewPort = PRIMARY_WATCH_VIEW_PORT;
+  const viewVncPort = PRIMARY_WATCH_VNC_PORT;
   return [
-    "set -eu",
+    "set -u",
     "mkdir -p /tmp/rakazo /tmp/.X11-unix",
     "exec 8>/tmp/rakazo/screen-primary.lock",
-    "flock -w 5 8",
+    `if ! flock -w 20 8; then if [ -s ${shellQuote(passwordFile)} ] && ${tcpListenReadyCommand(viewVncPort)} && ${tcpListenReadyCommand(viewPort)}; then printf 'RAKAZO_SCREEN_PASSWORD=%s\\n' "$(cat ${shellQuote(passwordFile)})"; exit 0; fi; printf 'RAKAZO_SCREEN_ERROR=lock\\n' >&2; exit 1; fi`,
+    "set -eu",
     `if [ -s ${shellQuote(passwordFile)} ]; then view_password=$(cat ${shellQuote(passwordFile)}); else umask 077; view_password=${shellQuote(viewPassword)}; printf %s "$view_password" >${shellQuote(passwordFile)}; fi`,
-    `if xdpyinfo -display ${layout.display} >/dev/null 2>&1 && ${tcpListenReadyCommand(layout.viewVncPort)} && ${tcpListenReadyCommand(layout.viewPort)}; then printf 'RAKAZO_SCREEN_PASSWORD=%s\\n' "$view_password"; exit 0; fi`,
-    `xdpyinfo -display ${layout.display} >/dev/null 2>&1 || exit 1`,
-    `pkill -f '^x11vnc .* -rfbport ${layout.viewVncPort}' || true`,
-    `pkill -f '^/usr/bin/python3 .*websockify.*${layout.viewPort}' || true`,
-    `pkill -f '[n]ovnc_proxy.*--listen ${layout.viewPort}' || true`,
+    `if xdpyinfo -display ${layout.display} >/dev/null 2>&1 && ${tcpListenReadyCommand(viewVncPort)} && ${tcpListenReadyCommand(viewPort)}; then printf 'RAKAZO_SCREEN_PASSWORD=%s\\n' "$view_password"; exit 0; fi`,
+    `xdpyinfo -display ${layout.display} >/dev/null 2>&1 || { printf 'RAKAZO_SCREEN_ERROR=no_display\\n' >&2; exit 1; }`,
+    `command -v x11vnc >/dev/null 2>&1 || { printf 'RAKAZO_SCREEN_ERROR=no_x11vnc\\n' >&2; exit 1; }`,
+    `pkill -f '^x11vnc .* -rfbport ${viewVncPort}' || true`,
+    `pkill -f '^/usr/bin/python3 .*websockify.*${viewPort}' || true`,
+    `pkill -f '[n]ovnc_proxy.*--listen ${viewPort}' || true`,
     `x11vnc -storepasswd "$view_password" ${shellQuote(passwordAuthFile)} >/dev/null`,
-    `x11vnc -display ${layout.display} -forever -shared -viewonly -rfbauth ${shellQuote(passwordAuthFile)} -listen 127.0.0.1 -rfbport ${layout.viewVncPort} -xkb -ncache 0 >${log}-x11vnc.log 2>&1 &`,
+    `x11vnc -display ${layout.display} -forever -shared -viewonly -rfbauth ${shellQuote(passwordAuthFile)} -listen 127.0.0.1 -rfbport ${viewVncPort} -xkb -ncache 0 >${log}-x11vnc.log 2>&1 &`,
     `if command -v websockify >/dev/null 2>&1; then`,
-    `  websockify --web=/usr/share/novnc 0.0.0.0:${layout.viewPort} 127.0.0.1:${layout.viewVncPort} >${log}-novnc.log 2>&1 &`,
+    `  websockify --web=/usr/share/novnc 0.0.0.0:${viewPort} 127.0.0.1:${viewVncPort} >${log}-novnc.log 2>&1 &`,
     `elif [ -d /opt/noVNC/utils ]; then`,
-    `  (cd /opt/noVNC/utils && nohup ./novnc_proxy --vnc localhost:${layout.viewVncPort} --listen ${layout.viewPort} --web /opt/noVNC >${log}-novnc.log 2>&1 &)`,
+    `  (cd /opt/noVNC/utils && nohup ./novnc_proxy --vnc localhost:${viewVncPort} --listen ${viewPort} --web /opt/noVNC >${log}-novnc.log 2>&1 &)`,
     `else`,
-    `  exit 1`,
+    `  printf 'RAKAZO_SCREEN_ERROR=no_novnc\\n' >&2; exit 1`,
     `fi`,
-    `for i in $(seq 1 50); do if ${tcpListenReadyCommand(layout.viewVncPort)} && ${tcpListenReadyCommand(layout.viewPort)}; then printf 'RAKAZO_SCREEN_PASSWORD=%s\\n' "$view_password"; exit 0; fi; sleep 0.1; done`,
+    `for i in $(seq 1 50); do if ${tcpListenReadyCommand(viewVncPort)} && ${tcpListenReadyCommand(viewPort)}; then printf 'RAKAZO_SCREEN_PASSWORD=%s\\n' "$view_password"; exit 0; fi; sleep 0.1; done`,
+    `printf 'RAKAZO_SCREEN_ERROR=ports_not_ready\\n' >&2`,
+    `tail -n 20 ${log}-x11vnc.log ${log}-novnc.log >&2 || true`,
     "exit 1",
   ].join("\n");
 }

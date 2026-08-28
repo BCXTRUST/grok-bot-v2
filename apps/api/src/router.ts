@@ -78,6 +78,7 @@ import {
   containsSecret,
   isOneShotRoutineCron,
   nextCronDate,
+  resolveOpenRouterModelId,
 } from "@rakazo/core";
 import {
   appendEventInTransaction,
@@ -512,7 +513,7 @@ export function createRouter(deps: RouterDeps) {
               });
               await tx.userModelCredential.update({
                 where: { id: credential.id },
-                data: { defaultModel: input.modelId, isDefault: true },
+                data: { defaultModel: resolveOpenRouterModelId(input.modelId), isDefault: true },
               });
             },
             { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
@@ -2828,7 +2829,9 @@ async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
     isDeploymentOwner: actor.isDeploymentOwner,
     needsModel: !cred && !hasDeployment,
     defaultProvider: cred?.provider ?? settings?.defaultModelProvider ?? deps.env.defaultProvider,
-    defaultModel: cred?.defaultModel ?? settings?.defaultModelId ?? deps.env.defaultModel,
+    defaultModel: resolveOpenRouterModelId(
+      cred?.defaultModel ?? settings?.defaultModelId ?? deps.env.defaultModel,
+    ),
     computerHost: computerHostFor(settings?.computerHost, deps.env.sandboxProvider),
     canChooseHostComputer: actor.isDeploymentOwner && deps.env.sandboxProvider === "docker",
   };
