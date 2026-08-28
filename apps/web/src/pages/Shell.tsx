@@ -23,6 +23,7 @@ import {
   ATTACHMENT_MAX_BYTES,
   ATTACHMENT_MAX_COUNT,
   BOT_DESCRIPTION_MAX_LENGTH,
+  BOT_INSTRUCTIONS_MAX_LENGTH,
   BOT_NAME_MAX_LENGTH,
   BOT_TITLE_MAX_LENGTH,
   normalizeCreateBotProfile,
@@ -39,6 +40,7 @@ import {
   isActive,
   isRunTerminalEvent,
   latestAnswerableAskMessageId,
+  LINK_BUILDING_BOT_INSTRUCTIONS,
   presetFromCron,
   speechFromBlocks,
 } from "@rakazo/core";
@@ -49,6 +51,7 @@ import {
   Cpu,
   Gauge,
   LogOut,
+  Mail,
   Menu,
   Mic,
   Monitor,
@@ -1732,12 +1735,23 @@ export function ShellPage() {
               ) : active ? (
                 <BotAvatar color={active.color} size={26} status={active.status} />
               ) : null}
-              <span className="min-w-0">
+                <span className="min-w-0">
                 <span className="block truncate text-[16px] font-medium text-[#ECECEE]" dir="auto">
                   {inGroup
                     ? (activeGroup?.name ?? activeSnapshot?.groupName ?? "Group")
                     : (active?.name ?? "Select a bot")}
                 </span>
+                {!inGroup ? (
+                  <button
+                    type="button"
+                    onClick={() => setModelsOpen(true)}
+                    className="mt-0.5 max-w-[220px] truncate text-start text-[12px] text-[#85858A] hover:text-[#C9C9CE]"
+                    aria-label="Change model"
+                    title="Change model"
+                  >
+                    {modelLabel(bootstrapMe?.defaultModel)}
+                  </button>
+                ) : null}
               </span>
             </button>
           </div>
@@ -2359,7 +2373,14 @@ export function ShellPage() {
             onClose={() => setAccountSettingsOpen(false)}
           />
         ) : null}
-        {modelsOpen ? <ModelSettingsOverlay onClose={() => setModelsOpen(false)} /> : null}
+        {modelsOpen ? (
+          <ModelSettingsOverlay
+            onClose={() => {
+              setModelsOpen(false);
+              void rpc.me().then(setBootstrapMe).catch(() => undefined);
+            }}
+          />
+        ) : null}
         {voiceOpen ? (
           <VoiceSettingsOverlay
             onClose={() => {
@@ -3493,6 +3514,96 @@ function CreateBotForm({
   );
 }
 
+function BotMailSection({ botId }: { botId: string }) {
+  const [email, setEmail] = useState<string | null>(null);
+  const [inboxes, setInboxes] = useState<
+    Array<{ inboxId: string; email: string; displayName: string | null }>
+  >([]);
+  const [configured, setConfigured] = useState(false);
+  const [selected, setSelected] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function refresh() {
+    const status = await rpc.mail.list({ botId });
+    setConfigured(status.configured);
+    setEmail(status.email);
+    setInboxes(status.inboxes);
+    const assigned = status.inboxes.find((inbox) => inbox.email === status.email);
+    setSelected(assigned?.inboxId ?? status.inboxes[0]?.inboxId ?? "");
+  }
+
+  useEffect(() => {
+    void refresh().catch((err: unknown) =>
+      setError(err instanceof Error ? err.message : "Could not load mail"),
+    );
+  }, [botId]);
+
+  if (!configured && !error) return null;
+
+  return (
+    <div className="mt-5 rounded-[14px] border border-[#26262A] bg-[#101012] px-3.5 py-3">
+      <div className="flex items-center gap-2 text-[14px] text-[#C9C9CE]">
+        <Mail size={14} strokeWidth={1.7} />
+        Mail
+      </div>
+      {email ? (
+        <div className="mt-2 flex items-center justify-between gap-2">
+          <span className="min-w-0 truncate text-[14px] text-[#ECECEE]" dir="auto">
+            {email}
+          </span>
+          <button
+            type="button"
+            className="shrink-0 text-[12.5px] text-[#85858A]"
+            onClick={() => void navigator.clipboard.writeText(email)}
+          >
+            Copy
+          </button>
+        </div>
+      ) : (
+        <p className="mt-2 text-[13px] text-[#85858A]">Assign an inbox for signups and outreach.</p>
+      )}
+      {inboxes.length ? (
+        <div className="mt-3 flex gap-2">
+          <select
+            value={selected}
+            onChange={(event) => setSelected(event.target.value)}
+            className="min-w-0 flex-1 rounded-[11px] border border-[#26262A] bg-transparent px-3 py-2 text-[13px] text-[#ECECEE]"
+          >
+            {inboxes.map((inbox) => (
+              <option key={inbox.inboxId} value={inbox.inboxId}>
+                {inbox.displayName ? `${inbox.displayName} · ${inbox.email}` : inbox.email}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            disabled={busy || !selected}
+            onClick={() => {
+              setBusy(true);
+              setError(null);
+              void rpc.mail
+                .assign({ botId, inboxId: selected })
+                .then((result) => {
+                  setEmail(result.email);
+                  return refresh();
+                })
+                .catch((err: unknown) =>
+                  setError(err instanceof Error ? err.message : "Could not assign mail"),
+                )
+                .finally(() => setBusy(false));
+            }}
+            className="rounded-[11px] border border-[#26262A] px-3 py-2 text-[13px] text-[#ECECEE] disabled:opacity-40"
+          >
+            Use
+          </button>
+        </div>
+      ) : null}
+      {error ? <p className="mt-2 text-[13px] text-[#E65707]">{error}</p> : null}
+    </div>
+  );
+}
+
 function BotSettings({
   bot,
   memoryProviderConfigured,
@@ -3518,6 +3629,7 @@ function BotSettings({
   const [name, setName] = useState(bot.name);
   const [title, setTitle] = useState(bot.title);
   const [description, setDescription] = useState(bot.description);
+  const [instructions, setInstructions] = useState(bot.instructions);
   const [computerMode, setComputerMode] = useState(bot.computerMode);
   const [memoryScope, setMemoryScope] = useState(bot.memoryScope);
   const [autoSpeak, setAutoSpeak] = useState(bot.autoSpeak);
@@ -3566,6 +3678,24 @@ function BotSettings({
           className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
         />
       </label>
+      <label className="mt-4 block text-[14px] text-[#85858A]">
+        Instructions
+        <textarea
+          value={instructions}
+          maxLength={BOT_INSTRUCTIONS_MAX_LENGTH}
+          onChange={(e) => setInstructions(e.target.value)}
+          rows={8}
+          className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
+        />
+      </label>
+      <button
+        type="button"
+        onClick={() => setInstructions(LINK_BUILDING_BOT_INSTRUCTIONS)}
+        className="mt-2 text-[13px] text-[#85858A] hover:text-[#C9C9CE]"
+      >
+        Link-building research prompt
+      </button>
+      <BotMailSection botId={bot.id} />
       <ComputerModePicker value={computerMode} onChange={setComputerMode} />
       {memoryProviderConfigured ? (
         <div className="mt-4 text-[14px] text-[#85858A]">
@@ -3635,7 +3765,7 @@ function BotSettings({
               name,
               title,
               description,
-              instructions: description,
+              instructions,
               computerMode,
               memoryScope,
               autoSpeak,
@@ -4045,6 +4175,14 @@ function computerPlaceholder(
 
 function computerLabel(mode: ComputerStatus["mode"] | undefined, botName: string) {
   return mode === "dedicated" ? `${botName}’s computer` : "Team Computer";
+}
+
+function modelLabel(id: string | null | undefined) {
+  if (!id) return "Choose model";
+  if (id.includes("grok-4.6")) return "Grok 4.6";
+  if (id.includes("grok")) return "Grok";
+  const short = id.split("/").pop() ?? id;
+  return short.replace(/-/g, " ");
 }
 
 function ChoiceCard({

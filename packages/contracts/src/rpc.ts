@@ -254,6 +254,25 @@ export const appContract = {
     screenUrl: oc.input(botId).output(z.object({ url: z.string().nullable() })),
     heartbeat: oc.input(botId).output(z.object({ ok: z.literal(true) })),
   },
+  mail: {
+    list: oc.input(botId).output(
+      z.object({
+        configured: z.boolean(),
+        email: z.string().nullable(),
+        inboxes: z.array(
+          z.object({
+            inboxId: z.string(),
+            email: z.string(),
+            displayName: z.string().nullable(),
+            assignedBotId: z.string().nullable(),
+          }),
+        ),
+      }),
+    ),
+    assign: oc
+      .input(z.object({ botId: Id, inboxId: z.string().min(1) }))
+      .output(z.object({ email: z.string(), inboxId: z.string() })),
+  },
   memory: {
     list: oc
       .input(z.object({ botId: Id.optional(), scope: z.enum(["bot", "user"]).optional() }))

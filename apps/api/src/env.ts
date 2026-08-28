@@ -37,6 +37,7 @@ export interface AppEnv {
   wakeupDriver: string;
   mcpStdioEnabled: boolean;
   mcpStdioAllowedCommands: string[];
+  agentMailApiKey: string | undefined;
   port: number;
   gitSha: string | undefined;
 }
@@ -79,6 +80,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
       .split(",")
       .map((value) => value.trim())
       .filter(Boolean),
+    agentMailApiKey: optional(source.AGENTMAIL_API_KEY),
     port: Number(source.API_PORT ?? 3100),
     gitSha:
       optional(source.GIT_SHA) ??

@@ -8,6 +8,7 @@ export * from "./computer-desktop.js";
 export * from "./cron.js";
 export * from "./events.js";
 export * from "./group-mentions.js";
+export * from "./link-building-prompt.js";
 export * from "./mcp.js";
 export * from "./message-pages.js";
 export * from "./model-defaults.js";

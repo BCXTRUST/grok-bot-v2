@@ -62,6 +62,7 @@ import {
   verifyMcpInstall,
 } from "@rakazo/adapters";
 import type { Auth } from "@rakazo/auth";
+import { assignAgentMailInbox, listAgentMailInboxes } from "./agentmail.js";
 import {
   type Actor,
   appContract,
@@ -301,6 +302,7 @@ export interface RouterDeps {
     webOrigin: string;
     screenProxySecret: string;
     sandboxProvider: string;
+    agentMailApiKey?: string;
   };
 }
 
@@ -1410,6 +1412,46 @@ export function createRouter(deps: RouterDeps) {
           ).catch(() => undefined);
         }
         return { ok: true as const };
+      }),
+    },
+    mail: {
+      list: authed.mail.list.handler(async ({ context, input }) => {
+        await repos.getBot(context.actor, input.botId);
+        const apiKey = deps.env.agentMailApiKey;
+        if (!apiKey) {
+          return { configured: false, email: null, inboxes: [] };
+        }
+        const inboxes = await listAgentMailInboxes(apiKey);
+        const assigned = inboxes.find((inbox) => inbox.assignedBotId === input.botId);
+        return {
+          configured: true,
+          email: assigned?.email ?? null,
+          inboxes,
+        };
+      }),
+      assign: authed.mail.assign.handler(async ({ context, input }) => {
+        const bot = await repos.getBot(context.actor, input.botId);
+        const apiKey = deps.env.agentMailApiKey;
+        if (!apiKey) {
+          throw new ORPCError("FAILED_PRECONDITION", {
+            message: "Mail is not configured on this deployment.",
+          });
+        }
+        const assigned = await assignAgentMailInbox(apiKey, {
+          inboxId: input.inboxId,
+          botId: bot.id,
+          workspaceId: context.actor.workspaceId,
+          displayName: bot.name,
+        });
+        const marker = `Your mail address is ${assigned.email}.`;
+        if (!bot.instructions.includes(assigned.email)) {
+          const next = [bot.instructions.trim(), marker].filter(Boolean).join("\n\n");
+          await deps.prisma.bot.update({
+            where: { id: bot.id },
+            data: { instructions: next },
+          });
+        }
+        return { email: assigned.email, inboxId: assigned.inboxId };
       }),
     },
     memory: {
