@@ -32,6 +32,7 @@ export const BotSchema = z.object({
   createdAt: z.string(),
   voiceId: z.string().nullable(),
   autoSpeak: z.boolean(),
+  inboxAddress: z.string().nullable(),
 });
 export type Bot = z.infer<typeof BotSchema>;
 

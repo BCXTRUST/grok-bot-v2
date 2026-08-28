@@ -6,6 +6,7 @@ import {
   checkpointComputerWorkspace,
   ensureComputerWorkspaceLayout,
   restoreComputerWorkspace,
+  shouldCheckpointComputerBeforePause,
 } from "./computer-workspace.js";
 import { FakeSandboxProvider } from "./fake-sandbox.js";
 import { LocalAgentHomeStore } from "./home.js";
@@ -73,6 +74,14 @@ describe("provider-neutral computer workspace", () => {
       new TextDecoder().decode(
         await replacementProvider.readFile(replacement, "notes/result.txt", context),
       ),
-    ).toBe("portable");
+    ).toBe("portable"    );
+  });
+});
+
+describe("live desktop checkpoints", () => {
+  it("does not export the workspace before a captcha takeover", () => {
+    expect(shouldCheckpointComputerBeforePause("takeover")).toBe(false);
+    expect(shouldCheckpointComputerBeforePause("ask")).toBe(true);
+    expect(shouldCheckpointComputerBeforePause("approval")).toBe(true);
   });
 });

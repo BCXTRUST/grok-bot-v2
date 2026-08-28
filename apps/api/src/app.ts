@@ -14,6 +14,7 @@ import {
   createJobReconciler,
   createRunExecutor,
   createRunSandbox,
+  createAgentMailInboxProvider,
   type DestinationEmulator,
   destroyBot,
   EncryptedSecretStore,
@@ -37,6 +38,7 @@ import {
   type RemoteConnectorDependencies,
   ScriptedAgentRuntime,
   WorkspaceMemoryProviderResolver,
+  warnIfOpenRouterKeyCannotChat,
 } from "@rakazo/adapters";
 import { blockedAuthPaths, createAuth } from "@rakazo/auth";
 import { createDb, createThreadEvents, type PrismaClient, requireMembership } from "@rakazo/db";
@@ -45,6 +47,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { type AppEnv, loadEnv } from "./env.js";
 import { createRouter } from "./router.js";
+import { isTrustedOrigin, TUNNEL_AUTH_ORIGINS } from "./trusted-origin.js";
 import { mountVoiceHttpRoutes } from "./voice.js";
 
 export interface AppHandles {
@@ -113,10 +116,22 @@ export async function createApp(
     prisma,
   });
   const secrets = new EncryptedSecretStore(env.encryptionKey);
+  await warnIfOpenRouterKeyCannotChat(env.openRouterKey);
   const mcpOAuth = new McpOAuthBroker(prisma, secrets, remoteConnectors);
   const memoryProviders = new WorkspaceMemoryProviderResolver(prisma, secrets);
   const oauthLogins = new PiOAuthLogins();
   const home = new LocalAgentHomeStore(env.dataDir);
+  const inbox = await createAgentMailInboxProvider({
+    apiKey: env.agentMailApiKey,
+    domain: env.agentMailDomain,
+  });
+  if (!inbox) {
+    console.warn(
+      env.agentMailApiKey
+        ? "AgentMail inbox provider is unavailable"
+        : "AgentMail inbox provider disabled (set AGENTMAIL_API_KEY)",
+    );
+  }
   const artifacts = new LocalArtifactStore(env.dataDir);
   const memory = new MarkdownMemoryStore(prisma);
   const mcp = new McpConnector(
@@ -160,6 +175,7 @@ export async function createApp(
       "http://127.0.0.1:8081",
       "http://localhost:19006",
       "http://127.0.0.1:19006",
+      ...TUNNEL_AUTH_ORIGINS,
     ],
     beforeDeleteUser: async (userId) => {
       const bots = await prisma.bot.findMany({
@@ -196,13 +212,16 @@ export async function createApp(
     artifacts,
     connector: stack.connector,
     listConnectedPluginSlugs: stack.composio?.listConnectedSlugs.bind(stack.composio),
-    secrets: [env.openRouterKey ?? "", env.composioApiKey ?? ""].filter(Boolean),
+    secrets: [env.openRouterKey ?? "", env.composioApiKey ?? "", env.agentMailApiKey ?? ""].filter(
+      Boolean,
+    ),
     secretStore: secrets,
     deploymentModelKey: env.openRouterKey,
     dataDir: env.dataDir,
     notifications,
     jobs,
     events,
+    inbox,
   });
 
   const jobHandlers = createBackgroundJobHandlers({
@@ -241,6 +260,7 @@ export async function createApp(
     remoteConnectors,
     artifacts,
     dataDir: env.dataDir,
+    inbox,
     env: {
       defaultProvider: env.defaultProvider,
       defaultModel: env.defaultModel,
@@ -296,6 +316,7 @@ export async function createApp(
       jobs: jobKind,
       realtime: realtime.describe().id,
       revision: env.gitSha ?? null,
+      inbox: Boolean(inbox),
     }),
   );
 
@@ -319,18 +340,6 @@ export async function createApp(
       await created.pool?.end().catch(() => undefined);
     },
   };
-}
-
-function isTrustedOrigin(origin: string, env: AppEnv) {
-  if (!origin) return true;
-  if (origin === env.webOrigin || origin === env.apiUrl || origin === env.authUrl) return true;
-  if (origin.startsWith("rakazo://") || origin.startsWith("exp://")) return true;
-  try {
-    const host = new URL(origin).hostname;
-    return host === "localhost" || host === "127.0.0.1";
-  } catch {
-    return false;
-  }
 }
 
 function sessionHeaders(request: Request) {

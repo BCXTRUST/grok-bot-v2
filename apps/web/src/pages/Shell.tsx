@@ -96,11 +96,13 @@ import { connectMcpOauth } from "../lib/mcp-connect";
 import { revokePendingAttachmentPreviews } from "../lib/pending-attachments";
 import { markAfterPaint, markOnce } from "../lib/performance";
 import { rpc } from "../lib/rpc";
+import { embeddableScreenUrl } from "../lib/screen-url";
 import {
   activeThreadRuns,
   clearActiveThreadRuns,
   computerPanelAutoBoot,
   computerTakeoverBlocked,
+  shouldPollComputerScreen,
   isComputerStatusEvent,
   isThreadSnapshotEvent,
   mergeThreadSnapshot,
@@ -472,14 +474,26 @@ export function ShellPage() {
     return snap;
   }
 
-  async function refreshComputerScreen(id: string) {
-    if (!computerVisible.current) return null;
+  async function refreshComputerScreen(id: string, force = false) {
+    if (!force && !computerVisible.current) return null;
     const request = ++screenRequest.current;
-    const screen = await rpc.computer.screenUrl({ botId: id }).catch(() => ({ url: null }));
+    let screen: { url: string | null } = { url: null };
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      screen = await rpc.computer.screenUrl({ botId: id }).catch(() => ({ url: null }));
+      if (screen.url) break;
+      if (attempt < 7) await new Promise((resolve) => setTimeout(resolve, 1_000));
+      if (
+        request !== screenRequest.current ||
+        activeBotId.current !== id ||
+        (!force && !computerVisible.current)
+      ) {
+        return null;
+      }
+    }
     if (
       request !== screenRequest.current ||
       activeBotId.current !== id ||
-      !computerVisible.current
+      (!force && !computerVisible.current)
     ) {
       return null;
     }
@@ -1235,6 +1249,9 @@ export function ShellPage() {
       if (needsBoot) await rpc.computer.boot({ botId: active.id });
       if (takeControl) await rpc.computer.takeover({ botId: active.id });
       await refreshThread(active.id);
+      if (computerVisible.current || overlay) {
+        await refreshComputerScreen(active.id, true);
+      }
       setComputerError(null);
     } catch (error) {
       setComputerError(error instanceof Error ? error.message : "Could not take control");
@@ -1261,7 +1278,7 @@ export function ShellPage() {
       const screen = state === "running" ? await refreshComputerScreen(botId) : null;
       if (cancelled || activeBotId.current !== botId) return;
       const action = computerPanelAutoBoot(state, screen);
-      if (action === "wait") {
+      if (action === "wait" || action === "recover-screen") {
         if (state === "running") autoBooted.current = botId;
         return;
       }
@@ -1277,6 +1294,26 @@ export function ShellPage() {
       cancelled = true;
     };
   }, [panel, active?.id]);
+
+  useEffect(() => {
+    if (
+      !active ||
+      !shouldPollComputerScreen({
+        panel,
+        overlayOpen: computerOpen,
+        state: computer?.state,
+        embeddable: Boolean(embeddableScreenUrl(screenUrl, window.location.href)),
+      })
+    ) {
+      return;
+    }
+    const botId = active.id;
+    void refreshComputerScreen(botId, computerOpen);
+    const timer = window.setInterval(() => {
+      void refreshComputerScreen(botId, computerOpen);
+    }, 2_000);
+    return () => window.clearInterval(timer);
+  }, [panel, computerOpen, computer?.state, screenUrl, active?.id]);
 
   useEffect(() => {
     setComputerOpen(false);
@@ -1334,28 +1371,44 @@ export function ShellPage() {
 
   async function openComputer() {
     if (!active) return;
-    const needsTakeover = !userHoldsComputerControl(computer, active.id);
-    const blocked = computerTakeoverBlocked(computer, snapshot?.run?.status);
     try {
+      computerVisible.current = true;
+      setComputerOpen(true);
       await bootComputer({
-        takeControl: needsTakeover && !blocked,
-        overlay: (needsTakeover && !blocked) || computer?.state !== "running",
+        takeControl: false,
+        overlay: computer?.state !== "running",
         force: computer?.state !== "running",
       });
-      setComputerOpen(true);
+      await refreshComputerScreen(active.id, true);
     } catch {
-      // computerError already set in bootComputer
+      setComputerOpen(false);
+    }
+  }
+
+  async function takeOverComputer() {
+    if (!active) return;
+    try {
+      computerVisible.current = true;
+      setComputerOpen(true);
+      await bootComputer({
+        takeControl: true,
+        overlay: true,
+        force: computer?.state !== "running",
+      });
+      await refreshComputerScreen(active.id, true);
+    } catch {
+      // Keep the watch overlay if the desktop is already open.
     }
   }
 
   async function releaseComputer(reason?: ComputerReleaseReason) {
     if (!active) return;
-    setComputerOpen(false);
     await rpc.computer.release({ botId: active.id, reason }).catch(() => undefined);
     await refreshThread(active.id);
+    await refreshComputerScreen(active.id, true);
   }
 
-  const embeddedScreenUrl = embeddableScreenUrl(screenUrl);
+  const embeddedScreenUrl = embeddableScreenUrl(screenUrl, window.location.href);
   const hasControl = userHoldsComputerControl(computer, active?.id);
   const takeoverBlocked = computerTakeoverBlocked(computer, snapshot?.run?.status);
 
@@ -1891,7 +1944,7 @@ export function ShellPage() {
                     <div className="grid h-full place-items-center text-sm text-[#6C6C70]">
                       {computerPlaceholder(
                         computer?.state,
-                        booting,
+                        booting || (computer?.state === "running" && !embeddedScreenUrl),
                         computerLabel(computer?.mode, active.name),
                       )}
                     </div>
@@ -1909,11 +1962,9 @@ export function ShellPage() {
                       ? "You have control"
                       : computerError
                         ? computerError
-                        : computer?.busyBotName
-                          ? `${computer.busyBotName} is using it`
-                          : computer?.state === "suspended"
-                            ? "Asleep"
-                            : computerLabel(computer?.mode, active.name)}
+                        : computer?.state === "suspended"
+                          ? "Asleep"
+                          : computerLabel(computer?.mode, active.name)}
                   </span>
                   {hasControl ? (
                     <ComputerReleaseActions
@@ -1927,7 +1978,7 @@ export function ShellPage() {
                       size="sm"
                       disabled={takeoverBlocked}
                       title={takeoverBlocked ? "Stop the bot first" : undefined}
-                      onClick={() => void openComputer()}
+                      onClick={() => void takeOverComputer()}
                     >
                       Take control
                     </Button>
@@ -2443,9 +2494,7 @@ export function ShellPage() {
                   size="sm"
                   disabled={takeoverBlocked}
                   title={takeoverBlocked ? "Stop the bot first" : undefined}
-                  onClick={() =>
-                    void bootComputer({ takeControl: true, overlay: false }).catch(() => undefined)
-                  }
+                  onClick={() => void takeOverComputer().catch(() => undefined)}
                 >
                   Take control
                 </Button>
@@ -2500,7 +2549,9 @@ export function ShellPage() {
               <div className="grid h-full place-items-center text-sm text-[#6C6C70]">
                 {computer?.state === "suspended"
                   ? "Computer is asleep"
-                  : computerLabel(computer?.mode, active.name)}
+                  : computer?.state === "running" || booting
+                    ? "Booting live desktop…"
+                    : computerLabel(computer?.mode, active.name)}
               </div>
             )}
           </div>
@@ -2915,18 +2966,13 @@ function ComputerReleaseActions({
   takeoverRequested: boolean;
   onRelease: (reason?: ComputerReleaseReason) => Promise<void>;
 }) {
-  if (!takeoverRequested) {
-    return (
-      <Button type="button" variant="outline" size="sm" onClick={() => void onRelease()}>
-        Release
-      </Button>
-    );
-  }
   return (
     <div className="flex items-center gap-2">
-      <Button type="button" variant="outline" size="sm" onClick={() => void onRelease("skipped")}>
-        Skip
-      </Button>
+      {takeoverRequested ? (
+        <Button type="button" variant="outline" size="sm" onClick={() => void onRelease("skipped")}>
+          Skip
+        </Button>
+      ) : null}
       <Button type="button" size="sm" onClick={() => void onRelease("done")}>
         I’m done
       </Button>
@@ -3534,6 +3580,15 @@ function BotSettings({
         />
       </label>
       <label className="mt-4 block text-[14px] text-[#85858A]">
+        Email
+        <input
+          value={bot.inboxAddress ?? ""}
+          readOnly
+          aria-label="Bot email address"
+          className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
+        />
+      </label>
+      <label className="mt-4 block text-[14px] text-[#85858A]">
         Title
         <input
           value={title}
@@ -3988,22 +4043,6 @@ function DeleteRoutineDialog({
       </div>
     </div>
   );
-}
-
-function embeddableScreenUrl(url: string | null): string | null {
-  if (!url) return null;
-  try {
-    const parsed = new URL(url, window.location.href);
-    const page = new URL(window.location.href);
-    const local = parsed.hostname === "127.0.0.1" || parsed.hostname === "localhost";
-    const pagePort = page.port || (page.protocol === "https:" ? "443" : "80");
-    if (local && parsed.port && parsed.port !== pagePort) {
-      return null;
-    }
-    return parsed.toString();
-  } catch {
-    return url;
-  }
 }
 
 function screenIframeSandbox(url: string | null) {

@@ -36,6 +36,11 @@ describe("filterBots", () => {
     expect(filterBots(bots, "zero").map((item) => item.id)).toEqual(["inbox"]);
     expect(filterBots(bots, "PIXEL").map((item) => item.id)).toEqual(["seo"]);
   });
+
+  it("matches a bot AgentMail address", () => {
+    const withMail = [{ ...bots[0], inboxAddress: "seo.bot@faircroft.us" }];
+    expect(filterBots(withMail, "faircroft").map((item) => item.id)).toEqual(["seo"]);
+  });
 });
 
 describe("botTag", () => {

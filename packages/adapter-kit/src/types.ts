@@ -314,6 +314,8 @@ export interface AgentRunRequest {
     provider: string;
     id: string;
     apiKey?: string;
+    /** Tried once if `apiKey` is rejected with 401. */
+    fallbackApiKey?: string;
     baseUrl?: string;
     /** In-process OAuth credential from the encrypted store for this run. */
     oauth?: {
@@ -382,6 +384,28 @@ export interface VoiceCapabilities {
   catalog: boolean;
   synthesize: boolean;
   transcribe: boolean;
+}
+
+export interface AgentInboxCapabilities {
+  provision: boolean;
+  send: boolean;
+  list: boolean;
+}
+
+export interface AgentInboxRef {
+  provider: string;
+  inboxId: string;
+  address: string;
+}
+
+export interface AgentMailMessage {
+  id: string;
+  from: string;
+  to: string[];
+  subject: string;
+  text: string;
+  links?: string[];
+  createdAt?: string;
 }
 
 export interface VoiceVerifyResult {

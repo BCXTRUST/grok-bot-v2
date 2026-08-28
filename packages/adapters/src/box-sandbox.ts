@@ -40,6 +40,7 @@ import {
   PORTABLE_TRANSFER_BATCH_BYTES,
   shouldSkipPortableWorkspaceFile,
 } from "./computer-workspace.js";
+import { launchDesktopAppCommand } from "./desktop-apps.js";
 
 const BOX_API_BASE = "https://ascii.dev/api/box/v1";
 const BOX_WORKSPACE = "/home/user/rakazo-home";
@@ -881,17 +882,7 @@ function configureBoxWorkspaceCommand(): string {
 }
 
 function launchBoxBrowserCommand(): string {
-  return [
-    "for app in google-chrome-stable google-chrome chromium firefox; do",
-    '  if command -v "$app" >/dev/null 2>&1; then',
-    '    nohup env DISPLAY=:0 "$app" --no-first-run --no-default-browser-check --start-maximized >/tmp/rakazo-browser.log 2>&1 &',
-    "    sleep 1",
-    "    DISPLAY=:0 wmctrl -r :ACTIVE: -b add,maximized_vert,maximized_horz 2>/dev/null || true",
-    "    exit 0",
-    "  fi",
-    "done",
-    "exit 1",
-  ].join("\n");
+  return launchDesktopAppCommand(":0", "browser");
 }
 
 function observeBoxCommand(imagePath: string): string {
@@ -983,7 +974,7 @@ function boxActionCommand(action: Exclude<ComputerAction, { kind: "wait" }>): st
     return `DISPLAY=:0 xdotool key ${shellQuote(keys)}`;
   }
   if (action.kind === "clipboard") {
-    return `DISPLAY=:0 xdotool type --delay 1 -- ${shellQuote(action.text)}`;
+    return `DISPLAY=:0 xdotool type --clearmodifiers --delay 12 -- ${shellQuote(action.text)}`;
   }
   if (action.kind === "pointer") {
     const button = action.button === "right" ? "3" : "1";
@@ -1002,19 +993,7 @@ function boxActionCommand(action: Exclude<ComputerAction, { kind: "wait" }>): st
       : workspacePath(BOX_WORKSPACE, action.path);
     return `nohup env DISPLAY=:0 xdg-open ${shellQuote(target)} >/tmp/rakazo-open.log 2>&1 &`;
   }
-  const applications =
-    action.application === "browser"
-      ? ["google-chrome-stable", "google-chrome", "chromium", "firefox"]
-      : [action.application];
-  return [
-    `for app in ${applications.map(shellQuote).join(" ")}; do`,
-    '  if command -v "$app" >/dev/null 2>&1; then',
-    `    nohup env DISPLAY=:0 "$app"${action.uri ? ` ${shellQuote(action.uri)}` : ""} >/tmp/rakazo-app.log 2>&1 &`,
-    "    exit 0",
-    "  fi",
-    "done",
-    "exit 1",
-  ].join("\n");
+  return launchDesktopAppCommand(":0", action.application, action.uri);
 }
 
 function isAbortError(error: unknown): boolean {

@@ -54,7 +54,7 @@ export async function readScreenUrl(
 export function embeddableScreenUrl(url: string | null, apiBase: string): string | null {
   if (!url) return null;
   try {
-    const parsed = new URL(url);
+    const parsed = new URL(url, apiBase);
     const api = new URL(apiBase);
     if (isLocalHostname(parsed.hostname) && !isLocalHostname(api.hostname)) {
       parsed.hostname = api.hostname;
@@ -79,7 +79,6 @@ export function previewPlaceholder(
 }
 
 export function controlLabel(computer: ComputerStatus | null, name: string, botId?: string) {
-  if (computer?.busyBotName) return `${computer.busyBotName} is using it`;
   if (computer?.controlHolder === "user" && computer.controlBotId === botId) {
     return "You have control";
   }

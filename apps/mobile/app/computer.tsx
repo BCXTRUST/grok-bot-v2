@@ -122,11 +122,25 @@ export default function Computer() {
 
   async function openComputer() {
     if (!botId) return;
-    const needsTakeover = !(computer?.controlHolder === "user" && computer.controlBotId === botId);
     try {
       await bootComputer({
-        takeControl: needsTakeover,
-        overlay: needsTakeover || computer?.state !== "running",
+        takeControl: false,
+        overlay: computer?.state !== "running",
+        force: computer?.state !== "running",
+      });
+      setComputerOpen(true);
+      setScreenError(null);
+    } catch {
+      // error already set
+    }
+  }
+
+  async function takeOverComputer() {
+    if (!botId) return;
+    try {
+      await bootComputer({
+        takeControl: true,
+        overlay: true,
         force: computer?.state !== "running",
       });
       setComputerOpen(true);
@@ -139,7 +153,6 @@ export default function Computer() {
   async function releaseComputer(reason?: ComputerReleaseReason) {
     if (!botId) return;
     await rpc("computer/release", { botId, reason }).catch(() => undefined);
-    setComputerOpen(false);
     await refresh().catch(() => undefined);
   }
 
@@ -221,7 +234,7 @@ export default function Computer() {
           />
         ) : (
           <Pressable
-            onPress={() => void openComputer()}
+            onPress={() => void takeOverComputer()}
             style={{
               backgroundColor: "#1A1A1D",
               paddingHorizontal: 14,
@@ -345,11 +358,7 @@ export default function Computer() {
                     />
                   ) : (
                     <Pressable
-                      onPress={() =>
-                        void bootComputer({ takeControl: true, overlay: false }).catch(
-                          () => undefined,
-                        )
-                      }
+                      onPress={() => void takeOverComputer().catch(() => undefined)}
                       hitSlop={8}
                       style={{
                         borderWidth: 1,
@@ -417,13 +426,10 @@ function ComputerReleaseActions({
   takeoverRequested: boolean;
   onRelease: (reason?: ComputerReleaseReason) => Promise<void>;
 }) {
-  const actions: Array<{ label: string; reason?: ComputerReleaseReason; primary?: boolean }> =
-    takeoverRequested
-      ? [
-          { label: "Skip", reason: "skipped" },
-          { label: "I’m done", reason: "done", primary: true },
-        ]
-      : [{ label: "Release" }];
+  const actions: Array<{ label: string; reason?: ComputerReleaseReason; primary?: boolean }> = [
+    ...(takeoverRequested ? [{ label: "Skip", reason: "skipped" as const }] : []),
+    { label: "I’m done", reason: "done", primary: true },
+  ];
   return (
     <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
       {actions.map((action) => (

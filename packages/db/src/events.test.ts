@@ -9,6 +9,8 @@ import {
   followThreadEvents,
   pauseRunForInput,
   pauseRunForTakeover,
+  pauseActiveRunForUserTakeover,
+  USER_TAKEOVER_CHECKPOINT,
   sendUserMessage,
 } from "./events.js";
 import { RunHistoryWriteError } from "./messages.js";
@@ -105,6 +107,7 @@ describe("finalizeComputerControlRelease", () => {
         }),
       },
       run: {
+        findFirst: vi.fn().mockResolvedValue({ checkpoint: null }),
         findUnique: vi.fn().mockResolvedValue({ status: "waiting_takeover" }),
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
       },
@@ -332,6 +335,71 @@ describe("pauseRunForTakeover", () => {
       }),
     );
     expect(publish).toHaveBeenCalledWith("thread:thread-1", JSON.stringify({ cursor: 7 }));
+  });
+});
+
+describe("pauseActiveRunForUserTakeover", () => {
+  it("pauses a running or leased computer without requiring the worker lease", async () => {
+    const fanout = new TestFanout();
+    const publish = vi.spyOn(fanout, "publish");
+    const tx = {
+      $queryRaw: vi.fn().mockResolvedValue([{ id: "thread-1" }]),
+      run: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: "run-1",
+          threadId: "thread-1",
+          status: "leased",
+        }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+        findUnique: vi.fn().mockResolvedValue({ status: "waiting_takeover" }),
+      },
+      attempt: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
+      thread: { update: vi.fn().mockResolvedValue({ nextEventSeq: 4 }) },
+      event: {
+        create: vi.fn(async ({ data }: { data: { seq: number; type: string } }) => ({
+          ...event(data.seq),
+          type: data.type,
+        })),
+        deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+      },
+    };
+    const prisma = {
+      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+    } as unknown as PrismaClient;
+
+    await expect(
+      pauseActiveRunForUserTakeover(
+        prisma,
+        {
+          workspaceId: "workspace-1",
+          botId: "bot-1",
+          runId: "run-1",
+          reason: "User took control",
+        },
+        fanout,
+      ),
+    ).resolves.toBe(true);
+
+    expect(tx.run.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ status: { in: ["running", "leased"] } }),
+        data: {
+          status: "waiting_takeover",
+          leaseOwner: null,
+          leaseExpiresAt: null,
+          checkpoint: USER_TAKEOVER_CHECKPOINT,
+        },
+      }),
+    );
+    expect(tx.event.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          type: "computer.takeover.requested",
+          payload: { reason: "User took control" },
+        }),
+      }),
+    );
+    expect(publish).toHaveBeenCalledWith("thread:thread-1", JSON.stringify({ cursor: 3 }));
   });
 });
 

@@ -150,6 +150,10 @@ describe("builtin tools", () => {
         "run_subagent",
         "spawn_bot",
         "archive_bot",
+        "mail_list",
+        "mail_send",
+        "launch_app",
+        "list_apps",
       ]),
     );
   });

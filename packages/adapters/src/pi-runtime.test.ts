@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { describeToolActivity } from "./pi-runtime.js";
+import {
+  describeToolActivity,
+  isOpenRouterAuthFailure,
+  preferComputerVisionModel,
+} from "./pi-runtime.js";
 
 describe("describeToolActivity", () => {
   it("summarizes builtin tools with their most informative argument", () => {
@@ -16,9 +20,11 @@ describe("describeToolActivity", () => {
     expect(describeToolActivity("add_mcp_server", { name: "Linear" })).toBe(
       "Connecting MCP server: Linear",
     );
-    expect(describeToolActivity("run_subagent", { name: "scout", task: "…" })).toBe(
-      "Delegating to helper: scout",
+    expect(describeToolActivity("open_path", { path: "https://example.com" })).toBe(
+      "Opening https://example.com",
     );
+    expect(describeToolActivity("launch_app", { application: "browser" })).toBe("Opening browser");
+    expect(describeToolActivity("list_apps", {})).toBe("Listing installed apps");
   });
 
   it("names MCP server and remote tool", () => {
@@ -52,3 +58,58 @@ describe("describeToolActivity", () => {
     expect(describeToolActivity("destination_write", undefined)).toBe("Using destination_write");
   });
 });
+
+describe("preferComputerVisionModel", () => {
+  const textOnly = { id: "deepseek/deepseek-v4-flash-0731", provider: "openrouter", input: ["text"] };
+  const vision = {
+    id: "openai/gpt-4.1-mini",
+    provider: "openrouter",
+    input: ["text", "image"],
+  };
+  const models = {
+    getModel: (provider: string, id: string) =>
+      provider === "openrouter" && id === vision.id ? vision : undefined,
+  };
+
+  it("keeps a text-only model when the run has no computer", () => {
+    expect(preferComputerVisionModel(models as never, textOnly as never, [])).toBe(textOnly);
+  });
+
+  it("keeps a model that already accepts images", () => {
+    expect(
+      preferComputerVisionModel(models as never, vision as never, [
+        { name: "computer_observe" } as never,
+      ]),
+    ).toBe(vision);
+  });
+
+  it("swaps a text-only model for a vision model when computer_observe is present", () => {
+    expect(
+      preferComputerVisionModel(models as never, textOnly as never, [
+        { name: "computer_observe" } as never,
+      ]),
+    ).toBe(vision);
+  });
+
+  it("synthesizes a vision OpenRouter model when the catalog has no fallback", () => {
+    const empty = { getModel: () => undefined };
+    const chosen = preferComputerVisionModel(empty as never, textOnly as never, [
+      { name: "computer_observe" } as never,
+    ]);
+    expect(chosen.id).toBe("openai/gpt-4.1-mini");
+    expect(chosen.input).toContain("image");
+  });
+});
+
+describe("isOpenRouterAuthFailure", () => {
+  it("detects User not found and management-key 401s", () => {
+    expect(isOpenRouterAuthFailure('401: {"message":"User not found.","code":401}')).toBe(true);
+    expect(
+      isOpenRouterAuthFailure(
+        "The model provider rejected this API key (401). OpenRouter management/provisioning keys cannot run chat.",
+      ),
+    ).toBe(true);
+    expect(isOpenRouterAuthFailure("Provider finish_reason: error")).toBe(false);
+  });
+});
+

@@ -36,6 +36,15 @@ describe("embeddableScreenUrl", () => {
   it("returns null when there is no screen", () => {
     expect(embeddableScreenUrl(null, "http://127.0.0.1:3100")).toBeNull();
   });
+
+  it("resolves a same-page /novnc path against the API base", () => {
+    expect(
+      embeddableScreenUrl(
+        "/novnc/remote/view/1.token/vnc.html?autoconnect=true",
+        "https://api.rakazo.test",
+      ),
+    ).toBe("https://api.rakazo.test/novnc/remote/view/1.token/vnc.html?autoconnect=true");
+  });
 });
 
 describe("computer copy", () => {

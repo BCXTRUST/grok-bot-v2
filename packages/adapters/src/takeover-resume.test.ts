@@ -13,11 +13,18 @@ describe("takeoverResumeFromRelease", () => {
   it("tells the bot the login was skipped", () => {
     const resume = takeoverResumeFromRelease("skipped");
     expect(resume.checkpoint).toBe("takeover-skipped");
-    expect(resume.promptNote).toMatch(/skipped the login/i);
+    expect(resume.promptNote).toMatch(/skipped this screen/i);
     expect(resume.promptNote).not.toMatch(/finished the login/i);
   });
 
   it("treats an expired takeover like a skip", () => {
     expect(takeoverResumeFromRelease("expired").checkpoint).toBe("takeover-skipped");
+  });
+
+  it("tells the bot the live desktop is unchanged after a user handback", () => {
+    const resume = takeoverResumeFromRelease("user-takeover");
+    expect(resume.checkpoint).toBe("user-takeover");
+    expect(resume.promptNote).toMatch(/handed it back/i);
+    expect(resume.promptNote).not.toMatch(/finished the login/i);
   });
 });

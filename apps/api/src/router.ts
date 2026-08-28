@@ -3,6 +3,7 @@ import { implement, ORPCError } from "@orpc/server";
 import {
   type AdapterContext,
   type AgentHomeStore,
+  type AgentInboxProvider,
   type ArtifactStore,
   type ConnectorCatalogItem,
   computerControlExpireJobKey,
@@ -18,6 +19,7 @@ import {
   acquireComputerExecutionLease,
   applyTeachingDesktopInput,
   archiveBot,
+  assertOpenRouterInferenceKey,
   buildMcpCredentialBlob,
   buildModelConnectPlaintext,
   type ComposioProvider,
@@ -28,10 +30,13 @@ import {
   createVoiceProvider,
   destroyBot,
   displayBotWorkspacePath,
+  ensureBotInbox,
+  ensureMissingBotInboxes,
   type EncryptedSecretStore,
   enqueueTakeoverContinuation,
   expireComputerControl,
   hasActiveComputerControl,
+  holdComputerExecutionLeaseForTakeover,
   isScratchpadStatus,
   listPiCatalog,
   listScratchpadItems,
@@ -94,6 +99,7 @@ import {
   parseComputerMode,
   type ThreadEvents,
   touchGroupUpdatedAt,
+  USER_TAKEOVER_CHECKPOINT,
 } from "@rakazo/db";
 import { createOwnedArtifact, getOwnedArtifact, getWorkspaceArtifact } from "./artifacts.js";
 import {
@@ -103,7 +109,7 @@ import {
 } from "./computer-status.js";
 import { buildMcpUpdateMaterial } from "./mcp-material.js";
 import { chooseFocus, markAppConnected, startOnboarding } from "./onboarding.js";
-import { addScreenProxyCapability } from "./screen-proxy.js";
+import { addScreenProxyCapability, proxiesExternalDesktop } from "./screen-proxy.js";
 import { queryWorkspaceSearch } from "./search.js";
 import { withSerializableRetry } from "./serializable-retry.js";
 import { assertTeachingSendAllowed, createTaughtSkillsService } from "./taught-skills.js";
@@ -188,6 +194,22 @@ function computerContext(actor: Actor, botId: string, operationId: string): Adap
     botId,
     signal: new AbortController().signal,
   };
+}
+
+async function withBotInbox(
+  deps: RouterDeps,
+  actor: Actor,
+  bot: import("@rakazo/contracts").Bot,
+) {
+  const inbox = await ensureBotInbox(
+    { prisma: deps.prisma, inbox: deps.inbox },
+    { id: bot.id, name: bot.name, workspaceId: bot.workspaceId, userId: actor.userId },
+    computerContext(actor, bot.id, "inbox"),
+  ).catch((error) => {
+    console.error("bot inbox provision failed", bot.id, error);
+    return null;
+  });
+  return { ...bot, inboxAddress: inbox?.address ?? bot.inboxAddress };
 }
 
 function mcpServerDto(
@@ -294,6 +316,7 @@ export interface RouterDeps {
   remoteConnectors?: RemoteConnectorDependencies;
   artifacts: ArtifactStore;
   dataDir: string;
+  inbox?: AgentInboxProvider;
   env: {
     defaultProvider: string;
     defaultModel: string;
@@ -328,6 +351,11 @@ export function createRouter(deps: RouterDeps) {
     me: authed.me.handler(async ({ context }): Promise<Me> => meDto(deps, context.actor)),
     bootstrap: authed.bootstrap.handler(async ({ context, input }) => {
       const actor = context.actor;
+      await ensureMissingBotInboxes(
+        { prisma: deps.prisma, inbox: deps.inbox },
+        actor,
+        computerContext(actor, actor.userId, "inbox-bootstrap"),
+      );
       const [me, bots, botSections, archivedBots] = await Promise.all([
         meDto(deps, actor),
         repos.listBots(actor),
@@ -409,6 +437,9 @@ export function createRouter(deps: RouterDeps) {
         let plaintext: string;
         try {
           plaintext = buildModelConnectPlaintext(input);
+          if (input.provider === "openrouter") {
+            await assertOpenRouterInferenceKey(plaintext);
+          }
         } catch (error) {
           throw new ORPCError("BAD_REQUEST", {
             message: error instanceof Error ? error.message : "Invalid model connection",
@@ -517,17 +548,24 @@ export function createRouter(deps: RouterDeps) {
       }),
     },
     bots: {
-      list: authed.bots.list.handler(async ({ context }) => repos.listBots(context.actor)),
+      list: authed.bots.list.handler(async ({ context }) => {
+        await ensureMissingBotInboxes(
+          { prisma: deps.prisma, inbox: deps.inbox },
+          context.actor,
+          computerContext(context.actor, context.actor.userId, "inbox-list"),
+        );
+        return repos.listBots(context.actor);
+      }),
       listArchived: authed.bots.listArchived.handler(async ({ context }) =>
         repos.listBots(context.actor, { archived: true }),
       ),
       get: authed.bots.get.handler(async ({ context, input }) => {
         const found = (await repos.listBots(context.actor)).find((bot) => bot.id === input.botId);
         if (!found) throw new IsolationError();
-        return found;
+        return withBotInbox(deps, context.actor, found);
       }),
       create: authed.bots.create.handler(async ({ context, input }) =>
-        repos.createBot(context.actor, input),
+        withBotInbox(deps, context.actor, await repos.createBot(context.actor, input)),
       ),
       duplicate: authed.bots.duplicate.handler(async ({ context, input }) => {
         const source = await repos.getBot(context.actor, input.botId);
@@ -559,7 +597,7 @@ export function createRouter(deps: RouterDeps) {
             })),
           });
         }
-        return duplicate;
+        return withBotInbox(deps, context.actor, duplicate);
       }),
       update: authed.bots.update.handler(async ({ context, input }) => {
         await repos.getBot(context.actor, input.botId);
@@ -593,7 +631,7 @@ export function createRouter(deps: RouterDeps) {
         const bots = await repos.listBots(context.actor);
         const bot = bots.find((b) => b.id === input.botId);
         if (!bot) throw new IsolationError();
-        return bot;
+        return withBotInbox(deps, context.actor, bot);
       }),
       setComputer: authed.bots.setComputer.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);
@@ -1117,6 +1155,7 @@ export function createRouter(deps: RouterDeps) {
           : null;
         const waitingForTakeover =
           executionRun?.botId === bot.id && executionRun.status === "waiting_takeover";
+        let pausedForUser = false;
         if (
           executionBlocksUserTakeover({
             hasLease: Boolean(executionLease),
@@ -1124,8 +1163,27 @@ export function createRouter(deps: RouterDeps) {
             runStatus: executionRun?.status,
           })
         ) {
-          throw new ORPCError("CONFLICT", { message: "Stop the bot first" });
+          if (!executionLease || executionRun?.botId !== bot.id) {
+            throw new ORPCError("CONFLICT", { message: "Stop the bot first" });
+          }
+          const paused = await deps.events.pauseActiveRunForUserTakeover({
+            workspaceId: context.actor.workspaceId,
+            botId: bot.id,
+            runId: executionLease.runId,
+            reason: "User took control",
+          });
+          if (!paused) {
+            throw new ORPCError("CONFLICT", { message: "Stop the bot first" });
+          }
+          await holdComputerExecutionLeaseForTakeover(deps.prisma, {
+            computerId: bot.computer.id,
+            botId: bot.id,
+            runId: executionLease.runId,
+            fence: executionLease.fence,
+          });
+          pausedForUser = true;
         }
+        const bindControlRun = waitingForTakeover || pausedForUser;
         const executionLeaseActive = Boolean(
           executionLease && executionLease.expiresAt.getTime() > Date.now(),
         );
@@ -1151,7 +1209,7 @@ export function createRouter(deps: RouterDeps) {
             controlLeaseId: leaseId,
             controlLeaseExpiresAt: expiresAt,
             controlBotId: bot.id,
-            controlRunId: waitingForTakeover ? executionLease?.runId : null,
+            controlRunId: bindControlRun ? executionLease?.runId : null,
             state: "running",
           },
         });
@@ -1192,7 +1250,10 @@ export function createRouter(deps: RouterDeps) {
             threadId: bot.thread.id,
             botId: bot.id,
             type: "computer.takeover.granted",
-            payload: { leaseId, takeoverRequested: waitingForTakeover },
+            payload: {
+              leaseId,
+              takeoverRequested: waitingForTakeover && !pausedForUser,
+            },
           });
         }
         scheduleComputerSleep(deps.jobs, bot.computer.id);
@@ -1210,6 +1271,9 @@ export function createRouter(deps: RouterDeps) {
           !controlLeaseId ||
           controlBotId !== bot.id
         ) {
+          if (input.reason === "skipped" || input.reason === "done") {
+            await resumeWaitingTakeoverRun(deps, context.actor.workspaceId, bot.id, input.reason);
+          }
           return { ok: true as const };
         }
         if (bot.computer.providerRef) {
@@ -1241,6 +1305,9 @@ export function createRouter(deps: RouterDeps) {
           });
 
         await enqueueTakeoverContinuation(deps.jobs, released.runId);
+        if (!released.runId && (input.reason === "skipped" || input.reason === "done")) {
+          await resumeWaitingTakeoverRun(deps, context.actor.workspaceId, bot.id, input.reason);
+        }
         scheduleComputerSleep(deps.jobs, bot.computer.id);
         return { ok: true as const };
       }),
@@ -1345,50 +1412,68 @@ export function createRouter(deps: RouterDeps) {
         return { path: input.path, content };
       }),
       screenUrl: authed.computer.screenUrl.handler(async ({ context, input }) => {
-        let bot = await repos.getBot(context.actor, input.botId);
-        if (await expireStaleComputerControl(deps, bot.computer)) {
-          bot = await repos.getBot(context.actor, input.botId);
-        }
-        if (
-          !bot.computer?.providerRef ||
-          (bot.computer.state !== "running" && bot.computer.state !== "booting")
-        ) {
-          return { url: null };
-        }
-        const session = await deps.sandbox.connectScreen(
-          toComputerRef(bot.computer),
-          {
-            view: "stream",
+        try {
+          let bot = await repos.getBot(context.actor, input.botId);
+          if (await expireStaleComputerControl(deps, bot.computer)) {
+            bot = await repos.getBot(context.actor, input.botId);
+          }
+          if (
+            !bot.computer?.providerRef ||
+            (bot.computer.state !== "running" && bot.computer.state !== "booting")
+          ) {
+            return { url: null };
+          }
+          const request = {
+            view: "stream" as const,
             interactive:
               hasActiveComputerControl(bot.computer) && bot.computer.controlBotId === bot.id,
             controlToken:
               bot.computer.controlBotId === bot.id
                 ? (bot.computer.controlLeaseId ?? undefined)
                 : undefined,
-          },
-          await computerScreenContext(
+          };
+          const ctx = await computerScreenContext(
             deps.prisma,
             context.actor,
             bot.computer.id,
             bot.id,
             "screen",
-          ),
-        );
-        if (!session.url) return { url: null };
-        scheduleComputerSleep(deps.jobs, bot.computer.id);
-        const viewUrl = withViewOnly(
-          session.url,
-          !(hasActiveComputerControl(bot.computer) && bot.computer.controlBotId === bot.id),
-        );
-        return {
-          url: addScreenProxyCapability(
-            viewUrl,
-            deps.env.screenProxySecret,
-            deps.env.webOrigin,
-            undefined,
-            { proxyExternal: bot.computer.kind === "box" },
-          ),
-        };
+          );
+          let session: Awaited<ReturnType<typeof deps.sandbox.connectScreen>>;
+          try {
+            session = await deps.sandbox.connectScreen(toComputerRef(bot.computer), request, ctx);
+          } catch {
+            session = { url: null, mimeType: "text/html", close: async () => undefined };
+          }
+          if (!session.url && request.interactive) {
+            try {
+              session = await deps.sandbox.connectScreen(
+                toComputerRef(bot.computer),
+                { view: "stream", interactive: false },
+                ctx,
+              );
+            } catch {
+              session = { url: null, mimeType: "text/html", close: async () => undefined };
+            }
+          }
+          if (!session.url) return { url: null };
+          scheduleComputerSleep(deps.jobs, bot.computer.id);
+          const viewUrl = withViewOnly(
+            session.url,
+            !(hasActiveComputerControl(bot.computer) && bot.computer.controlBotId === bot.id),
+          );
+          return {
+            url: addScreenProxyCapability(
+              viewUrl,
+              deps.env.screenProxySecret,
+              deps.env.webOrigin,
+              undefined,
+              { proxyExternal: proxiesExternalDesktop(bot.computer.kind) },
+            ),
+          };
+        } catch {
+          return { url: null };
+        }
       }),
       heartbeat: authed.computer.heartbeat.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);
@@ -2790,7 +2875,44 @@ async function computerStatus(
     botId,
     botName: bot.name,
   });
-  return toComputerStatus(botId, bot.computer, busyBotName);
+  const status = toComputerStatus(botId, bot.computer, busyBotName);
+  const waiting = await deps.prisma.run.findFirst({
+    where: { botId, workspaceId: actor.workspaceId, status: "waiting_takeover" },
+    select: { id: true, checkpoint: true },
+  });
+  if (waiting?.checkpoint === USER_TAKEOVER_CHECKPOINT) {
+    return { ...status, takeoverRequested: false };
+  }
+  if (status.takeoverRequested) return status;
+  return waiting ? { ...status, takeoverRequested: true } : status;
+}
+
+async function resumeWaitingTakeoverRun(
+  deps: RouterDeps,
+  workspaceId: string,
+  botId: string,
+  reason: "skipped" | "done",
+): Promise<void> {
+  const waiting = await deps.prisma.run.findFirst({
+    where: { botId, workspaceId, status: "waiting_takeover" },
+    orderBy: { createdAt: "desc" },
+    select: { id: true, checkpoint: true },
+  });
+  if (!waiting) return;
+  const resumeCheckpoint =
+    reason === "skipped"
+      ? "takeover-skipped"
+      : waiting.checkpoint === USER_TAKEOVER_CHECKPOINT
+        ? USER_TAKEOVER_CHECKPOINT
+        : "takeover";
+  const resumed = await deps.prisma.run.updateMany({
+    where: { id: waiting.id, status: "waiting_takeover" },
+    data: {
+      status: "queued",
+      checkpoint: resumeCheckpoint,
+    },
+  });
+  if (resumed.count === 1) await enqueueTakeoverContinuation(deps.jobs, waiting.id);
 }
 
 async function expireStaleComputerControl(
@@ -2860,6 +2982,15 @@ async function persistModelCredential(
   },
 ) {
   throwIfAborted(input.signal);
+  if (input.provider === "openrouter") {
+    try {
+      await assertOpenRouterInferenceKey(input.plaintext);
+    } catch (error) {
+      throw new ORPCError("BAD_REQUEST", {
+        message: error instanceof Error ? error.message : "Invalid model connection",
+      });
+    }
+  }
   const stored = await deps.secrets.put(input.plaintext, {
     operationId: "cred",
     traceId: "cred",

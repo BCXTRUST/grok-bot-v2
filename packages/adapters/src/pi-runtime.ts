@@ -10,6 +10,7 @@ import type {
   ConnectorTool,
 } from "@rakazo/adapter-kit";
 import { builtinAgentTools, DELEGATION_TOOL_NAMES } from "./builtin-tools.js";
+import { forgetOpenRouterKeyInspection } from "./openrouter-inference-key.js";
 import { PiRuntimeCredentialStore, toOAuthCredential } from "./pi-credentials.js";
 import { registerLocalProvider } from "./pi-local-provider.js";
 import {
@@ -93,12 +94,16 @@ export class PiAgentRuntime implements AgentRuntime {
           return;
         }
 
-        const apiKey = request.model.oauth
+        let apiKey = request.model.oauth
           ? undefined
           : request.model.provider === OPENAI_COMPATIBLE_PROVIDER_ID
             ? request.model.apiKey || "local"
             : (request.model.apiKey ?? process.env.OPENROUTER_API_KEY);
+        const fallbackApiKey = request.model.oauth
+          ? undefined
+          : request.model.fallbackApiKey?.trim() || undefined;
         const toolDefs = request.tools.length ? request.tools : builtinAgentTools;
+        model = preferComputerVisionModel(models, model, toolDefs);
         const nestedAgents = new Set<Agent>();
         const host: ToolHost = {
           queue,
@@ -114,27 +119,16 @@ export class PiAgentRuntime implements AgentRuntime {
           depth: 0,
         };
         const tools = toAgentTools(toolDefs, host);
-        const history = toHistory(request.history, request.prompt);
+        const history = toAgentHistory(request.history, request.prompt);
+        const systemPrompt =
+          request.instructions ||
+          (toolDefs.some((tool) => tool.name === "computer_observe")
+            ? "You are a Rakazo bot with a real Linux desktop. Follow the latest user message on the live public web. Do not open tutorial or demo sites unless the user asked for a demo. Screenshots are returned as images — look at them. Use computer_observe before clicking when the screen may have changed. Use computer_act for the visible browser, menus, and apps. Click a text field before kind=type. Open the web with launch_app application=browser or open_path with an https URL — never type firefox in the terminal. If you see a file manager, application finder, or power menu, close it and launch_app the browser. Never ask the user to open a browser. Never say you cannot observe the desktop — call computer_observe again. Use list_apps to see installed programs. Never write Python, CDP, Playwright, Selenium, or other browser-automation scripts. Use shell and file tools for files and commands only. If a browser is already open, keep using it. The user may take control of the same desktop while you run. Be concise."
+            : "You are a Rakazo bot with a persistent sandbox filesystem and shell. Be concise.");
 
-        const agent = new Agent({
-          streamFn: (m, ctx, options) => models.streamSimple(m, ctx, options),
-          getApiKey: async () => apiKey,
-          transformContext: async (messages) => pruneComputerScreenshotContext(messages),
-          initialState: {
-            systemPrompt:
-              request.instructions ||
-              (toolDefs.some((tool) => tool.name === "computer_observe")
-                ? "You are a Rakazo bot with a real computer. Use computer_observe and computer_act to operate its visible desktop, including browsers and installed applications. Use shell and the file tools for precise terminal and filesystem work. The user may interact with the same desktop while you run, so re-observe when the screen may have changed. Be concise."
-                : "You are a Rakazo bot with a persistent sandbox filesystem and shell. Be concise."),
-            model,
-            thinkingLevel: thinkingLevelFor(model),
-            tools,
-            messages: history,
-          },
-        });
-
+        let currentAgent: Agent | undefined;
         const onAbort = () => {
-          agent.abort();
+          currentAgent?.abort();
           for (const nested of nestedAgents) nested.abort();
         };
         host.abortTurn = onAbort;
@@ -146,76 +140,143 @@ export class PiAgentRuntime implements AgentRuntime {
 
         let streamed = "";
         let toolActivityShowing = false;
-        agent.subscribe((event) => {
-          if (event.type === "tool_execution_start") {
-            if (!consumeToolCall(host)) return;
-            // Live activity feedback: without this the thread shows a bare
-            // "working…" for the whole tool call with nothing actionable.
-            toolActivityShowing = true;
-            queue.push({
-              type: "progress",
-              text: describeToolActivity(event.toolName, event.args),
-            });
-          }
-          if (
-            event.type === "message_update" &&
-            event.assistantMessageEvent.type === "text_delta"
-          ) {
-            const delta = event.assistantMessageEvent.delta;
-            if (delta) {
-              if (toolActivityShowing) {
-                // Real text replaces the activity line instead of appending to it.
-                toolActivityShowing = false;
-                queue.push({ type: "progress", text: "" });
-              }
-              streamed += delta;
-              queue.push({ type: "text", text: delta });
-            }
-          }
-          if (event.type === "message_end" && event.message.role === "assistant") {
-            const text = assistantText(event.message);
-            if (text && !streamed) {
-              streamed = text;
-              queue.push({ type: "text", text });
-            }
-            if ("usage" in event.message && event.message.usage) {
-              queue.push({
-                type: "usage",
-                inputTokens: event.message.usage.input ?? 0,
-                outputTokens: event.message.usage.output ?? 0,
-                provider: model.provider,
-                model: model.id,
-              });
-            }
-          }
-        });
-
-        // No "working…" progress push here: the shell already renders its own
-        // placeholder while a run is active, and emitting one here shows two.
         const images = request.currentTurnImages?.map((image) => ({
           type: "image" as const,
           data: Buffer.from(image.data).toString("base64"),
           mimeType: image.mimeType,
         }));
+
+        const runAgent = async (messages: ReturnType<typeof toAgentHistory>) => {
+          const agent = new Agent({
+            streamFn: (m, ctx, options) => models.streamSimple(m, ctx, options),
+            getApiKey: async () => {
+              host.apiKey = apiKey;
+              return apiKey;
+            },
+            transformContext: async (next) => pruneComputerScreenshotContext(next),
+            initialState: {
+              systemPrompt,
+              model,
+              thinkingLevel: thinkingLevelFor(model),
+              tools,
+              messages,
+            },
+          });
+          currentAgent = agent;
+          agent.subscribe((event) => {
+            if (event.type === "tool_execution_start") {
+              if (!consumeToolCall(host)) return;
+              toolActivityShowing = true;
+              queue.push({
+                type: "progress",
+                text: describeToolActivity(event.toolName, event.args),
+              });
+            }
+            if (
+              event.type === "message_update" &&
+              event.assistantMessageEvent.type === "text_delta"
+            ) {
+              const delta = event.assistantMessageEvent.delta;
+              if (delta) {
+                if (toolActivityShowing) {
+                  toolActivityShowing = false;
+                  queue.push({ type: "progress", text: "" });
+                }
+                streamed += delta;
+                queue.push({ type: "text", text: delta });
+              }
+            }
+            if (event.type === "message_end" && event.message.role === "assistant") {
+              const text = assistantText(event.message);
+              if (text && !streamed) {
+                streamed = text;
+                queue.push({ type: "text", text });
+              }
+              if ("usage" in event.message && event.message.usage) {
+                queue.push({
+                  type: "usage",
+                  inputTokens: event.message.usage.input ?? 0,
+                  outputTokens: event.message.usage.output ?? 0,
+                  provider: model.provider,
+                  model: model.id,
+                });
+              }
+            }
+          });
+          try {
+            await agent.prompt(request.prompt, images?.length ? images : undefined);
+            await agent.waitForIdle();
+            return {
+              error: agent.state.errorMessage,
+              messages: agent.state.messages,
+            };
+          } catch (error) {
+            return {
+              error: error instanceof Error ? error.message : String(error),
+              messages: agent.state.messages,
+            };
+          }
+        };
+
         try {
-          await agent.prompt(request.prompt, images?.length ? images : undefined);
-          await agent.waitForIdle();
+          let result = await runAgent(history);
+          if (
+            isOpenRouterAuthFailure(result.error) &&
+            fallbackApiKey &&
+            fallbackApiKey !== apiKey
+          ) {
+            if (apiKey) forgetOpenRouterKeyInspection(apiKey);
+            apiKey = fallbackApiKey;
+            host.apiKey = fallbackApiKey;
+            queue.push({
+              type: "progress",
+              text: "The first model key was rejected — retrying with the deployment key…",
+            });
+            result = await runAgent(history);
+          }
+          if (
+            isThoughtSignatureFailure(result.error) ||
+            isUsageAccountingFailure(result.error) ||
+            isProviderFinishReasonError(result.error)
+          ) {
+            queue.push({
+              type: "progress",
+              text: isThoughtSignatureFailure(result.error)
+                ? "Model lost tool context — continuing on the live desktop…"
+                : isProviderFinishReasonError(result.error)
+                  ? "The vision model aborted a screenshot turn — continuing on the live desktop…"
+                  : "Model usage stats were missing — continuing on the live desktop…",
+            });
+            result = await runAgent([
+              ...history,
+              {
+                role: "user" as const,
+                content: thoughtSignatureContinueNote(summarizeCompletedTools(result.messages)),
+                timestamp: Date.now(),
+              },
+            ]);
+          }
+          if (result.error) {
+            const message = isThoughtSignatureFailure(result.error)
+              ? explainThoughtSignatureFailure()
+              : sanitizeError(result.error);
+            queue.push({ type: "text", text: `I hit a problem: ${message}` });
+            queue.push({ type: "done", text: message });
+            return;
+          }
+          if (!streamed) {
+            const fallback =
+              assistantText(result.messages.at(-1)) ||
+              (toolDefs.some((tool) => tool.name === "computer_observe")
+                ? "I looked at the screen but did not finish the task."
+                : "I finished the work.");
+            queue.push({ type: "text", text: fallback });
+            streamed = fallback;
+          }
+          queue.push({ type: "done", text: streamed });
         } finally {
           signal.removeEventListener("abort", onAbort);
         }
-
-        const error = agent.state.errorMessage;
-        if (error) {
-          queue.push({ type: "text", text: `I hit a problem: ${sanitizeError(error)}` });
-          queue.push({ type: "done", text: sanitizeError(error) });
-          return;
-        }
-        if (!streamed) {
-          const fallback = assistantText(agent.state.messages.at(-1)) || "I finished the work.";
-          queue.push({ type: "text", text: fallback });
-          streamed = fallback;
-        }
-        queue.push({ type: "done", text: streamed });
       } catch (error) {
         const message = sanitizeError(error instanceof Error ? error.message : String(error));
         queue.push({ type: "text", text: `I hit a problem: ${message}` });
@@ -232,6 +293,26 @@ export class PiAgentRuntime implements AgentRuntime {
       running.delete(request.runId);
     }
   }
+}
+
+const DEFAULT_COMPUTER_VISION_MODEL = "openai/gpt-4.1-mini";
+
+function modelAcceptsImages(model: { input?: readonly string[] }) {
+  return !model.input || model.input.includes("image");
+}
+
+export function preferComputerVisionModel(
+  models: Models,
+  model: Model<Api>,
+  toolDefs: readonly ConnectorTool[],
+): Model<Api> {
+  if (!toolDefs.some((tool) => tool.name === "computer_observe")) return model;
+  if (modelAcceptsImages(model)) return model;
+  const visionId = process.env.PI_COMPUTER_MODEL?.trim() || DEFAULT_COMPUTER_VISION_MODEL;
+  const vision =
+    models.getModel("openrouter", visionId) ?? models.getModel(model.provider, visionId);
+  if (vision) return vision;
+  return { ...configuredOpenRouterModel(visionId), input: ["text", "image"] };
 }
 
 function configuredOpenRouterModel(id: string): Model<"openai-completions"> {
@@ -327,6 +408,8 @@ export function describeToolActivity(toolName: string, args: unknown): string {
   if (toolName === "list_files") return `Listing ${detail(record.path ?? ".")}`;
   if (toolName === "attach_file") return `Attaching ${detail(record.path)}`;
   if (toolName === "open_path") return `Opening ${detail(record.path)}`;
+  if (toolName === "launch_app") return `Opening ${detail(record.application || "an app")}`;
+  if (toolName === "list_apps") return "Listing installed apps";
   if (toolName === "render_plot") return "Rendering a chart";
   if (toolName === "add_mcp_server") return `Connecting MCP server: ${detail(record.name)}`;
   if (toolName === "computer_observe") return "Looking at the screen";
@@ -383,16 +466,92 @@ function stableToolNameHash(name: string): string {
   return (hash >>> 0).toString(36);
 }
 
-function toHistory(history: AgentRunRequest["history"], prompt: string) {
+const EMPTY_ASSISTANT_USAGE = {
+  input: 0,
+  output: 0,
+  cacheRead: 0,
+  cacheWrite: 0,
+  totalTokens: 0,
+  cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+};
+
+export function toAgentHistory(history: AgentRunRequest["history"], prompt: string) {
   const last = history.at(-1);
   const prior = last?.role === "user" && last.content === prompt ? history.slice(0, -1) : history;
   return prior
-    .filter((m) => m.role === "user" || m.role === "assistant")
-    .map((m) =>
-      m.role === "assistant"
-        ? { role: "user" as const, content: `Assistant: ${m.content}`, timestamp: Date.now() }
-        : { role: "user" as const, content: m.content, timestamp: Date.now() },
+    .filter((message) => message.role === "user" || message.role === "assistant")
+    .map((message) =>
+      message.role === "assistant"
+        ? {
+            role: "assistant" as const,
+            content: [{ type: "text" as const, text: message.content }],
+            timestamp: Date.now(),
+            // Pi estimates context from assistant.usage.totalTokens. Thread history
+            // has no usage; omitting it throws and aborts the computer turn.
+            usage: EMPTY_ASSISTANT_USAGE,
+            stopReason: "stop" as const,
+          }
+        : { role: "user" as const, content: message.content, timestamp: Date.now() },
     );
+}
+
+export function isThoughtSignatureFailure(message: string | undefined): boolean {
+  return Boolean(message && /thought[_\s-]*signature/i.test(message));
+}
+
+export function isOpenRouterAuthFailure(message: string | undefined): boolean {
+  if (!message) return false;
+  return (
+    /\b401\b/.test(message) &&
+    /user not found|management\/provisioning|cannot run chat|rejected this api key/i.test(message)
+  );
+}
+
+export function isUsageAccountingFailure(message: string | undefined): boolean {
+  return Boolean(message && /totalTokens/i.test(message));
+}
+
+export function isProviderFinishReasonError(message: string | undefined): boolean {
+  return Boolean(message && /finish_reason:\s*error/i.test(message));
+}
+
+export function explainThoughtSignatureFailure() {
+  return "The model lost its computer-session context after a long tool loop. Take control if a page is half-finished, or send the next instruction and I will continue on the same desktop.";
+}
+
+export function thoughtSignatureContinueNote(completedTools: string) {
+  return [
+    "The previous model turn failed because its encrypted reasoning tokens were dropped.",
+    "The live desktop is still running. Do not start over unless the screen shows you must.",
+    "Observe the current screen, then continue the user's latest request.",
+    completedTools,
+  ].join("\n");
+}
+
+export function summarizeCompletedTools(messages: unknown[]): string {
+  const names: string[] = [];
+  for (const message of messages) {
+    if (!message || typeof message !== "object") continue;
+    const row = message as { role?: string; toolName?: string; content?: unknown };
+    if (row.role === "toolResult" && row.toolName) names.push(row.toolName);
+    if (row.role === "assistant" && Array.isArray(row.content)) {
+      for (const block of row.content) {
+        if (
+          block &&
+          typeof block === "object" &&
+          (block as { type?: string }).type === "toolCall" &&
+          typeof (block as { name?: string }).name === "string"
+        ) {
+          names.push((block as { name: string }).name);
+        }
+      }
+    }
+  }
+  if (names.length === 0) return "No tools finished before the provider error.";
+  return `Tools already finished this turn:\n${names
+    .slice(-24)
+    .map((name) => `- ${name}`)
+    .join("\n")}`;
 }
 
 function toAgentTool(tool: ConnectorTool, host: ToolHost, exposedName: string): AgentTool {
@@ -429,6 +588,9 @@ function toAgentTool(tool: ConnectorTool, host: ToolHost, exposedName: string): 
       if (tool.name === "list_files") return { path: String(raw.path ?? "") };
       if (tool.name === "read_file" || tool.name === "open_path") {
         return { path: String(raw.path ?? "") };
+      }
+      if (tool.name === "list_apps") {
+        return {};
       }
       if (tool.name === "launch_app") {
         return {
@@ -813,7 +975,11 @@ function sanitizeSensitiveText(message: string) {
 }
 
 function sanitizeError(message: string) {
-  return sanitizeSensitiveText(message);
+  const cleaned = sanitizeSensitiveText(message);
+  if (/user not found/i.test(cleaned) && /\b401\b/.test(cleaned)) {
+    return "The model provider rejected this API key (401). OpenRouter management keys and stale process env cannot run chat. Set OPENROUTER_API_KEY to a regular inference key and restart the app.";
+  }
+  return cleaned;
 }
 
 interface EventQueue {

@@ -8,8 +8,11 @@ import type { MessageBlock } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import {
+  attachComputerScreenshotToThread,
   attachWorkspaceFileToThread,
   currentTurnFilesInstruction,
+  DESKTOP_SCREENSHOT_PREFIX,
+  loadDesktopScreenshotImages,
   materializeCurrentTurnFiles,
 } from "./thread-artifacts.js";
 
@@ -152,5 +155,64 @@ describe("current-turn thread files", () => {
 
     expect(files).toEqual([]);
     expect(findMany).not.toHaveBeenCalled();
+  });
+
+  it("stores a desktop screenshot and reloads the latest frames", async () => {
+    const create = vi.fn().mockResolvedValue({
+      id: "shot-1",
+      name: `${DESKTOP_SCREENSHOT_PREFIX}-frame1.png`,
+      mimeType: "image/png",
+      size: 3,
+    });
+    const put = vi.fn().mockResolvedValue({ id: "stored-shot", hash: "hash" });
+    const attached = await attachComputerScreenshotToThread(
+      {
+        prisma: { artifact: { create } } as unknown as PrismaClient,
+        artifacts: { put } as unknown as ArtifactStore,
+      },
+      {
+        workspaceId: "workspace-1",
+        userId: "user-1",
+        botId: "bot-1",
+        runId: "run-1",
+        frameId: "frame-1",
+        mimeType: "image/png",
+        bytes: new Uint8Array([1, 2, 3]),
+        operationId: "shot-1",
+      },
+    );
+    expect(attached.block.kind).toBe("image");
+    expect(attached.block.name).toContain(DESKTOP_SCREENSHOT_PREFIX);
+
+    const get = vi.fn().mockResolvedValue(new Uint8Array([1, 2, 3]));
+    const findMany = vi.fn().mockResolvedValue([
+      {
+        id: "shot-1",
+        name: attached.block.name,
+        mimeType: "image/png",
+        storageKey: "stored-shot",
+      },
+    ]);
+    const images = await loadDesktopScreenshotImages(
+      {
+        prisma: { artifact: { findMany } } as unknown as PrismaClient,
+        artifacts: { get } as unknown as ArtifactStore,
+      },
+      {
+        operationId: "run-2",
+        traceId: "run-2",
+        workspaceId: "workspace-1",
+        userId: "user-1",
+        botId: "bot-1",
+        signal: new AbortController().signal,
+      },
+    );
+    expect(images).toHaveLength(1);
+    expect(images[0]?.name).toContain(DESKTOP_SCREENSHOT_PREFIX);
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ name: { startsWith: DESKTOP_SCREENSHOT_PREFIX } }),
+      }),
+    );
   });
 });

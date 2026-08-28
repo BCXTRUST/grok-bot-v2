@@ -48,6 +48,9 @@ import type {
   VoiceSynthesizeRequest,
   VoiceTranscribeRequest,
   VoiceVerifyResult,
+  AgentInboxCapabilities,
+  AgentInboxRef,
+  AgentMailMessage,
 } from "./types.js";
 
 export interface SandboxProvider {
@@ -258,4 +261,36 @@ export interface VoiceProvider {
   listVoices(apiKey: string, context: AdapterContext): Promise<VoiceInfo[]>;
   synthesize(request: VoiceSynthesizeRequest, context: AdapterContext): Promise<SpeechClip>;
   transcribe?(request: VoiceTranscribeRequest, context: AdapterContext): Promise<{ text: string }>;
+}
+
+export interface AgentInboxProvider {
+  describe(): AdapterDescriptor<AgentInboxCapabilities>;
+  provision(
+    request: {
+      botId: string;
+      name: string;
+      workspaceId: string;
+    },
+    context: AdapterContext,
+  ): Promise<AgentInboxRef>;
+  listMessages(
+    inbox: AgentInboxRef,
+    request: { limit?: number },
+    context: AdapterContext,
+  ): Promise<Array<Pick<AgentMailMessage, "id" | "from" | "subject" | "createdAt">>>;
+  readMessage(
+    inbox: AgentInboxRef,
+    messageId: string,
+    context: AdapterContext,
+  ): Promise<AgentMailMessage>;
+  sendMessage(
+    inbox: AgentInboxRef,
+    request: { to: string[]; subject: string; text: string },
+    context: AdapterContext,
+  ): Promise<{ id: string }>;
+  replyMessage(
+    inbox: AgentInboxRef,
+    request: { messageId: string; text: string },
+    context: AdapterContext,
+  ): Promise<{ id: string }>;
 }

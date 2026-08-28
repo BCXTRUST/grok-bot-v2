@@ -20,6 +20,7 @@ import {
 import { toComputerRef } from "./computer-support.js";
 import { checkpointAndRecordComputerWorkspace } from "./computer-workspace.js";
 import { resolveAgentHomePath } from "./home.js";
+import { ensureBotInbox } from "./bot-inbox.js";
 
 export function confirmSpawnedBotName(confirmName: string, botName: string) {
   if (confirmName !== botName) {
@@ -35,6 +36,7 @@ export async function spawnBot(
   deps: {
     prisma: PrismaClient;
     jobs: JobPublisher;
+    inbox?: import("@rakazo/adapter-kit").AgentInboxProvider;
   },
   input: {
     spawnedBy: {
@@ -98,6 +100,20 @@ export async function spawnBot(
     };
   }
 
+  const inbox = await ensureBotInbox(deps, {
+    id: created.id,
+    name: created.name,
+    workspaceId: input.spawnedBy.workspaceId,
+    userId: input.spawnedBy.userId,
+  }, {
+    operationId: `inbox:${created.id}`,
+    traceId: `inbox:${created.id}`,
+    workspaceId: input.spawnedBy.workspaceId,
+    userId: input.spawnedBy.userId,
+    botId: created.id,
+    signal: new AbortController().signal,
+  }).catch(() => null);
+
   const prompt = (input.prompt ?? "").trim();
   if (prompt) {
     const run = await ensureSpawnRun(deps.prisma, {
@@ -121,6 +137,7 @@ export async function spawnBot(
     name: created.name,
     title: created.title,
     threadId: created.threadId,
+    inboxAddress: inbox?.address ?? null,
   };
 }
 

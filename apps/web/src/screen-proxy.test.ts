@@ -5,6 +5,7 @@ import {
   safeProxyHeaders,
   safeProxyResponseHeaders,
   stripSensitiveHandshakeHeaders,
+  upstreamHostHeader,
 } from "./screen-proxy.js";
 
 function signedPath(
@@ -130,5 +131,11 @@ describe("noVNC proxy authorization", () => {
     expect(stripSensitiveHandshakeHeaders(handshake)?.toString("latin1")).toBe(
       "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\n\r\nframe",
     );
+  });
+
+  it("omits default HTTPS and HTTP ports from the upstream Host header", () => {
+    expect(upstreamHostHeader("6080-desktop.e2b.dev", 443, "https:")).toBe("6080-desktop.e2b.dev");
+    expect(upstreamHostHeader("127.0.0.1", 6080)).toBe("127.0.0.1:6080");
+    expect(upstreamHostHeader("box.example", 80, "http:")).toBe("box.example");
   });
 });

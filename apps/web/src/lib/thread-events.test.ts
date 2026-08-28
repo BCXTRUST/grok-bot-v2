@@ -9,6 +9,7 @@ import {
   activeThreadRuns,
   clearActiveThreadRuns,
   computerPanelAutoBoot,
+  shouldPollComputerScreen,
   computerTakeoverBlocked,
   isThreadSnapshotEvent,
   mergeThreadSnapshot,
@@ -1054,8 +1055,8 @@ describe("computer event reduction", () => {
     expect(userHoldsComputerControl(granted, "bot-2")).toBe(false);
   });
 
-  it("treats a busy bot name as a blocked takeover", () => {
-    expect(computerTakeoverBlocked(computer({ busyBotName: "Writer" }), "running")).toBe(true);
+  it("does not block Take control when this bot is busy", () => {
+    expect(computerTakeoverBlocked(computer({ busyBotName: "Writer" }), "running")).toBe(false);
     expect(computerTakeoverBlocked(computer({ busyBotName: "Writer" }))).toBe(false);
     expect(computerTakeoverBlocked(computer({ busyBotName: null }), "running")).toBe(false);
     expect(computerTakeoverBlocked(null, "running")).toBe(false);
@@ -1090,6 +1091,41 @@ describe("computer event reduction", () => {
     expect(computerPanelAutoBoot("running", null)).toBe("recover-screen");
     expect(computerPanelAutoBoot("booting")).toBe("wait");
     expect(computerPanelAutoBoot("suspended")).toBe("wait");
+  });
+
+  it("keeps asking for a screen URL while Take control is open, not only the side panel", () => {
+    expect(
+      shouldPollComputerScreen({
+        panel: null,
+        overlayOpen: true,
+        state: "running",
+        embeddable: false,
+      }),
+    ).toBe(true);
+    expect(
+      shouldPollComputerScreen({
+        panel: "computer",
+        overlayOpen: false,
+        state: "running",
+        embeddable: false,
+      }),
+    ).toBe(true);
+    expect(
+      shouldPollComputerScreen({
+        panel: null,
+        overlayOpen: true,
+        state: "running",
+        embeddable: true,
+      }),
+    ).toBe(false);
+    expect(
+      shouldPollComputerScreen({
+        panel: "settings",
+        overlayOpen: false,
+        state: "running",
+        embeddable: false,
+      }),
+    ).toBe(false);
   });
 });
 

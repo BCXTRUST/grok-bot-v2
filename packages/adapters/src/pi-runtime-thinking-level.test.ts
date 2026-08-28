@@ -84,7 +84,18 @@ async function runWithModel(
       prompt: "hello",
       instructions: "",
       history: [],
-      tools: [],
+      tools: [
+        {
+          name: "remember",
+          description: "remember",
+          inputSchema: { type: "object", properties: {} },
+        },
+        {
+          name: "run_subagent",
+          description: "run a helper",
+          inputSchema: { type: "object", properties: {} },
+        },
+      ],
       model: { provider, id: modelId },
       executeTool: vi.fn(async () => ({ ok: true })),
     },

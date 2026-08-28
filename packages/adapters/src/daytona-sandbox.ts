@@ -40,6 +40,7 @@ import {
   PORTABLE_TRANSFER_BATCH_BYTES,
   shouldSkipPortableWorkspaceFile,
 } from "./computer-workspace.js";
+import { launchDesktopAppCommand } from "./desktop-apps.js";
 import {
   allocateExtraDisplayCommand,
   ensureExtraDisplayCommand,
@@ -897,18 +898,9 @@ async function launchDaytonaApplication(
   application: string,
   uri?: string,
 ): Promise<void> {
-  const app = application === "browser" ? "google-chrome chromium firefox" : application;
-  const candidates = app.split(/\s+/).filter(Boolean);
-  const command = [
-    String.raw`export DISPLAY=\${DISPLAY:-:99}`,
-    `for app in ${candidates.map(shellQuote).join(" ")}; do`,
-    '  if command -v "$app" >/dev/null 2>&1; then',
-    `    nohup "$app"${uri ? ` ${shellQuote(uri)}` : ""} >/tmp/rakazo-app.log 2>&1 &`,
-    "    exit 0",
-    "  fi",
-    "done",
-    "exit 1",
-  ].join("\n");
+  const command = launchDesktopAppCommand("${DISPLAY:-:99}", application, uri, {
+    rawDisplay: true,
+  });
   const result = await sandbox.process.executeCommand(command);
   if (result.exitCode !== 0) {
     throw new Error(result.result || `Daytona application ${application} is not installed`);

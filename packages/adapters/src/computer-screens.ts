@@ -59,13 +59,22 @@ export function isComputerScreenUnavailable(error: unknown): error is Error {
   );
 }
 
+export function isRecoverableComputerDesktopError(error: unknown): error is Error {
+  if (!(error instanceof Error)) return false;
+  return /exit status|xdotool|extra display (action|input|observation) failed|typing failed|did not contain image/i.test(
+    error.message,
+  );
+}
+
 export async function withComputerScreenAvailability<T>(
   work: () => Promise<T>,
 ): Promise<T | { error: string }> {
   try {
     return await work();
   } catch (error) {
-    if (isComputerScreenUnavailable(error)) return { error: error.message };
+    if (isComputerScreenUnavailable(error) || isRecoverableComputerDesktopError(error)) {
+      return { error: error instanceof Error ? error.message : String(error) };
+    }
     throw error;
   }
 }

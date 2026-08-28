@@ -383,16 +383,12 @@ export function userHoldsComputerControl(
   return Boolean(botId && computer?.controlHolder === "user" && computer.controlBotId === botId);
 }
 
-/** True when a live bot run is blocking Take control (API would return 409). */
+/** Take control pauses this bot in place; it is never blocked by a busy name. */
 export function computerTakeoverBlocked(
-  computer: Pick<ComputerStatus, "busyBotName"> | null | undefined,
-  runStatus?: string | null,
+  _computer: Pick<ComputerStatus, "busyBotName"> | null | undefined,
+  _runStatus?: string | null,
 ): boolean {
-  if (!computer?.busyBotName) return false;
-  // waiting_takeover is the bot asking for control; terminal/idle clears the block even if
-  // busyBotName is briefly stale while the executor still holds the lease in finally.
-  if (!runStatus || runStatus === "waiting_takeover") return false;
-  return isActive(runStatus as RunStatus);
+  return false;
 }
 
 export function computerPanelAutoBoot(
@@ -402,6 +398,18 @@ export function computerPanelAutoBoot(
   if (state === "booting" || state === "suspended") return "wait";
   if (state === "running") return screenUrl ? "wait" : "recover-screen";
   return "boot";
+}
+
+/** Poll the live stream while the computer panel or takeover overlay is open. */
+export function shouldPollComputerScreen(input: {
+  panel: string | null;
+  overlayOpen: boolean;
+  state: string | undefined;
+  embeddable: boolean;
+}): boolean {
+  if (input.state !== "running") return false;
+  if (input.panel !== "computer" && !input.overlayOpen) return false;
+  return !input.embeddable;
 }
 
 export function reduceComputerStatus(

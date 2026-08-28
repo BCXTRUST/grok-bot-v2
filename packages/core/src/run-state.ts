@@ -11,7 +11,7 @@ const TERMINAL: RunStatus[] = ["completed", "failed", "cancelled"];
 
 const allowed: Record<RunStatus, RunStatus[]> = {
   queued: ["leased", "cancelled"],
-  leased: ["running", "queued", "cancelled"],
+  leased: ["running", "queued", "cancelled", "waiting_takeover"],
   running: ["waiting_input", "waiting_takeover", "completed", "failed", "cancelled", "leased"],
   waiting_input: ["queued", "leased", "cancelled"],
   waiting_takeover: ["queued", "leased", "cancelled"],

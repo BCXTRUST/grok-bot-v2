@@ -31,6 +31,7 @@ function mapBot(
     computer: { scope: string } | null;
     voiceId?: string | null;
     autoSpeak?: boolean;
+    inboxAddress?: string | null;
   },
   preview = "",
   status = "idle",
@@ -61,6 +62,7 @@ function mapBot(
     updatedAt: bot.updatedAt.toISOString(),
     voiceId: bot.voiceId ?? null,
     autoSpeak: bot.autoSpeak ?? false,
+    inboxAddress: bot.inboxAddress ?? null,
   };
 }
 
