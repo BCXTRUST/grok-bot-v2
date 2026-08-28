@@ -36,6 +36,7 @@ const skippedBrowserProfileFiles = new Set([
   ".parentlock",
   "lock",
 ]);
+const skippedBrowserProfileFilePrefixes = ["BrowserMetrics"];
 
 /** Excludes transient browser state that is unsafe or wasteful to restore. */
 export function shouldSkipPortableWorkspaceFile(relative: string) {
@@ -44,8 +45,16 @@ export function shouldSkipPortableWorkspaceFile(relative: string) {
   const name = segments.at(-1) ?? "";
   return (
     segments.some((segment) => skippedBrowserProfileDirectories.has(segment)) ||
-    skippedBrowserProfileFiles.has(name)
+    skippedBrowserProfileFiles.has(name) ||
+    skippedBrowserProfileFilePrefixes.some((prefix) => name.startsWith(prefix))
   );
+}
+
+async function* portableFilesToRestore(files: AsyncIterable<PortableFile>) {
+  for await (const file of files) {
+    if (shouldSkipPortableWorkspaceFile(file.path)) continue;
+    yield file;
+  }
 }
 
 export async function restoreComputerWorkspace(
@@ -56,7 +65,11 @@ export async function restoreComputerWorkspace(
   context: AdapterContext,
 ): Promise<void> {
   if (computer.kind === "docker" && home instanceof LocalAgentHomeStore) return;
-  await sandbox.importWorkspace(computer, home.exportHome(homeKey, context), context);
+  await sandbox.importWorkspace(
+    computer,
+    portableFilesToRestore(home.exportHome(homeKey, context)),
+    context,
+  );
 }
 
 export async function ensureComputerWorkspaceLayout(

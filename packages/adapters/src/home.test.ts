@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -120,5 +120,18 @@ describe("LocalAgentHomeStore path containment", () => {
     const exported = [];
     for await (const file of store.exportHome("bot-1", context)) exported.push(file.path);
     expect(exported).toEqual(["safe.txt"]);
+  });
+
+  it("skips unreadable leftover files instead of failing export", async () => {
+    const { store, home } = await fixture();
+    await mkdir(path.join(home, ".browser-profiles", "chromium"), { recursive: true });
+    await writeFile(path.join(home, "notes.txt"), "keep");
+    const leftover = path.join(home, ".browser-profiles", "chromium", "BrowserMetrics-spare.pma");
+    await writeFile(leftover, "metrics");
+    await chmod(leftover, 0);
+
+    const exported = [];
+    for await (const file of store.exportHome("bot-1", context)) exported.push(file.path);
+    expect(exported).toEqual(["notes.txt"]);
   });
 });

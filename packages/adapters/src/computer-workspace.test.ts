@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -74,5 +74,28 @@ describe("provider-neutral computer workspace", () => {
         await replacementProvider.readFile(replacement, "notes/result.txt", context),
       ),
     ).toBe("portable");
+  });
+
+  it("does not restore transient Chromium metrics files", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "rakazo-workspace-skip-"));
+    roots.push(root);
+    const home = new LocalAgentHomeStore(root);
+    const provider = new FakeSandboxProvider();
+    const computer = await provider.provision({ botId: "bot-1", homePath: "/ignored" }, context);
+    const botHome = home.pathFor("bot-1");
+    await mkdir(path.join(botHome, ".browser-profiles", "chromium"), { recursive: true });
+    await mkdir(path.join(botHome, "notes"), { recursive: true });
+    await writeFile(path.join(botHome, "notes", "keep.txt"), "ok");
+    await writeFile(
+      path.join(botHome, ".browser-profiles", "chromium", "BrowserMetrics-spare.pma"),
+      "skip-me",
+    );
+
+    await restoreComputerWorkspace(home, provider, "bot-1", computer, context);
+
+    await expect(provider.readFile(computer, "notes/keep.txt", context)).resolves.toBeDefined();
+    await expect(
+      provider.readFile(computer, ".browser-profiles/chromium/BrowserMetrics-spare.pma", context),
+    ).rejects.toThrow();
   });
 });

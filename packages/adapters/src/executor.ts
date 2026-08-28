@@ -2017,28 +2017,25 @@ export function createRunExecutor(deps: ExecutorDeps) {
         }
       } catch (setupError) {
         const computerBusy = setupError instanceof ComputerBusyError;
-        if (!computerBusy) {
-          console.error(
-            "run setup failed",
-            redactSecrets(
+        const setupMessage = computerBusy
+          ? "Run setup failed; retrying"
+          : `Run setup failed; retrying: ${redactSecrets(
               setupError instanceof Error ? setupError.message : String(setupError),
               runSecrets,
-            ),
-          );
+            ).slice(0, 180)}`;
+        if (!computerBusy) {
+          console.error("run setup failed", setupMessage);
         }
         const released = await deps.prisma.run.updateMany({
           where: { id: runId, status: "running", leaseOwner: workerId, leaseFence: fence },
-          data: computerRunRequeueData(
-            resumeCheckpoint,
-            computerBusy ? null : "Run setup failed; retrying",
-          ),
+          data: computerRunRequeueData(resumeCheckpoint, computerBusy ? null : setupMessage),
         });
         if (released.count === 1) {
           await deps.prisma.attempt.update({
             where: { id: attempt.id },
             data: {
               status: "setup_failed",
-              error: "Run setup failed; retrying",
+              error: setupMessage,
               finishedAt: new Date(),
             },
           });
@@ -2049,7 +2046,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             });
             return;
           }
-          throw new Error("Run setup failed; retrying");
+          throw new Error(setupMessage);
         }
       } finally {
         clearInterval(heartbeat);

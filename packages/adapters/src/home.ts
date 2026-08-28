@@ -274,6 +274,10 @@ function isMissing(error: unknown): error is NodeJS.ErrnoException {
   return error instanceof Error && "code" in error && error.code === "ENOENT";
 }
 
+function isPermissionDenied(error: unknown): error is NodeJS.ErrnoException {
+  return error instanceof Error && "code" in error && error.code === "EACCES";
+}
+
 async function pathExists(target: string) {
   try {
     await access(target);
@@ -297,7 +301,13 @@ async function copyDir(src: string, dest: string, sourceRoot = src, visited = ne
     const to = path.join(dest, entry.name);
     const info = await stat(from);
     if (info.isDirectory()) await copyDir(from, to, sourceRoot, visited);
-    else if (info.isFile()) await writeFile(to, await readFile(from), { mode: info.mode & 0o777 });
+    else if (info.isFile()) {
+      const content = await readFile(from).catch((error) => {
+        if (isPermissionDenied(error)) return null;
+        throw error;
+      });
+      if (content) await writeFile(to, content, { mode: info.mode & 0o777 });
+    }
   }
 }
 
@@ -321,7 +331,17 @@ async function* walkFiles(
     if (info.isDirectory()) {
       yield* walkFiles(root, full, portablePath, visited);
     } else if (info.isFile()) {
-      const content = await readFile(full);
+      if (
+        portablePath.startsWith(".browser-profiles/") &&
+        entry.name.startsWith("BrowserMetrics")
+      ) {
+        continue;
+      }
+      const content = await readFile(full).catch((error) => {
+        if (isPermissionDenied(error)) return null;
+        throw error;
+      });
+      if (!content) continue;
       yield {
         path: portablePath,
         content: new Uint8Array(content),
