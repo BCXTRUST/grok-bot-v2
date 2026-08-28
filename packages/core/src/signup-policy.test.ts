@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { emailAllowed, parseAllowlist, signupsOpen } from "./signup-policy.js";
+import { emailAllowed, parseAllowlist, resolveSignupPolicy, signupsOpen } from "./signup-policy.js";
 
 describe("signup policy", () => {
   it("allows any email when the list is empty", () => {
@@ -16,5 +16,32 @@ describe("signup policy", () => {
   it("honors SIGNUPS_ENABLED", () => {
     expect(signupsOpen(undefined)).toBe(true);
     expect(signupsOpen("false")).toBe(false);
+  });
+
+  it("prefers stored deployment settings over env allowlists", () => {
+    expect(
+      resolveSignupPolicy({
+        envEnabled: "true",
+        envAllowlist: "owner@example.com",
+        stored: { signupsEnabled: true, signupAllowlist: "" },
+      }),
+    ).toEqual({ open: true, allowlist: [] });
+    expect(
+      resolveSignupPolicy({
+        envEnabled: "true",
+        envAllowlist: "",
+        stored: { signupsEnabled: false, signupAllowlist: "a@x.com" },
+      }),
+    ).toEqual({ open: false, allowlist: ["a@x.com"] });
+  });
+
+  it("falls back to env when no stored settings exist", () => {
+    expect(
+      resolveSignupPolicy({
+        envEnabled: "true",
+        envAllowlist: "@company.com",
+        stored: null,
+      }),
+    ).toEqual({ open: true, allowlist: ["@company.com"] });
   });
 });
