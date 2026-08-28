@@ -7,7 +7,16 @@ import {
   embeddableScreenUrl,
   previewPlaceholder,
   readScreenUrl,
+  screenFrameSrc,
 } from "./computer.js";
+
+describe("screenFrameSrc", () => {
+  it("builds a data URL for a PNG frame", () => {
+    expect(screenFrameSrc({ image: "abc", mimeType: "image/png" })).toBe(
+      "data:image/png;base64,abc",
+    );
+  });
+});
 
 describe("embeddableScreenUrl", () => {
   it("leaves a public stream URL alone", () => {
@@ -151,6 +160,8 @@ describe("mobile computer screen", () => {
     expect(src).toContain("computer/takeover");
     expect(src).toContain("computer/release");
     expect(src).toContain("computer/heartbeat");
+    expect(src).toContain("computer/preview");
+    expect(src).toContain("screenFrameSrc");
     expect(src).toContain("Take control");
     expect(src).toContain("Release");
     expect(src).toContain("Close computer");

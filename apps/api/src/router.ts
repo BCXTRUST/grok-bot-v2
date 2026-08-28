@@ -1367,7 +1367,15 @@ export function createRouter(deps: RouterDeps) {
           };
         }
         let session: { url: string | null };
+        const timeout = abortAfter(5_000);
         try {
+          const ctx = await computerScreenContext(
+            deps.prisma,
+            context.actor,
+            bot.computer.id,
+            bot.id,
+            "screen",
+          );
           session = await deps.sandbox.connectScreen(
             toComputerRef(bot.computer),
             {
@@ -1379,20 +1387,16 @@ export function createRouter(deps: RouterDeps) {
                   ? (bot.computer.controlLeaseId ?? undefined)
                   : undefined,
             },
-            await computerScreenContext(
-              deps.prisma,
-              context.actor,
-              bot.computer.id,
-              bot.id,
-              "screen",
-            ),
+            { ...ctx, signal: timeout.signal },
           );
         } catch (error) {
           const message = screenConnectErrorMessage(error);
-          if (!isComputerScreenUnavailable(error)) {
+          if (!timeout.signal.aborted && !isComputerScreenUnavailable(error)) {
             console.error("computer screenUrl", error);
           }
-          return { url: null, error: message };
+          return { url: null, ...(timeout.signal.aborted ? {} : { error: message }) };
+        } finally {
+          timeout.cancel();
         }
         if (!session.url) return { url: null, error: "empty screen url" };
         scheduleComputerSleep(deps.jobs, bot.computer.id);
@@ -1409,6 +1413,52 @@ export function createRouter(deps: RouterDeps) {
             { proxyExternal: shouldProxyComputerScreen(viewUrl, bot.computer.kind) },
           ),
         };
+      }),
+      preview: authed.computer.preview.handler(async ({ context, input }) => {
+        let bot = await repos.getBot(context.actor, input.botId);
+        if (await expireStaleComputerControl(deps, bot.computer)) {
+          bot = await repos.getBot(context.actor, input.botId);
+        }
+        if (
+          !bot.computer?.providerRef ||
+          (bot.computer.state !== "running" && bot.computer.state !== "booting")
+        ) {
+          return {
+            image: null,
+            error: !bot.computer?.providerRef
+              ? "computer not provisioned"
+              : `computer is ${bot.computer?.state ?? "stopped"}`,
+          };
+        }
+        const timeout = abortAfter(10_000);
+        try {
+          const ctx = await computerScreenContext(
+            deps.prisma,
+            context.actor,
+            bot.computer.id,
+            bot.id,
+            "preview",
+          );
+          const observation = await deps.sandbox.observe(toComputerRef(bot.computer), {
+            ...ctx,
+            signal: timeout.signal,
+          });
+          scheduleComputerSleep(deps.jobs, bot.computer.id);
+          return {
+            image: Buffer.from(observation.image).toString("base64"),
+            mimeType: observation.mimeType,
+            width: observation.width,
+            height: observation.height,
+          };
+        } catch (error) {
+          const message = screenConnectErrorMessage(error);
+          if (!isComputerScreenUnavailable(error)) {
+            console.error("computer preview", error);
+          }
+          return { image: null, error: message };
+        } finally {
+          timeout.cancel();
+        }
       }),
       heartbeat: authed.computer.heartbeat.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);
@@ -2853,6 +2903,12 @@ async function computerStatus(
     botName: bot.name,
   });
   return toComputerStatus(botId, bot.computer, busyBotName);
+}
+
+function abortAfter(ms: number): { signal: AbortSignal; cancel: () => void } {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  return { signal: controller.signal, cancel: () => clearTimeout(timer) };
 }
 
 function screenConnectErrorMessage(error: unknown): string {

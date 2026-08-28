@@ -272,7 +272,12 @@ export class E2BSandboxProvider implements SandboxProvider {
   ): Promise<ScreenSession> {
     const desktop = await this.box(computer);
     const screenKey = screenSessionKey(context);
-    const layout = await this.resolveLayout(desktop, screenKey, context.screenLeaseId);
+    const layout = await this.resolveLayout(
+      desktop,
+      screenKey,
+      context.screenLeaseId,
+      context.signal,
+    );
     if (layout.isPrimary) {
       if (request.interactive) {
         if (!request.controlToken) throw new Error("interactive screen requires a control token");
@@ -338,7 +343,12 @@ export class E2BSandboxProvider implements SandboxProvider {
   ): Promise<void> {
     const desktop = await this.box(computer);
     const screenKey = screenSessionKey(context);
-    const layout = await this.resolveLayout(desktop, screenKey, context.screenLeaseId);
+    const layout = await this.resolveLayout(
+      desktop,
+      screenKey,
+      context.screenLeaseId,
+      context.signal,
+    );
     if (layout.isPrimary) {
       if (interactive) {
         if (!controlToken) throw new Error("interactive screen requires a control token");
@@ -368,6 +378,7 @@ export class E2BSandboxProvider implements SandboxProvider {
       desktop,
       screenSessionKey(context),
       context.screenLeaseId,
+      context.signal,
     );
     if (layout.isPrimary) {
       await applyE2BAction(desktop, input);
@@ -386,6 +397,7 @@ export class E2BSandboxProvider implements SandboxProvider {
       desktop,
       screenSessionKey(context),
       context.screenLeaseId,
+      context.signal,
     );
     if (layout.isPrimary) {
       await maybeClearFileManager(desktop);
@@ -414,6 +426,7 @@ export class E2BSandboxProvider implements SandboxProvider {
       desktop,
       screenSessionKey(context),
       context.screenLeaseId,
+      context.signal,
     );
     const actions = boundedComputerActions(request.actions);
     let completed = 0;
@@ -588,9 +601,15 @@ export class E2BSandboxProvider implements SandboxProvider {
     }
   }
 
-  private async resolveLayout(desktop: Sandbox, screenKey: string, leaseId?: string) {
+  private async resolveLayout(
+    desktop: Sandbox,
+    screenKey: string,
+    leaseId?: string,
+    signal?: AbortSignal,
+  ) {
     const allocation = await desktop.commands.run(allocateExtraDisplayCommand(screenKey, leaseId), {
       timeoutMs: 15_000,
+      ...(signal ? { signal } : {}),
     });
     if (allocation.exitCode !== 0) throw new ComputerScreenUnavailableError();
     const index = parseAllocatedExtraDisplay(allocation.stdout);
@@ -604,7 +623,7 @@ export class E2BSandboxProvider implements SandboxProvider {
   ): Promise<string> {
     const result = await desktop.commands.run(
       ensurePrimaryViewCommand(layout, randomBytes(9).toString("base64url")),
-      { timeoutMs: 30_000 },
+      { timeoutMs: 8_000, signal: context.signal },
     );
     if (result.exitCode !== 0) {
       const detail = String(result.stderr || result.stdout || "");
