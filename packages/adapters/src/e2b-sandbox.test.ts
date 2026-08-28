@@ -76,6 +76,13 @@ describe("E2B computer backend", () => {
       if (value.includes("hang")) {
         throw new TimeoutError("command timed out");
       }
+      if (value.includes("RAKAZO_SCREEN_PASSWORD=")) {
+        return {
+          stdout: "RAKAZO_SCREEN_PASSWORD=watch-secret\n",
+          stderr: "",
+          exitCode: 0,
+        };
+      }
       return {
         stdout: "",
         stderr: "",
@@ -219,13 +226,12 @@ describe("E2B computer backend", () => {
       provider.connectScreen(computer, { view: "stream" }, context),
       provider.connectScreen(computer, { view: "stream" }, context),
     ]);
-    expect(screen.url).toBe("https://desktop.test/vnc.html");
-    expect(desktop.stream.start).toHaveBeenCalledWith({ requireAuth: true });
-    expect(desktop.stream.start).toHaveBeenCalledTimes(1);
-    expect(getStreamUrl).toHaveBeenCalledWith(
-      expect.objectContaining({ viewOnly: true, authKey: "screen-key" }),
+    expect(screen.url).toMatch(/^https:\/\/6080-desktop\.test\/vnc\.html\?/);
+    expect(screen.url).toContain("view_only=true");
+    expect(screen.url).toContain("password=watch-secret");
+    expect(command.mock.calls.some(([value]) => String(value).includes("screen-primary.lock"))).toBe(
+      true,
     );
-    expect(command).toHaveBeenCalledWith("x11vnc -R viewonly");
 
     const control = await provider.connectScreen(
       computer,
@@ -268,32 +274,20 @@ describe("E2B computer backend", () => {
     expect(stillCurrent.url).toBe(replacementControl.url);
 
     await screen.close();
-    let finishStart!: () => void;
-    streamStart.mockImplementationOnce(
-      () =>
-        new Promise<undefined>((resolve) => {
-          finishStart = () => resolve(undefined);
-        }),
-    );
-    const connecting = provider.connectScreen(computer, { view: "stream" }, context);
-    await vi.waitFor(() => expect(desktop.stream.start).toHaveBeenCalledTimes(2));
-    const stopping = provider.stop(computer, context);
-    finishStart();
-    await expect(connecting).rejects.toThrow(/teardown/);
-    await stopping;
+    await provider.stop(computer, context);
     expect(desktop.pause).toHaveBeenCalled();
-    expect(streamStop).toHaveBeenCalled();
   });
 
-  it("still exposes a watch URL when x11vnc cannot switch to view-only", async () => {
+  it("serves primary watch through noVNC even if the SDK stream URL is missing", async () => {
     const command = vi.fn(async (value: string) => {
       if (value.includes("RAKAZO_SCREEN_INDEX=")) {
         return { stdout: "RAKAZO_SCREEN_INDEX=0\n", stderr: "", exitCode: 0 };
       }
-      if (value === "x11vnc -R viewonly") throw new Error("viewonly remote not supported");
+      if (value.includes("RAKAZO_SCREEN_PASSWORD=")) {
+        return { stdout: "RAKAZO_SCREEN_PASSWORD=watch-secret\n", stderr: "", exitCode: 0 };
+      }
       return { stdout: "", stderr: "", exitCode: 0 };
     });
-    const streamStop = vi.fn(async () => undefined);
     const desktop = {
       sandboxId: "e2b-watch-box",
       display: ":0",
@@ -301,9 +295,11 @@ describe("E2B computer backend", () => {
       commands: { run: command },
       stream: {
         start: vi.fn(async () => undefined),
-        stop: streamStop,
-        getAuthKey: () => "screen-key",
-        getUrl: vi.fn(() => "https://desktop.test/vnc.html"),
+        stop: vi.fn(async () => undefined),
+        getAuthKey: () => {
+          throw new Error("no auth key");
+        },
+        getUrl: vi.fn(() => null),
       },
     } as unknown as Sandbox;
     const provider = new E2BSandboxProvider("test-key", {
@@ -313,8 +309,9 @@ describe("E2B computer backend", () => {
     });
     const computer = await provider.provision({ botId: "bot-1", homePath: "/unused" }, context);
     const screen = await provider.connectScreen(computer, { view: "stream" }, context);
-    expect(screen.url).toBe("https://desktop.test/vnc.html");
-    expect(streamStop).not.toHaveBeenCalled();
+    expect(screen.url).toMatch(/^https:\/\/6080-desktop\.test\/vnc\.html\?/);
+    expect(screen.url).toContain("password=watch-secret");
+    expect(desktop.stream.start).not.toHaveBeenCalled();
   });
 
   it("gives Team bots distinct E2B screens and shared files", async () => {

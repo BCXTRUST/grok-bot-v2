@@ -1,5 +1,4 @@
 import { randomBytes } from "node:crypto";
-import { setTimeout as delay } from "node:timers/promises";
 import { Sandbox, TimeoutError } from "@e2b/desktop";
 import type {
   AdapterContext,
@@ -46,6 +45,7 @@ import {
 import {
   allocateExtraDisplayCommand,
   ensureExtraDisplayCommand,
+  ensurePrimaryViewCommand,
   extraDisplayActionCommand,
   extraDisplayControlStartCommand,
   extraDisplayControlStopCommand,
@@ -56,7 +56,6 @@ import {
   parseExtraDisplayObservation,
   parseExtraDisplayViewPassword,
   parseReleasedExtraDisplay,
-  primaryStreamCleanupCommand,
   releaseExtraDisplayCommand,
   screenControlKey,
 } from "./extra-displays.js";
@@ -142,8 +141,6 @@ async function listDesktopWindows(desktop: Sandbox, display = desktop.display ??
 export class E2BSandboxProvider implements SandboxProvider {
   private readonly boxes = new Map<string, Sandbox>();
   private readonly lastTouchedAt = new Map<string, number>();
-  private readonly streamReady = new Set<string>();
-  private readonly streamStarts = new Map<string, Promise<void>>();
   private readonly controlStreams = new Map<string, { password: string; controlToken: string }>();
 
   constructor(
@@ -185,37 +182,6 @@ export class E2BSandboxProvider implements SandboxProvider {
     this.boxes.set(connected.sandboxId, connected);
     this.lastTouchedAt.set(connected.sandboxId, Date.now());
     return connected;
-  }
-
-  private async startStream(desktop: Sandbox) {
-    if (this.boxes.get(desktop.sandboxId) !== desktop) {
-      throw new Error("screen stream stopped during computer teardown");
-    }
-    if (this.streamReady.has(desktop.sandboxId)) return;
-    const pending = this.streamStarts.get(desktop.sandboxId);
-    if (pending) return pending;
-    let start!: Promise<void>;
-    start = this.initializeStream(desktop).finally(() => {
-      if (this.streamStarts.get(desktop.sandboxId) === start) {
-        this.streamStarts.delete(desktop.sandboxId);
-      }
-    });
-    this.streamStarts.set(desktop.sandboxId, start);
-    return start;
-  }
-
-  private async initializeStream(desktop: Sandbox) {
-    await desktop.commands.run(primaryStreamCleanupCommand()).catch(() => undefined);
-    await desktop.stream.start({ requireAuth: true });
-    // Watch mode prefers view-only; if the live x11vnc cannot take that
-    // remote command, keep the stream so the preview still has a URL.
-    await desktop.commands.run("x11vnc -R viewonly").catch(() => undefined);
-    const current = this.boxes.get(desktop.sandboxId);
-    if (current !== desktop) {
-      if (!current) await desktop.stream.stop().catch(() => undefined);
-      throw new Error("screen stream stopped during computer teardown");
-    }
-    this.streamReady.add(desktop.sandboxId);
   }
 
   async provision(
@@ -307,7 +273,6 @@ export class E2BSandboxProvider implements SandboxProvider {
     const screenKey = screenSessionKey(context);
     const layout = await this.resolveLayout(desktop, screenKey, context.screenLeaseId);
     if (layout.isPrimary) {
-      await this.startStream(desktop);
       if (request.interactive) {
         if (!request.controlToken) throw new Error("interactive screen requires a control token");
         const password = await this.startControlStream(desktop, request.controlToken, screenKey);
@@ -321,28 +286,16 @@ export class E2BSandboxProvider implements SandboxProvider {
           close: async () => undefined,
         };
       }
-      let authKey: string | undefined;
-      try {
-        authKey = desktop.stream.getAuthKey();
-      } catch {
-        authKey = undefined;
-      }
-      const url =
-        typeof desktop.stream.getUrl === "function"
-          ? desktop.stream.getUrl({
-              autoConnect: true,
-              viewOnly: true,
-              resize: "scale",
-              ...(authKey ? { authKey } : {}),
-            })
-          : null;
+      const viewPassword = await this.ensurePrimaryView(desktop, layout, context);
+      const url = new URL(`https://${desktop.getHost(layout.viewPort)}/vnc.html`);
+      url.searchParams.set("autoconnect", "true");
+      url.searchParams.set("resize", "scale");
+      url.searchParams.set("view_only", "true");
+      url.searchParams.set("password", viewPassword);
       return {
-        url,
+        url: url.toString(),
         mimeType: "text/html",
-        close: async () => {
-          await desktop.stream.stop().catch(() => undefined);
-          this.streamReady.delete(desktop.sandboxId);
-        },
+        close: async () => undefined,
       };
     }
     const viewPassword = await this.ensureExtraDisplay(desktop, layout, context);
@@ -610,10 +563,8 @@ export class E2BSandboxProvider implements SandboxProvider {
 
   async stop(computer: ComputerRef, _context: AdapterContext): Promise<void> {
     const id = computer.providerRef || computer.id;
-    const pending = this.streamStarts.get(id);
     const desktop = this.boxes.get(id);
     this.forget(id);
-    await settleForTeardown(pending);
     if (desktop) {
       await desktop.pause().catch(() => undefined);
       return;
@@ -624,17 +575,13 @@ export class E2BSandboxProvider implements SandboxProvider {
   async destroy(computer: ComputerRef, _context: AdapterContext): Promise<void> {
     const id = computer.providerRef || computer.id;
     const desktop = this.boxes.get(id) ?? (await this.box(computer).catch(() => undefined));
-    const pending = this.streamStarts.get(id);
     this.forget(id);
-    await settleForTeardown(pending);
     await desktop?.kill();
   }
 
   private forget(id: string): void {
     this.boxes.delete(id);
     this.lastTouchedAt.delete(id);
-    this.streamReady.delete(id);
-    this.streamStarts.delete(id);
     for (const key of [...this.controlStreams.keys()]) {
       if (key.startsWith(`${id}:`)) this.controlStreams.delete(key);
     }
@@ -645,6 +592,19 @@ export class E2BSandboxProvider implements SandboxProvider {
     if (allocation.exitCode !== 0) throw new ComputerScreenUnavailableError();
     const index = parseAllocatedExtraDisplay(allocation.stdout);
     return extraDisplayLayout(index, desktop.display ?? ":0");
+  }
+
+  private async ensurePrimaryView(
+    desktop: Sandbox,
+    layout: ReturnType<typeof extraDisplayLayout>,
+    context: AdapterContext,
+  ): Promise<string> {
+    const result = await desktop.commands.run(
+      ensurePrimaryViewCommand(layout, randomBytes(9).toString("base64url")),
+      { signal: context.signal },
+    );
+    if (result.exitCode !== 0) throw new ComputerScreenUnavailableError();
+    return parseExtraDisplayViewPassword(result.stdout);
   }
 
   private async ensureExtraDisplay(
@@ -720,11 +680,6 @@ export class E2BSandboxProvider implements SandboxProvider {
       this.controlStreams.delete(controlKey);
     }
   }
-}
-
-async function settleForTeardown(pending: Promise<void> | undefined): Promise<void> {
-  if (!pending) return;
-  await Promise.race([pending.catch(() => undefined), delay(5_000, undefined, { ref: false })]);
 }
 
 function controlStreamStopCommand(controlToken?: string) {

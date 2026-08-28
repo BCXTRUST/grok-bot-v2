@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { ComputerScreenUnavailableError } from "./computer-screens.js";
 import {
   allocateExtraDisplayCommand,
+  ensurePrimaryViewCommand,
   extraDisplayActionCommand,
   extraDisplayLayout,
   parseAllocatedExtraDisplay,
@@ -65,5 +66,14 @@ describe("extra display ports", () => {
     const openFile = extraDisplayActionCommand(layout, { kind: "open", path: "notes/forums.csv" });
     expect(openFile).toContain("xdg-open");
     expect(openFile).not.toContain("windowquit");
+  });
+
+  it("starts view-only noVNC on the primary display ports", () => {
+    const command = ensurePrimaryViewCommand(extraDisplayLayout(0, ":0"), "secret");
+    expect(command).toContain("rfbport 5900");
+    expect(command).toContain("--listen 6080");
+    expect(() => ensurePrimaryViewCommand(extraDisplayLayout(1, ":0"), "secret")).toThrow(
+      /primary display/,
+    );
   });
 });
