@@ -588,7 +588,9 @@ export class E2BSandboxProvider implements SandboxProvider {
   }
 
   private async resolveLayout(desktop: Sandbox, screenKey: string, leaseId?: string) {
-    const allocation = await desktop.commands.run(allocateExtraDisplayCommand(screenKey, leaseId));
+    const allocation = await desktop.commands.run(allocateExtraDisplayCommand(screenKey, leaseId), {
+      timeoutMs: 15_000,
+    });
     if (allocation.exitCode !== 0) throw new ComputerScreenUnavailableError();
     const index = parseAllocatedExtraDisplay(allocation.stdout);
     return extraDisplayLayout(index, desktop.display ?? ":0");
