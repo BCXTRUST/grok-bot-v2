@@ -10,6 +10,7 @@ import {
   clearActiveThreadRuns,
   computerPanelAutoBoot,
   computerTakeoverBlocked,
+  threadAsksComputerTakeover,
   isThreadSnapshotEvent,
   mergeThreadSnapshot,
   prependThreadMessagePage,
@@ -1063,6 +1064,23 @@ describe("computer event reduction", () => {
       false,
     );
     expect(computerTakeoverBlocked(computer({ busyBotName: "Writer" }), "completed")).toBe(false);
+  });
+
+  it("treats a Ready computer card as a takeover request", () => {
+    expect(
+      threadAsksComputerTakeover([
+        {
+          blocks: [
+            {
+              kind: "computer",
+              state: "Ready",
+              text: "Please complete the captcha",
+            },
+          ],
+        },
+      ]),
+    ).toBe(true);
+    expect(threadAsksComputerTakeover([{ blocks: [{ kind: "text", text: "hi" }] }])).toBe(false);
   });
 
   it("clears the busy bot when takeover is requested or granted", () => {

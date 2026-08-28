@@ -17,12 +17,13 @@ export function TeachCaptureOverlay({
   screenHeight?: number;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
+  const capturing = enabled && (!skill || skill.status === "recording");
   const inputChainRef = useRef(Promise.resolve());
   const width = screenWidth ?? DEFAULT_COMPUTER_SCREEN.width;
   const height = screenHeight ?? DEFAULT_COMPUTER_SCREEN.height;
 
   useEffect(() => {
-    if (!enabled || !skill || skill.status !== "recording") return;
+    if (!capturing) return;
     const overlay = rootRef.current;
     if (!overlay) return;
     const target: HTMLDivElement = overlay;
@@ -158,9 +159,9 @@ export function TeachCaptureOverlay({
       target.removeEventListener("contextmenu", onContextMenu);
       window.removeEventListener("keydown", onKeyDown);
     };
-  }, [botId, enabled, height, skill, width]);
+  }, [botId, capturing, height, width]);
 
-  if (!enabled || !skill || skill.status !== "recording") return null;
+  if (!capturing) return null;
 
   return (
     <div

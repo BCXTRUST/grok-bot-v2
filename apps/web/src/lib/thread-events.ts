@@ -395,6 +395,20 @@ export function computerTakeoverBlocked(
   return isActive(runStatus as RunStatus);
 }
 
+export function threadAsksComputerTakeover(
+  messages: Array<{ blocks: ThreadMessage["blocks"] }> | null | undefined,
+): boolean {
+  if (!messages?.length) return false;
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const blocks = messages[index]?.blocks ?? [];
+    for (let blockIndex = blocks.length - 1; blockIndex >= 0; blockIndex -= 1) {
+      const block = blocks[blockIndex];
+      if (block?.kind === "computer") return block.state === "Ready";
+    }
+  }
+  return false;
+}
+
 export function computerPanelAutoBoot(
   state: ComputerStatus["state"] | undefined,
   screenUrl?: string | null,

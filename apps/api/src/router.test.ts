@@ -205,4 +205,71 @@ describe("computer preview", () => {
       expect.objectContaining({ botId: "bot-1", operationId: "preview" }),
     );
   });
+
+  it("falls back to the latest chat screenshot when observe fails", async () => {
+    const png = Buffer.from("preview-fallback");
+    const prisma = {
+      bot: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: "bot-1",
+          name: "Raffa",
+          computer: {
+            id: "computer-1",
+            homeKey: "bot-1",
+            kind: "e2b",
+            state: "running",
+            providerRef: "sandbox-1",
+            controlLeaseId: null,
+            controlBotId: null,
+            controlExpiresAt: null,
+          },
+        }),
+      },
+      computerExecutionLease: {
+        findUnique: vi.fn().mockResolvedValue(null),
+      },
+      artifact: {
+        findFirst: vi.fn().mockResolvedValue({
+          storageKey: "shot-1",
+          mimeType: "image/png",
+        }),
+      },
+    } as unknown as PrismaClient;
+    const deps = {
+      prisma,
+      jobs: { enqueue: vi.fn() },
+      sandbox: { observe: vi.fn().mockRejectedValue(new Error("observe busy")) },
+      artifacts: { get: vi.fn().mockResolvedValue(png) },
+      env: {
+        defaultProvider: "fake",
+        defaultModel: "fake-model",
+        webOrigin: "http://127.0.0.1:5173",
+        screenProxySecret: "fake-test-secret",
+        sandboxProvider: "e2b",
+      },
+      dataDir: "/tmp/rakazo-router-test",
+    } as unknown as RouterDeps;
+    const actor = {
+      workspaceId: "workspace-1",
+      userId: "user-1",
+      email: "user@rakazo.test",
+      isDeploymentOwner: true,
+    } satisfies Actor;
+    const handler = new RPCHandler(createRouter(deps));
+    const { response } = await handler.handle(
+      new Request("http://127.0.0.1/rpc/computer/preview", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ json: { botId: "bot-1" } }),
+      }),
+      { prefix: "/rpc", context: { actor } },
+    );
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      json: {
+        image: png.toString("base64"),
+        mimeType: "image/png",
+      },
+    });
+  });
 });
