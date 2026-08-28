@@ -56,7 +56,9 @@ describe("computer desktop window helpers", () => {
     expect(COMPUTER_AUTONOMY_INSTRUCTION).toMatch(/Never ask the user to close windows/);
     expect(COMPUTER_AUTONOMY_INSTRUCTION).toMatch(/request_takeover/);
     expect(COMPUTER_AUTONOMY_INSTRUCTION).toMatch(/open_path/);
-    expect(COMPUTER_AUTONOMY_INSTRUCTION).toMatch(/do not start at Google Search/);
+    expect(COMPUTER_AUTONOMY_INSTRUCTION).toMatch(/Never open Google Search/);
+    expect(COMPUTER_AUTONOMY_INSTRUCTION).toMatch(/ordinary requests/);
+    expect(COMPUTER_AUTONOMY_INSTRUCTION).toMatch(/DuckDuckGo/);
     expect(looksLikeCaptchaWall("https://www.google.com/sorry/index?q=top+news")).toBe(true);
     expect(looksLikeCaptchaWall("I'm not a robot")).toBe(true);
     expect(looksLikeCaptchaWall("Example Domain")).toBe(false);
