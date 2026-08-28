@@ -120,7 +120,7 @@ describe("e2b create options", () => {
     expect(launched).toEqual(["google-chrome", "firefox"]);
   });
 
-  it("does not fall back to Google when no browser binary launches", async () => {
+  it("does not open Google or about:blank when no browser binary launches", async () => {
     const opened: string[] = [];
     await openDesktopBrowser({
       launch: async () => {
@@ -130,7 +130,7 @@ describe("e2b create options", () => {
         opened.push(fileOrUrl);
       },
     });
-    expect(opened).toEqual(["about:blank"]);
+    expect(opened).toEqual([]);
   });
 });
 

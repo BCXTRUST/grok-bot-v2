@@ -97,14 +97,15 @@ export async function openDesktopBrowser(desktop: {
 }): Promise<void> {
   for (const app of E2B_BROWSER_APPS) {
     try {
-      await desktop.launch(app, "about:blank");
+      // Launch with no URI. about:blank and google.com both fail or trap the
+      // desktop on a CAPTCHA; open_path supplies the task URL next.
+      await desktop.launch(app);
       await exposeBrowserDesktop(desktop);
       return;
     } catch {
       // try the next installed browser
     }
   }
-  await desktop.open("about:blank").catch(() => undefined);
   await exposeBrowserDesktop(desktop);
 }
 
@@ -474,7 +475,8 @@ export class E2BSandboxProvider implements SandboxProvider {
         throw context.signal.reason ?? new Error("computer action aborted");
       if (layout.isPrimary) await applyE2BAction(desktop, action);
       else {
-        const result = await desktop.commands.run(extraDisplayActionCommand(layout, action), {
+        const script = extraDisplayActionCommand(layout, action);
+        const result = await desktop.commands.run(`bash -lc ${shellQuote(script)}`, {
           signal: context.signal,
         });
         if (result.exitCode !== 0) throw new Error(result.stderr || "extra display action failed");
@@ -859,22 +861,24 @@ async function applyE2BAction(desktop: Sandbox, action: ComputerAction): Promise
       ? action.path.trim()
       : workspacePath(E2B_WORKSPACE, action.path);
     if (isHttpUrl(value)) {
-      await desktop.commands
-        .run(focusBrowserAndOpenUrlCommand(desktop.display ?? ":0", value))
-        .catch(async () => {
-          let launched = false;
-          for (const app of E2B_BROWSER_APPS) {
-            try {
-              await desktop.launch(app, value);
-              launched = true;
-              break;
-            } catch {
-              // try the next installed browser
-            }
+      const script = focusBrowserAndOpenUrlCommand(desktop.display ?? ":0", value);
+      const result = await desktop.commands
+        .run(`bash -lc ${shellQuote(script)}`)
+        .catch(() => ({ exitCode: 1 }));
+      if ((result as { exitCode?: number }).exitCode !== 0) {
+        let launched = false;
+        for (const app of E2B_BROWSER_APPS) {
+          try {
+            await desktop.launch(app, value);
+            launched = true;
+            break;
+          } catch {
+            // try the next installed browser
           }
-          if (!launched) await desktop.open(value);
-          await exposeBrowserDesktop(desktop);
-        });
+        }
+        if (!launched) await desktop.open(value);
+      }
+      await exposeBrowserDesktop(desktop);
       return;
     }
     await desktop.open(value);
