@@ -1,5 +1,6 @@
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import type { ModelOAuthSignInMode } from "@rakazo/contracts";
+import { OPENROUTER_FEATURED_MODELS, OPENROUTER_PROVIDER_ID } from "@rakazo/contracts";
 import { LOCAL_PROVIDER_ID, registerLocalProvider } from "./pi-local-provider.js";
 import { SUBSCRIPTION_SIGN_IN_PROVIDERS } from "./pi-oauth.js";
 import {
@@ -32,6 +33,22 @@ let cachedCatalog: PiCatalogEntry[] | undefined;
 function buildPiCatalog(): PiCatalogEntry[] {
   const models = registerOpenAiCompatibleCatalog(registerLocalProvider(builtinModels()));
   const entries: PiCatalogEntry[] = [];
+  const openRouterBilling = catalogBilling(OPENROUTER_PROVIDER_ID, "OpenRouter", {
+    apiKey: true,
+    oauth: false,
+  });
+  for (const featured of OPENROUTER_FEATURED_MODELS) {
+    if (models.getModel(OPENROUTER_PROVIDER_ID, featured.id)) continue;
+    entries.push({
+      provider: OPENROUTER_PROVIDER_ID,
+      providerName: "OpenRouter",
+      id: featured.id,
+      label: featured.label,
+      billing: openRouterBilling,
+      auth: "api-key",
+      subscription: false,
+    });
+  }
   for (const provider of models.getProviders()) {
     const apiKey = Boolean(provider.auth.apiKey);
     const oauth = Boolean(provider.auth.oauth);
@@ -45,11 +62,21 @@ function buildPiCatalog(): PiCatalogEntry[] {
       oauth,
     });
     for (const model of provider.getModels()) {
+      if (
+        provider.id === OPENROUTER_PROVIDER_ID &&
+        entries.some((entry) => entry.provider === OPENROUTER_PROVIDER_ID && entry.id === model.id)
+      ) {
+        continue;
+      }
+      const featuredLabel =
+        provider.id === OPENROUTER_PROVIDER_ID
+          ? OPENROUTER_FEATURED_MODELS.find((entry) => entry.id === model.id)?.label
+          : undefined;
       entries.push({
         provider: provider.id,
         providerName: provider.name,
         id: model.id,
-        label: model.name || model.id,
+        label: featuredLabel ?? (model.name || model.id),
         billing,
         auth,
         oauthLabel,
@@ -59,6 +86,15 @@ function buildPiCatalog(): PiCatalogEntry[] {
         signIn: signInMeta?.mode,
       });
     }
+  }
+
+  for (const featured of [...OPENROUTER_FEATURED_MODELS].reverse()) {
+    const index = entries.findIndex(
+      (entry) => entry.provider === OPENROUTER_PROVIDER_ID && entry.id === featured.id,
+    );
+    if (index < 0) continue;
+    const [item] = entries.splice(index, 1);
+    entries.unshift({ ...item, label: featured.label });
   }
 
   const envDefaultModel = process.env.PI_DEFAULT_MODEL?.trim();

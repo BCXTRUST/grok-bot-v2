@@ -2,6 +2,8 @@ import type { Me } from "@rakazo/contracts";
 import {
   OPENAI_COMPATIBLE_BASE_URL_HINT,
   OPENAI_COMPATIBLE_PROVIDER_ID,
+  OPENROUTER_FEATURED_MODELS,
+  OPENROUTER_PROVIDER_ID,
   openAiCompatibleConnectReady,
   openAiCompatibleProbeSuccessMessage,
 } from "@rakazo/contracts";
@@ -15,6 +17,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { OpenRouterFeaturedPicks } from "../components/OpenRouterFeaturedPicks";
 import { type ModelCatalogEntry, type ModelCredential, providerHint } from "../lib/model-auth";
 import { rpc } from "../lib/rpc";
 import { useModelOAuthSignIn } from "../lib/use-model-oauth-signin";
@@ -117,11 +120,17 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
       entries.push(entry);
       grouped.set(entry.provider, entries);
     }
-    return [...grouped].map(([id, entries]) => ({
-      id,
-      name: entries[0]?.providerName ?? id,
-      entries,
-    }));
+    return [...grouped]
+      .map(([id, entries]) => ({
+        id,
+        name: entries[0]?.providerName ?? id,
+        entries,
+      }))
+      .sort((left, right) => {
+        if (left.id === OPENROUTER_PROVIDER_ID) return -1;
+        if (right.id === OPENROUTER_PROVIDER_ID) return 1;
+        return 0;
+      });
   }, [catalog]);
   const filteredGroups = useMemo(() => {
     const query = providerQuery.trim().toLowerCase();
@@ -181,7 +190,18 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
     setModelId(
       nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID
         ? (credentials.find((entry) => entry.provider === nextProvider)?.modelId ?? "")
-        : (catalog.find((entry) => entry.provider === nextProvider)?.id ?? ""),
+        : nextProvider === OPENROUTER_PROVIDER_ID
+          ? (catalog.find(
+              (entry) => entry.provider === OPENROUTER_PROVIDER_ID && entry.id === me?.defaultModel,
+            )?.id ??
+            catalog.find(
+              (entry) =>
+                entry.provider === OPENROUTER_PROVIDER_ID &&
+                entry.id === OPENROUTER_FEATURED_MODELS[0].id,
+            )?.id ??
+            catalog.find((entry) => entry.provider === nextProvider)?.id ??
+            "")
+          : (catalog.find((entry) => entry.provider === nextProvider)?.id ?? ""),
     );
     setBaseUrl(
       nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID
@@ -463,7 +483,22 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                     </>
                   ) : (
                     <>
-                      <span>Model</span>
+                      <OpenRouterFeaturedPicks
+                        provider={provider}
+                        selectedId={selected.id}
+                        onSelect={(nextModelId) => {
+                          cancelOAuthAttempt();
+                          selectionRevisionRef.current += 1;
+                          setModelId(nextModelId);
+                          setError(null);
+                          setNotice(null);
+                        }}
+                      />
+                      <span
+                        className={provider === OPENROUTER_PROVIDER_ID ? "mt-4 block" : undefined}
+                      >
+                        Model
+                      </span>
                       <ModelPicker
                         options={modelsForProvider}
                         value={selected.id}
@@ -599,7 +634,9 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                         <input
                           value={apiKey}
                           onChange={(event) => updateApiKey(event.target.value)}
-                          placeholder="sk-…"
+                          placeholder={
+                            selected.provider === OPENROUTER_PROVIDER_ID ? "sk-or-…" : "sk-…"
+                          }
                           type="password"
                           autoComplete="new-password"
                           className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-[#101012] px-3.5 py-3 text-[#ECECEE] outline-none"

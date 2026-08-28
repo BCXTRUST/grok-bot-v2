@@ -5,5 +5,6 @@ export * from "./events.js";
 export * from "./ids.js";
 export * from "./mcp.js";
 export * from "./openai-compatible-ui.js";
+export * from "./openrouter-ui.js";
 export * from "./rpc.js";
 export * from "./search.js";

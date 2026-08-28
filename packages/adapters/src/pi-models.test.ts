@@ -40,6 +40,12 @@ describe("Pi model catalog", () => {
       catalog.filter((entry) => entry.provider === provider).map((entry) => entry.id);
     expect(ids("xai")).toContain("grok-4.6");
     expect(ids("opencode-go")).toContain("glm-5.3");
+    const openRouter = catalog.filter((entry) => entry.provider === "openrouter");
+    expect(openRouter[0]).toMatchObject({
+      id: "google/gemini-3.7-flash",
+      label: "Gemini Flash",
+    });
+    expect(openRouter[1]).toMatchObject({ id: "x-ai/grok-4.6", label: "Grok 4.6" });
   });
 
   it("adds a configured OpenRouter model that is newer than the static catalog", async () => {
