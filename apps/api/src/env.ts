@@ -75,7 +75,11 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
       .map((value) => value.trim())
       .filter(Boolean),
     port: Number(source.API_PORT ?? 3100),
-    gitSha: optional(source.GIT_SHA) ?? optional(source.RAKAZO_GIT_SHA),
+    gitSha:
+      optional(source.GIT_SHA) ??
+      optional(source.RAKAZO_GIT_SHA) ??
+      optional(source.RAILWAY_GIT_COMMIT_SHA) ??
+      optional(source.RAILWAY_GIT_SHA),
   };
 }
 

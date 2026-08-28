@@ -80,7 +80,7 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
         });
         const policy = resolveSignupPolicy({
           envEnabled: env.signupsEnabled,
-          envAllowlist: env.signupAllowlist,
+          envAllowlist: stored ? undefined : env.signupAllowlist,
           stored,
         });
         if (!policy.open) {
