@@ -601,7 +601,7 @@ export class E2BSandboxProvider implements SandboxProvider {
   ): Promise<string> {
     const result = await desktop.commands.run(
       ensurePrimaryViewCommand(layout, randomBytes(9).toString("base64url")),
-      { signal: context.signal },
+      { timeoutMs: 60_000 },
     );
     if (result.exitCode !== 0) {
       throw new ComputerScreenUnavailableError(
