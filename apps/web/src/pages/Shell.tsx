@@ -4188,6 +4188,7 @@ function computerLabel(mode: ComputerStatus["mode"] | undefined, botName: string
 function modelLabel(id: string | null | undefined) {
   if (!id) return "Choose model";
   if (id.includes("grok-4.6")) return "Grok 4.6";
+  if (id.includes("aion")) return "Grok 4.6";
   if (id.includes("grok")) return "Grok";
   const short = id.split("/").pop() ?? id;
   return short.replace(/-/g, " ");

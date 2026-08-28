@@ -56,6 +56,7 @@ import {
   parseExtraDisplayObservation,
   parseExtraDisplayViewPassword,
   parseReleasedExtraDisplay,
+  PRIMARY_WATCH_VIEW_PORT,
   releaseExtraDisplayCommand,
   screenControlKey,
 } from "./extra-displays.js";
@@ -287,7 +288,7 @@ export class E2BSandboxProvider implements SandboxProvider {
         };
       }
       const viewPassword = await this.ensurePrimaryView(desktop, layout, context);
-      const url = new URL(`https://${desktop.getHost(layout.viewPort)}/vnc.html`);
+      const url = new URL(`https://${desktop.getHost(PRIMARY_WATCH_VIEW_PORT)}/vnc.html`);
       url.searchParams.set("autoconnect", "true");
       url.searchParams.set("resize", "scale");
       url.searchParams.set("view_only", "true");
@@ -606,8 +607,10 @@ export class E2BSandboxProvider implements SandboxProvider {
       { timeoutMs: 30_000 },
     );
     if (result.exitCode !== 0) {
+      const detail = String(result.stderr || result.stdout || "");
+      const tagged = detail.match(/RAKAZO_SCREEN_ERROR=(\S+)/)?.[1];
       throw new ComputerScreenUnavailableError(
-        String(result.stderr || result.stdout || "primary view failed").slice(0, 500),
+        tagged || detail.trim().slice(0, 240) || "primary view failed",
       );
     }
     return parseExtraDisplayViewPassword(result.stdout);
