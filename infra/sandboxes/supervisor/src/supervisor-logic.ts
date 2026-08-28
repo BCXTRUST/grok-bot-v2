@@ -1,6 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
 import path from "node:path";
-import { canReleaseScreenLease, canTakeScreenLease } from "@rakazo/core";
+import { canReleaseScreenLease, canTakeScreenLease, openPathDesktopCommand } from "@rakazo/core";
 import { z } from "zod";
 import {
   type SandboxInput,
@@ -207,7 +207,7 @@ export function containerActionStep(
     const target = /^https?:\/\//i.test(action.path)
       ? action.path
       : workspaceTarget(normalizeWorkspaceRelative(action.path));
-    argv = ["env", `DISPLAY=${display}`, "xdg-open", target];
+    argv = ["bash", "-lc", openPathDesktopCommand(display, target)];
   } else {
     argv = ["env", `DISPLAY=${display}`, action.application, ...(action.uri ? [action.uri] : [])];
   }

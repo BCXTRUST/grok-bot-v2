@@ -28,6 +28,7 @@ import {
   appendToolCallSegment,
   assertTransition,
   blocksToAgentHistoryText,
+  COMPUTER_AUTONOMY_INSTRUCTION,
   connectorKindFromToolName,
   containsSecret,
   createStreamingRedactor,
@@ -38,6 +39,7 @@ import {
   isTerminal,
   nextCronDate,
   nextFence,
+  prepareSandboxShellCommand,
   promptInvokesSkill,
   redactSecrets,
   resolveActionApproval,
@@ -728,7 +730,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
         };
         const tools = [...builtins, ...exposedConnectorTools];
         const computerInstruction = graphical
-          ? "You have a persistent computer. Use computer_observe and computer_act for its visible desktop, including browsers and installed applications. Use open_path and launch_app to open graphical files, URLs, and applications. Use the file tools and shell for precise filesystem and terminal work. On a Team Computer you have your own screen; other Team bots may run at the same time on theirs. Another user may interact with your screen while you run, so re-observe when it may have changed."
+          ? `You have a persistent computer. Use computer_observe and computer_act for its visible desktop, including browsers and installed applications. Use open_path with an http(s) URL to open the browser; the computer closes overlapping file-manager windows and raises the browser before you click. If a file manager still covers the page, close it, then re-observe. Use launch_app for installed apps. Use the file tools and shell for precise filesystem and terminal work. Start local HTTP servers in the background with nohup so shell returns. On a Team Computer you have your own screen; other Team bots may run at the same time on theirs. Another user may interact with the same desktop while you run, so re-observe when it may have changed. ${COMPUTER_AUTONOMY_INSTRUCTION}`
           : "You have a persistent sandbox filesystem and shell. This backend does not provide model-visible graphical control, so use the file tools and shell.";
         const workspaceInstruction =
           computerMode === "team"
@@ -1141,7 +1143,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             }
           }
           if (name === "shell") {
-            const command = String(args.command ?? args.cmd ?? "");
+            const command = prepareSandboxShellCommand(String(args.command ?? args.cmd ?? ""));
             const cwd = resolveBotWorkspaceCwd(
               computerMode,
               bot.id,
@@ -1171,7 +1173,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                     },
                   ],
                   observe: true,
-                  settleMs: 600,
+                  settleMs: /^https?:\/\//i.test(requestedPath) ? 1_800 : 600,
                 },
                 context,
               );

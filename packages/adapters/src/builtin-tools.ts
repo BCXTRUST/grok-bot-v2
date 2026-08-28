@@ -96,7 +96,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "shell",
     description:
-      "Run a command inside this bot's computer. cwd defaults to the bot's folder on a Team Computer and the workspace root on a Private Computer.",
+      "Run a command inside this bot's computer. The command must finish. Start HTTP servers and other daemons with nohup ... >/tmp/server.log 2>&1 & — never leave flask, http.server, or python *.py servers in the foreground. cwd defaults to the bot's folder on a Team Computer and the workspace root on a Private Computer.",
     inputSchema: {
       type: "object",
       properties: {
@@ -109,7 +109,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "open_path",
     description:
-      "Open a workspace file or an http(s) URL in its default graphical application on this bot's computer and return the resulting screen.",
+      "Open a workspace file or an http(s) URL on this bot's computer and return the resulting screen. http(s) URLs open in a browser; overlapping file-manager windows are closed and the browser is raised so clicks land on the page.",
     inputSchema: {
       type: "object",
       properties: { path: { type: "string" } },

@@ -462,4 +462,87 @@ describe("E2B computer backend", () => {
       /does not support multiple screens/,
     );
   });
+
+  it("opens http URLs in Chrome and closes overlapping file managers", async () => {
+    const command = vi.fn(async (value: string) => {
+      if (value.includes("RAKAZO_SCREEN_INDEX=")) {
+        return { stdout: "RAKAZO_SCREEN_INDEX=0\n", stderr: "", exitCode: 0 };
+      }
+      return { stdout: "", stderr: "", exitCode: 0 };
+    });
+    const desktop = {
+      sandboxId: "e2b-browser-focus",
+      display: ":0",
+      commands: { run: command },
+      files: { makeDir: vi.fn(async () => undefined) },
+      launch: vi.fn(async () => undefined),
+      open: vi.fn(async () => undefined),
+      screenshot: vi.fn(async () => new Uint8Array([137, 80, 78, 71])),
+      getScreenSize: vi.fn(async () => ({ width: 1280, height: 800 })),
+      getCursorPosition: vi.fn(async () => ({ x: 1, y: 2 })),
+      getCurrentWindowId: vi.fn(async () => "7"),
+      getWindowTitle: vi.fn(async () => "Chrome"),
+      wait: vi.fn(async () => undefined),
+      setTimeout: vi.fn(async () => undefined),
+    } as unknown as Sandbox;
+    const provider = new E2BSandboxProvider("test-key", {
+      create: vi.fn(async () => desktop),
+      connect: vi.fn(async () => desktop),
+      pause: vi.fn(async () => undefined),
+    });
+    const computer = await provider.provision({ botId: "bot-1", homePath: "/unused" }, context);
+    await provider.prepare(computer, context);
+    expect(command.mock.calls.some(([value]) => String(value).includes("windowquit"))).toBe(true);
+
+    await provider.act(
+      computer,
+      { actions: [{ kind: "open", path: "https://example.test/forum" }], observe: false },
+      context,
+    );
+    expect(command.mock.calls.some(([value]) => String(value).includes("ctrl+l"))).toBe(true);
+    expect(
+      command.mock.calls.some(([value]) => String(value).includes("https://example.test/forum")),
+    ).toBe(true);
+    expect(desktop.open).not.toHaveBeenCalled();
+  });
+
+  it("quits a focused file manager and lists windows on observe", async () => {
+    const command = vi.fn(async (value: string) => {
+      if (value.includes("RAKAZO_SCREEN_INDEX=")) {
+        return { stdout: "RAKAZO_SCREEN_INDEX=0\n", stderr: "", exitCode: 0 };
+      }
+      if (value.includes("search --onlyvisible --name")) {
+        return { stdout: "7\t1\tFiles\n9\t0\tChrome\n", stderr: "", exitCode: 0 };
+      }
+      if (value.includes("getwindowclassname")) {
+        return { stdout: "Nautilus\nFiles\n", stderr: "", exitCode: 0 };
+      }
+      return { stdout: "", stderr: "", exitCode: 0 };
+    });
+    const desktop = {
+      sandboxId: "e2b-files-overlap",
+      display: ":0",
+      commands: { run: command },
+      files: { makeDir: vi.fn(async () => undefined) },
+      launch: vi.fn(async () => undefined),
+      screenshot: vi.fn(async () => new Uint8Array([137, 80, 78, 71])),
+      getScreenSize: vi.fn(async () => ({ width: 1280, height: 800 })),
+      getCursorPosition: vi.fn(async () => ({ x: 1, y: 2 })),
+      getCurrentWindowId: vi.fn(async () => "9"),
+      getWindowTitle: vi.fn(async () => "Chrome"),
+      setTimeout: vi.fn(async () => undefined),
+    } as unknown as Sandbox;
+    const provider = new E2BSandboxProvider("test-key", {
+      create: vi.fn(async () => desktop),
+      connect: vi.fn(async () => desktop),
+      pause: vi.fn(async () => undefined),
+    });
+    const computer = await provider.provision({ botId: "bot-1", homePath: "/unused" }, context);
+    const observation = await provider.observe(computer, context);
+    expect(command.mock.calls.some(([value]) => String(value).includes("windowquit"))).toBe(true);
+    expect(observation.windows).toEqual([
+      { id: "7", title: "Files", focused: true },
+      { id: "9", title: "Chrome" },
+    ]);
+  });
 });

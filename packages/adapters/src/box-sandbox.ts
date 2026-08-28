@@ -25,7 +25,17 @@ import type {
   ScreenRequest,
   ScreenSession,
 } from "@rakazo/adapter-kit";
-import { boundedSandboxCommandTimeoutMs } from "@rakazo/core";
+import {
+  boundedSandboxCommandTimeoutMs,
+  exposeBrowserDesktopCommand,
+  focusedWindowLabelCommand,
+  isFileManagerLabel,
+  isHttpUrl,
+  listVisibleWindowsCommand,
+  looksLikeDesktopBrowserApp,
+  openPathDesktopCommand,
+  parseVisibleWindows,
+} from "@rakazo/core";
 import { SingleScreenClaimTracker } from "./computer-screens.js";
 import {
   boundedComputerActions,
@@ -311,6 +321,22 @@ export class BoxSandboxProvider implements SandboxProvider {
   async observe(computer: ComputerRef, context: AdapterContext): Promise<ComputerObservation> {
     const id = this.id(computer);
     this.screens.claim(id, context);
+    const focused = await this.runCommand(
+      id,
+      focusedWindowLabelCommand(":0"),
+      undefined,
+      15_000,
+      context.signal,
+    ).catch(() => ({ stdout: "" }));
+    if (isFileManagerLabel(focused.stdout ?? "")) {
+      await this.runCommand(
+        id,
+        exposeBrowserDesktopCommand(":0"),
+        undefined,
+        15_000,
+        context.signal,
+      ).catch(() => undefined);
+    }
     const imagePath = `/tmp/rakazo-observe-${randomUUID()}.png`;
     try {
       const result = await this.runCommand(
@@ -325,7 +351,14 @@ export class BoxSandboxProvider implements SandboxProvider {
       }
       const image = await this.readRemoteFile(id, imagePath, context.signal);
       if (!image.byteLength) throw new Error("Box screenshot did not contain image data");
-      return parseBoxObservation(image, result.stdout);
+      const listed = await this.runCommand(
+        id,
+        listVisibleWindowsCommand(":0"),
+        undefined,
+        15_000,
+        context.signal,
+      ).catch(() => ({ stdout: "" }));
+      return parseBoxObservation(image, result.stdout, listed.stdout);
     } finally {
       await this.rawCommand(id, `rm -f -- ${shellQuote(imagePath)}`, 10).catch(() => undefined);
     }
@@ -907,7 +940,11 @@ function observeBoxCommand(imagePath: string): string {
   ].join("\n");
 }
 
-function parseBoxObservation(image: Uint8Array, metadata: string): ComputerObservation {
+function parseBoxObservation(
+  image: Uint8Array,
+  metadata: string,
+  windowList = "",
+): ComputerObservation {
   const number = (name: string, fallback: number) =>
     Number(metadata.match(new RegExp(`(?:^|\\n)${name}=(\\d+)`))?.[1]) || fallback;
   const windowId = metadata.match(/(?:^|\n)WINDOW=(\d+)/)?.[1];
@@ -915,12 +952,14 @@ function parseBoxObservation(image: Uint8Array, metadata: string): ComputerObser
   const title = encodedTitle ? Buffer.from(encodedTitle, "base64").toString("utf8") : undefined;
   const x = metadata.match(/(?:^|\n)X=(\d+)/)?.[1];
   const y = metadata.match(/(?:^|\n)Y=(\d+)/)?.[1];
+  const windows = parseVisibleWindows(windowList);
   return computerObservation(image, {
     mimeType: "image/png",
     width: number("WIDTH", 1920),
     height: number("HEIGHT", 1080),
     ...(x && y ? { cursor: { x: Number(x), y: Number(y) } } : {}),
     ...(windowId ? { activeWindow: { id: windowId, title } } : {}),
+    ...(windows.length ? { windows } : {}),
   });
 }
 
@@ -997,24 +1036,34 @@ function boxActionCommand(action: Exclude<ComputerAction, { kind: "wait" }>): st
     return `DISPLAY=:0 xdotool mousemove ${action.x} ${action.y} click ${button}`;
   }
   if (action.kind === "open") {
-    const target = /^https?:\/\//i.test(action.path)
-      ? action.path
+    const target = isHttpUrl(action.path)
+      ? action.path.trim()
       : workspacePath(BOX_WORKSPACE, action.path);
-    return `nohup env DISPLAY=:0 xdg-open ${shellQuote(target)} >/tmp/rakazo-open.log 2>&1 &`;
+    return `bash -lc ${shellQuote(openPathDesktopCommand(":0", target))}`;
   }
   const applications =
     action.application === "browser"
       ? ["google-chrome-stable", "google-chrome", "chromium", "firefox"]
       : [action.application];
-  return [
+  const launch = [
+    "launched=0",
     `for app in ${applications.map(shellQuote).join(" ")}; do`,
     '  if command -v "$app" >/dev/null 2>&1; then',
     `    nohup env DISPLAY=:0 "$app"${action.uri ? ` ${shellQuote(action.uri)}` : ""} >/tmp/rakazo-app.log 2>&1 &`,
-    "    exit 0",
+    "    launched=1",
+    "    break",
     "  fi",
     "done",
-    "exit 1",
+    '[ "$launched" = 1 ] || exit 1',
   ].join("\n");
+  if (
+    looksLikeDesktopBrowserApp(action.application) ||
+    action.application === "browser" ||
+    (action.uri !== undefined && isHttpUrl(action.uri))
+  ) {
+    return `${launch}\n${exposeBrowserDesktopCommand(":0")}`;
+  }
+  return launch;
 }
 
 function isAbortError(error: unknown): boolean {

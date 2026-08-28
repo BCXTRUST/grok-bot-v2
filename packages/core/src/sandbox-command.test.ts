@@ -3,6 +3,7 @@ import {
   boundedSandboxCommandTimeoutMs,
   DEFAULT_SANDBOX_COMMAND_TIMEOUT_MS,
   MAX_SANDBOX_COMMAND_TIMEOUT_MS,
+  prepareSandboxShellCommand,
   sandboxCommandTimeoutMs,
 } from "./sandbox-command.js";
 
@@ -26,6 +27,24 @@ describe("sandbox command timeout", () => {
     expect(boundedSandboxCommandTimeoutMs(Number.NaN, 100)).toBe(100);
     expect(boundedSandboxCommandTimeoutMs(undefined, Number.POSITIVE_INFINITY)).toBe(
       DEFAULT_SANDBOX_COMMAND_TIMEOUT_MS,
+    );
+  });
+});
+
+describe("prepareSandboxShellCommand", () => {
+  it("backgrounds flask and python forum servers so the tool can return", () => {
+    expect(prepareSandboxShellCommand("python3 forum_server.py")).toContain("nohup");
+    expect(prepareSandboxShellCommand("python3 -m flask run --port=8765")).toContain("nohup");
+    expect(prepareSandboxShellCommand("python3 -m http.server 8765")).toContain("nohup");
+  });
+
+  it("leaves ordinary commands and already-backgrounded servers alone", () => {
+    expect(prepareSandboxShellCommand("ls -l")).toBe("ls -l");
+    expect(prepareSandboxShellCommand("nohup python3 forum_server.py >/tmp/x.log 2>&1 &")).toBe(
+      "nohup python3 forum_server.py >/tmp/x.log 2>&1 &",
+    );
+    expect(prepareSandboxShellCommand("python3 notes/summarize.py")).toBe(
+      "python3 notes/summarize.py",
     );
   });
 });

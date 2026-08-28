@@ -9,6 +9,7 @@ import type {
   AgentToolExecutionResult,
   ConnectorTool,
 } from "@rakazo/adapter-kit";
+import { COMPUTER_AUTONOMY_INSTRUCTION } from "@rakazo/core";
 import { builtinAgentTools, DELEGATION_TOOL_NAMES } from "./builtin-tools.js";
 import { PiRuntimeCredentialStore, toOAuthCredential } from "./pi-credentials.js";
 import { registerLocalProvider } from "./pi-local-provider.js";
@@ -124,7 +125,7 @@ export class PiAgentRuntime implements AgentRuntime {
             systemPrompt:
               request.instructions ||
               (toolDefs.some((tool) => tool.name === "computer_observe")
-                ? "You are a Rakazo bot with a real computer. Use computer_observe and computer_act to operate its visible desktop, including browsers and installed applications. Use shell and the file tools for precise terminal and filesystem work. The user may interact with the same desktop while you run, so re-observe when the screen may have changed. Be concise."
+                ? `You are a Rakazo bot with a real computer. Use computer_observe and computer_act to operate its visible desktop, including browsers and installed applications. Open web pages with open_path and an http(s) URL so the browser is raised over file-manager windows. If a file manager still covers the page, close it, then re-observe before clicking. Use shell and the file tools for precise terminal and filesystem work. The user may interact with the same desktop while you run, so re-observe when the screen may have changed. Be concise. ${COMPUTER_AUTONOMY_INSTRUCTION}`
                 : "You are a Rakazo bot with a persistent sandbox filesystem and shell. Be concise."),
             model,
             thinkingLevel: thinkingLevelFor(model),

@@ -122,6 +122,17 @@ describe("sandbox supervisor input containment", () => {
     });
   });
 
+  it("opens http URLs through a browser instead of xdg-open", () => {
+    const step = containerActionStep({ kind: "open", path: "https://example.test/join" });
+    expect("argv" in step ? step.argv[0] : "").toBe("bash");
+    expect("argv" in step ? step.argv.at(-1) : "").toContain("google-chrome");
+    expect("argv" in step ? step.argv.at(-1) : "").toContain("windowquit");
+    expect("argv" in step ? step.argv.at(-1) : "").toContain("ctrl+l");
+    const file = containerActionStep({ kind: "open", path: "notes/forums.csv" });
+    expect("argv" in file ? file.argv.at(-1) : "").toContain("xdg-open");
+    expect("argv" in file ? file.argv.at(-1) : "").not.toContain("windowquit");
+  });
+
   it("wraps sandbox commands in a process-tree timeout", () => {
     expect(sandboxTimeoutCommand(["bash", "-lc", "sleep 10"], 2_500, "/tmp/completed-124")).toEqual(
       [
