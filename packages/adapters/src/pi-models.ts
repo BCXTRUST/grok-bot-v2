@@ -1,5 +1,6 @@
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import type { ModelOAuthSignInMode } from "@rakazo/contracts";
+import { OPENAI_API_PROVIDER_ID } from "@rakazo/contracts";
 import { LOCAL_PROVIDER_ID, registerLocalProvider } from "./pi-local-provider.js";
 import { SUBSCRIPTION_SIGN_IN_PROVIDERS } from "./pi-oauth.js";
 import {
@@ -94,6 +95,9 @@ function catalogBilling(
   }
   if (providerId === OPENAI_COMPATIBLE_PROVIDER_ID) {
     return "Runs on a URL you control. Rakazo does not pay for model usage.";
+  }
+  if (providerId === OPENAI_API_PROVIDER_ID) {
+    return "Paste an API key from platform.openai.com. ChatGPT Plus/Pro is a separate sign-in.";
   }
   if (opts.oauth && !opts.apiKey) {
     return `${name} subscription login is not in the Rakazo UI yet. Skip if this deployment already has credentials.`;

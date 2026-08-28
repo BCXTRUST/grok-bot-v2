@@ -196,4 +196,17 @@ test("model settings connect, replace, and cancel provider authentication", asyn
   await page.getByLabel("Replace API key").fill("fake-scripted-key-three");
   await expect(page.getByRole("button", { name: "Replace API key" })).toBeEnabled();
   await expect(page.getByText("Waiting for sign-in…")).toBeHidden();
+
+  await providerSearch.fill("openrouter");
+  await page
+    .getByRole("button", { name: /OpenRouter/ })
+    .first()
+    .click();
+  await page.getByRole("combobox", { name: "Model" }).click();
+  await page.getByPlaceholder("Search or paste a model id").fill("openai/gpt-5-custom-pick");
+  await page.getByRole("button", { name: "Use openai/gpt-5-custom-pick" }).click();
+  await expect(page.getByRole("combobox", { name: "Model" })).toContainText(
+    "openai/gpt-5-custom-pick",
+  );
+  await captureScreenshot(page, testInfo, "openrouter-custom-model");
 });

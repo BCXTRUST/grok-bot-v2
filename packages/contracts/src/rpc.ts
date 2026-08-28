@@ -122,6 +122,11 @@ export const appContract = {
         }),
       )
       .output(z.object({ models: z.array(z.string()) })),
+    probeOpenRouter: oc.input(z.object({ apiKey: z.string().optional() })).output(
+      z.object({
+        models: z.array(z.object({ id: z.string(), name: z.string() })),
+      }),
+    ),
     beginOAuth: oc
       .input(
         z.object({

@@ -1,20 +1,19 @@
 import type { Me } from "@rakazo/contracts";
 import {
+  mergeModelOptions,
   OPENAI_COMPATIBLE_BASE_URL_HINT,
   OPENAI_COMPATIBLE_PROVIDER_ID,
+  OPENROUTER_PROVIDER_ID,
   openAiCompatibleConnectReady,
   openAiCompatibleProbeSuccessMessage,
+  preferredModelId,
+  providerAllowsCustomModelId,
+  sortModelProviderGroups,
 } from "@rakazo/contracts";
 import { Button } from "@rakazo/ui-web";
 import { ChevronDown } from "lucide-react";
-import {
-  type KeyboardEvent as ReactKeyboardEvent,
-  useEffect,
-  useId,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ModelPicker } from "../components/ModelPicker";
 import { type ModelCatalogEntry, type ModelCredential, providerHint } from "../lib/model-auth";
 import { rpc } from "../lib/rpc";
 import { useModelOAuthSignIn } from "../lib/use-model-oauth-signin";
@@ -29,6 +28,7 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
   const [apiKey, setApiKey] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
   const [probeModels, setProbeModels] = useState<string[]>([]);
+  const [openRouterModels, setOpenRouterModels] = useState<Array<{ id: string; name: string }>>([]);
   const [probedBaseUrl, setProbedBaseUrl] = useState<string | null>(null);
   const [probing, setProbing] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -73,18 +73,19 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
         ? provider
         : (nextMe.defaultProvider ?? nextCatalog[0]?.provider ?? "");
     const nextCredential = nextCredentials.find((entry) => entry.provider === nextProvider);
-    const nextModel =
-      nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID
-        ? (nextCredential?.modelId ??
-          (nextMe.defaultProvider === OPENAI_COMPATIBLE_PROVIDER_ID ? nextMe.defaultModel : "") ??
-          "")
-        : (nextCatalog.find((entry) => entry.provider === nextProvider && entry.id === modelId)
-            ?.id ??
-          nextCatalog.find(
-            (entry) => entry.provider === nextProvider && entry.id === nextMe.defaultModel,
-          )?.id ??
-          nextCatalog.find((entry) => entry.provider === nextProvider)?.id ??
-          "");
+    const catalogIds = nextCatalog
+      .filter((entry) => entry.provider === nextProvider)
+      .map((entry) => entry.id);
+    const nextModel = preferredModelId({
+      provider: nextProvider,
+      catalogIds,
+      requested: modelId,
+      stored: nextCredential?.modelId,
+      workspaceDefaultProvider: nextMe.defaultProvider,
+      workspaceDefaultModel: nextMe.defaultModel,
+      allowCustom:
+        nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID || providerAllowsCustomModelId(nextProvider),
+    });
     setCatalog(nextCatalog);
     setCredentials(nextCredentials);
     setMe(nextMe);
@@ -117,11 +118,13 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
       entries.push(entry);
       grouped.set(entry.provider, entries);
     }
-    return [...grouped].map(([id, entries]) => ({
-      id,
-      name: entries[0]?.providerName ?? id,
-      entries,
-    }));
+    return sortModelProviderGroups(
+      [...grouped].map(([id, entries]) => ({
+        id,
+        name: entries[0]?.providerName ?? id,
+        entries,
+      })),
+    );
   }, [catalog]);
   const filteredGroups = useMemo(() => {
     const query = providerQuery.trim().toLowerCase();
@@ -134,16 +137,38 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
     );
   }, [groups, providerQuery]);
   const modelsForProvider = catalog.filter((entry) => entry.provider === provider);
-  const selected = modelsForProvider.find((entry) => entry.id === modelId) ?? modelsForProvider[0];
-  selectedLabelRef.current = selected?.label;
   const isOpenAiCompatible = provider === OPENAI_COMPATIBLE_PROVIDER_ID;
+  const isOpenRouter = provider === OPENROUTER_PROVIDER_ID;
+  const allowCustomModel = isOpenAiCompatible || providerAllowsCustomModelId(provider);
+  const pickerOptions = useMemo(() => {
+    const template = modelsForProvider[0];
+    if (!template) return modelsForProvider;
+    const remote = isOpenRouter
+      ? openRouterModels.map((entry) => ({
+          ...template,
+          id: entry.id,
+          label: entry.name && entry.name !== entry.id ? entry.name : entry.id,
+        }))
+      : [];
+    const merged = mergeModelOptions(modelsForProvider, remote);
+    const trimmed = modelId.trim();
+    if (allowCustomModel && trimmed && !merged.some((entry) => entry.id === trimmed)) {
+      return [{ ...template, id: trimmed, label: trimmed }, ...merged];
+    }
+    return merged;
+  }, [allowCustomModel, isOpenRouter, modelId, modelsForProvider, openRouterModels]);
+  const selected = pickerOptions.find((entry) => entry.id === modelId) ?? pickerOptions[0];
+  selectedLabelRef.current = selected?.label;
   const credential = credentials.find((entry) => entry.provider === provider);
-  const currentEntry = catalog.find(
-    (entry) => entry.provider === me?.defaultProvider && entry.id === me?.defaultModel,
-  );
-  const isActive =
-    me?.defaultProvider === selected?.provider &&
-    me?.defaultModel === (isOpenAiCompatible ? modelId.trim() : selected?.id);
+  const currentEntry =
+    catalog.find(
+      (entry) => entry.provider === me?.defaultProvider && entry.id === me?.defaultModel,
+    ) ??
+    (me?.defaultProvider === provider && me.defaultModel
+      ? pickerOptions.find((entry) => entry.id === me.defaultModel)
+      : undefined);
+  const activeModelId = (allowCustomModel ? modelId.trim() : selected?.id) ?? "";
+  const isActive = me?.defaultProvider === provider && me?.defaultModel === activeModelId;
   const acceptsKey = selected?.auth !== "oauth";
   const subscriptionSignIn = selected?.signIn !== undefined;
   const busy = pending !== null || oauthPending;
@@ -179,9 +204,16 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
     selectionRevisionRef.current += 1;
     setProvider(nextProvider);
     setModelId(
-      nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID
-        ? (credentials.find((entry) => entry.provider === nextProvider)?.modelId ?? "")
-        : (catalog.find((entry) => entry.provider === nextProvider)?.id ?? ""),
+      preferredModelId({
+        provider: nextProvider,
+        catalogIds: catalog
+          .filter((entry) => entry.provider === nextProvider)
+          .map((entry) => entry.id),
+        stored: credentials.find((entry) => entry.provider === nextProvider)?.modelId,
+        allowCustom:
+          nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID ||
+          providerAllowsCustomModelId(nextProvider),
+      }),
     );
     setBaseUrl(
       nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID
@@ -190,6 +222,7 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
     );
     detailScrollRef.current?.scrollTo({ top: 0 });
     setApiKey("");
+    setOpenRouterModels([]);
     resetOpenAiCompatibleProbe();
     setError(null);
     setNotice(null);
@@ -221,10 +254,30 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
     }
   }
 
+  async function probeOpenRouterCatalog() {
+    const requestId = ++probeRequestIdRef.current;
+    setProbing(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const result = await rpc.models.probeOpenRouter({
+        apiKey: apiKey.trim() || undefined,
+      });
+      if (requestId !== probeRequestIdRef.current) return;
+      setOpenRouterModels(result.models);
+      setModelId((current) => current.trim() || result.models[0]?.id || "");
+      setNotice(openAiCompatibleProbeSuccessMessage(result.models.length));
+    } catch (err) {
+      if (requestId !== probeRequestIdRef.current) return;
+      setError(err instanceof Error ? err.message : "Could not list OpenRouter models");
+    } finally {
+      if (requestId === probeRequestIdRef.current) setProbing(false);
+    }
+  }
+
   async function setModelDefault() {
     if (!selected || !credential) return;
-    const activeModelId = isOpenAiCompatible ? modelId.trim() : selected.id;
-    if (isOpenAiCompatible && !activeModelId) return;
+    if (!activeModelId) return;
     setError(null);
     setNotice(null);
     setPending("default");
@@ -262,7 +315,7 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
           : {
               provider: selected.provider,
               apiKey: apiKey.trim(),
-              modelId: selected.id,
+              modelId: activeModelId,
               label: selected.providerName ?? selected.provider,
             },
       );
@@ -299,7 +352,9 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
           <div>
             <div className="text-2xl font-medium text-[#F1F1F2]">Models</div>
             <p className="mt-1 text-[13.5px] text-[#7A7A80]">
-              {loading ? "Loading model catalog…" : "Choose which connected model Rakazo uses."}
+              {loading
+                ? "Loading model catalog…"
+                : "Paste an OpenAI key, sign in with ChatGPT Plus/Pro, or pick any OpenRouter model."}
             </p>
           </div>
           <button
@@ -465,8 +520,9 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                     <>
                       <span>Model</span>
                       <ModelPicker
-                        options={modelsForProvider}
+                        options={pickerOptions}
                         value={selected.id}
+                        allowCustom={allowCustomModel}
                         onChange={(nextModelId) => {
                           cancelOAuthAttempt();
                           selectionRevisionRef.current += 1;
@@ -475,6 +531,19 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                           setNotice(null);
                         }}
                       />
+                      {isOpenRouter ? (
+                        <div className="mt-3">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            disabled={busy || probing}
+                            onClick={() => void probeOpenRouterCatalog()}
+                          >
+                            {probing ? "Finding…" : "All OpenRouter models"}
+                          </Button>
+                        </div>
+                      ) : null}
                     </>
                   )}
                 </div>
@@ -593,13 +662,15 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                       <label className="block text-[13.5px] text-[#85858A]">
                         {credential
                           ? "Replace API key"
-                          : subscriptionSignIn
-                            ? "Or connect an API key"
-                            : "API key"}
+                          : provider === "openai"
+                            ? "OpenAI API key"
+                            : subscriptionSignIn
+                              ? "Or connect an API key"
+                              : "API key"}
                         <input
                           value={apiKey}
                           onChange={(event) => updateApiKey(event.target.value)}
-                          placeholder="sk-…"
+                          placeholder={provider === OPENROUTER_PROVIDER_ID ? "sk-or-…" : "sk-…"}
                           type="password"
                           autoComplete="new-password"
                           className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-[#101012] px-3.5 py-3 text-[#ECECEE] outline-none"
@@ -641,7 +712,7 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                       type="button"
                       variant="pill"
                       size="sm"
-                      disabled={busy || (isOpenAiCompatible && !modelId.trim())}
+                      disabled={busy || (allowCustomModel && !activeModelId)}
                       onClick={() => void setModelDefault()}
                     >
                       {pending === "default" ? "Switching…" : "Use this model"}
@@ -657,149 +728,6 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
           </div>
         </div>
       </div>
-    </div>
-  );
-}
-
-function ModelPicker({
-  options,
-  value,
-  onChange,
-}: {
-  options: ModelCatalogEntry[];
-  value: string;
-  onChange: (value: string) => void;
-}) {
-  const rootRef = useRef<HTMLDivElement>(null);
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  const optionRefs = useRef<Array<HTMLButtonElement | null>>([]);
-  const listboxId = useId();
-  const selectedIndex = Math.max(
-    0,
-    options.findIndex((option) => option.id === value),
-  );
-  const [open, setOpen] = useState(false);
-  const [highlightedIndex, setHighlightedIndex] = useState(selectedIndex);
-
-  useEffect(() => {
-    setHighlightedIndex(selectedIndex);
-    setOpen(false);
-  }, [selectedIndex, value]);
-
-  useEffect(() => {
-    if (!open) return;
-    optionRefs.current[highlightedIndex]?.focus();
-  }, [highlightedIndex, open]);
-
-  useEffect(() => {
-    if (!open) return;
-    function closeOnOutsidePointer(event: PointerEvent) {
-      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
-    }
-    document.addEventListener("pointerdown", closeOnOutsidePointer);
-    return () => document.removeEventListener("pointerdown", closeOnOutsidePointer);
-  }, [open]);
-
-  function choose(index: number) {
-    const option = options[index];
-    if (!option) return;
-    onChange(option.id);
-    setOpen(false);
-    triggerRef.current?.focus();
-  }
-
-  function moveHighlight(index: number) {
-    setHighlightedIndex((index + options.length) % options.length);
-  }
-
-  function onTriggerKeyDown(event: ReactKeyboardEvent<HTMLButtonElement>) {
-    if (event.key === "Escape" && open) {
-      event.preventDefault();
-      setOpen(false);
-      return;
-    }
-    if (event.key === "ArrowDown" || event.key === "Enter" || event.key === " ") {
-      event.preventDefault();
-      setOpen(true);
-      return;
-    }
-    if (event.key === "ArrowUp") {
-      event.preventDefault();
-      setOpen(true);
-      setHighlightedIndex(options.length - 1);
-    }
-  }
-
-  function onOptionKeyDown(event: ReactKeyboardEvent<HTMLButtonElement>, index: number) {
-    if (event.key === "ArrowDown") {
-      event.preventDefault();
-      moveHighlight(index + 1);
-    } else if (event.key === "ArrowUp") {
-      event.preventDefault();
-      moveHighlight(index - 1);
-    } else if (event.key === "Home") {
-      event.preventDefault();
-      setHighlightedIndex(0);
-    } else if (event.key === "End") {
-      event.preventDefault();
-      setHighlightedIndex(options.length - 1);
-    } else if (event.key === "Enter" || event.key === " ") {
-      event.preventDefault();
-      choose(index);
-    } else if (event.key === "Escape") {
-      event.preventDefault();
-      setOpen(false);
-      triggerRef.current?.focus();
-    }
-  }
-
-  return (
-    <div ref={rootRef} className="relative mt-2">
-      <button
-        ref={triggerRef}
-        type="button"
-        role="combobox"
-        aria-label="Model"
-        aria-controls={listboxId}
-        aria-expanded={open}
-        aria-haspopup="listbox"
-        className="flex w-full items-center justify-between rounded-[11px] border border-[#26262A] bg-[#101012] px-3.5 py-3 text-start text-[#ECECEE] outline-none focus-visible:border-[#4A4A50]"
-        onClick={() => setOpen((current) => !current)}
-        onKeyDown={onTriggerKeyDown}
-      >
-        <span className="min-w-0 truncate">{options[selectedIndex]?.label}</span>
-        <span className="ml-3 shrink-0 text-[#85858A]" aria-hidden="true">
-          <ChevronDown size={16} strokeWidth={1.8} />
-        </span>
-      </button>
-      {open ? (
-        <div
-          id={listboxId}
-          role="listbox"
-          aria-label="Model options"
-          className="rk-scroll absolute left-0 right-0 top-full z-20 mt-2 max-h-60 overflow-y-auto rounded-[11px] border border-[#26262A] bg-[#101012] p-1 shadow-[0_20px_45px_rgba(0,0,0,.55)]"
-        >
-          {options.map((option, index) => (
-            <button
-              key={`${option.provider}:${option.id}`}
-              ref={(element) => {
-                optionRefs.current[index] = element;
-              }}
-              type="button"
-              role="option"
-              aria-selected={option.id === value}
-              tabIndex={index === highlightedIndex ? 0 : -1}
-              className={`w-full rounded-[8px] px-3 py-2 text-start text-[13.5px] text-[#ECECEE] outline-none hover:bg-[#1A1A1D] focus-visible:bg-[#1A1A1D] ${
-                option.id === value ? "bg-[#1A1A1D]" : ""
-              }`}
-              onClick={() => choose(index)}
-              onKeyDown={(event) => onOptionKeyDown(event, index)}
-            >
-              {option.label}
-            </button>
-          ))}
-        </div>
-      ) : null}
     </div>
   );
 }
