@@ -1334,12 +1334,26 @@ export function ShellPage() {
 
   async function openComputer() {
     if (!active) return;
-    const needsTakeover = !userHoldsComputerControl(computer, active.id);
-    const blocked = computerTakeoverBlocked(computer, snapshot?.run?.status);
     try {
       await bootComputer({
-        takeControl: needsTakeover && !blocked,
-        overlay: (needsTakeover && !blocked) || computer?.state !== "running",
+        takeControl: false,
+        overlay: computer?.state !== "running",
+        force: computer?.state !== "running",
+      });
+      setComputerOpen(true);
+    } catch {
+      // computerError already set in bootComputer
+    }
+  }
+
+  async function takeComputerControl() {
+    if (!active) return;
+    const blocked = computerTakeoverBlocked(computer, snapshot?.run?.status);
+    if (blocked) return;
+    try {
+      await bootComputer({
+        takeControl: true,
+        overlay: true,
         force: computer?.state !== "running",
       });
       setComputerOpen(true);
@@ -1899,7 +1913,7 @@ export function ShellPage() {
                   <button
                     type="button"
                     className="absolute inset-0 cursor-pointer"
-                    aria-label="Open computer"
+                    aria-label="Watch computer"
                     onClick={() => void openComputer()}
                   />
                 </div>
@@ -1927,7 +1941,7 @@ export function ShellPage() {
                       size="sm"
                       disabled={takeoverBlocked}
                       title={takeoverBlocked ? "Stop the bot first" : undefined}
-                      onClick={() => void openComputer()}
+                      onClick={() => void takeComputerControl()}
                     >
                       Take control
                     </Button>
