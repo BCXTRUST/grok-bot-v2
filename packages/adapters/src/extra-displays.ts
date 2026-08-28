@@ -149,7 +149,7 @@ export function ensurePrimaryViewCommand(layout: ExtraDisplayLayout, viewPasswor
     `xdpyinfo -display ${layout.display} >/dev/null 2>&1 || exit 1`,
     `pkill -f '^x11vnc .* -rfbport ${layout.viewVncPort}' || true`,
     `pkill -f '^/usr/bin/python3 .*websockify.*${layout.viewPort}' || true`,
-    `pkill -f 'novnc_proxy.*--listen ${layout.viewPort}' || true`,
+    `pkill -f '[n]ovnc_proxy.*--listen ${layout.viewPort}' || true`,
     `x11vnc -storepasswd "$view_password" ${shellQuote(passwordAuthFile)} >/dev/null`,
     `x11vnc -display ${layout.display} -forever -shared -viewonly -rfbauth ${shellQuote(passwordAuthFile)} -listen 127.0.0.1 -rfbport ${layout.viewVncPort} -xkb -ncache 0 >${log}-x11vnc.log 2>&1 &`,
     `if command -v websockify >/dev/null 2>&1; then`,
@@ -202,7 +202,7 @@ export function ensureExtraDisplayCommand(
     `fi`,
     `pkill -f '^x11vnc .* -rfbport ${layout.viewVncPort}' || true`,
     `pkill -f '^/usr/bin/python3 .*websockify.*${layout.viewPort}' || true`,
-    `pkill -f 'novnc_proxy.*--listen ${layout.viewPort}' || true`,
+    `pkill -f '[n]ovnc_proxy.*--listen ${layout.viewPort}' || true`,
     `x11vnc -storepasswd "$view_password" ${shellQuote(passwordAuthFile)} >/dev/null`,
     `x11vnc -display ${layout.display} -forever -shared -viewonly -rfbauth ${shellQuote(passwordAuthFile)} -listen 127.0.0.1 -rfbport ${layout.viewVncPort} -xkb -ncache 0 >${log}-x11vnc.log 2>&1 &`,
     `if command -v websockify >/dev/null 2>&1; then`,
@@ -257,7 +257,7 @@ export function extraDisplayControlStopCommand(
   const stop = [
     `pkill -f '^x11vnc .* -rfbport ${layout.controlVncPort}' || true`,
     `pkill -f '^/usr/bin/python3 .*websockify.*${layout.controlPort}' || true`,
-    `pkill -f 'novnc_proxy.*--listen ${layout.controlPort}' || true`,
+    `pkill -f '[n]ovnc_proxy.*--listen ${layout.controlPort}' || true`,
     `rm -f /tmp/rakazo-control-${layout.displayNumber}.vncpass`,
     `rm -f /tmp/rakazo/control-token-${layout.displayNumber}`,
   ].join("; ");

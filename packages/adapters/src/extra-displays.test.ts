@@ -70,8 +70,8 @@ describe("extra display ports", () => {
 
   it("starts view-only noVNC on the primary display ports", () => {
     const command = ensurePrimaryViewCommand(extraDisplayLayout(0, ":0"), "secret");
-    expect(command).toContain("rfbport 5900");
-    expect(command).toContain("--listen 6080");
+    expect(command).toContain("[n]ovnc_proxy");
+    expect(command).not.toContain("pkill -f 'novnc_proxy");
     expect(() => ensurePrimaryViewCommand(extraDisplayLayout(1, ":0"), "secret")).toThrow(
       /primary display/,
     );
