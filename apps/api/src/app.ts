@@ -248,6 +248,7 @@ export async function createApp(
       webOrigin: env.webOrigin,
       screenProxySecret: env.authSecret,
       sandboxProvider: env.sandboxProvider,
+      agentMailApiKey: env.agentMailApiKey,
     },
   });
   const rpc = new RPCHandler(router);
