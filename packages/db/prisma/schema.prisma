@@ -22,6 +22,7 @@ model User {
   modelCredentials UserModelCredential[]
   voiceCredentials UserVoiceCredential[]
   secrets          Secret[]
+  siteLogins       SiteLogin[]
   mcpServers       McpServer[]
   botSections      BotSection[]
   actionApprovalRules ActionApprovalRule[]
@@ -112,6 +113,7 @@ model Organization {
   actionApprovalRules ActionApprovalRule[]
   workspaceMemoryConfig WorkspaceMemoryConfig?
   chatGroups  ChatGroup[]
+  siteLogins  SiteLogin[]
 
   @@unique([slug])
   @@map("organization")
@@ -252,6 +254,7 @@ model Bot {
   runs           Run[]
   mcpServers     BotMcpServer[]
   groupMembers   ChatGroupMember[]
+  siteLoginsCreated SiteLogin[]
 
   @@index([workspaceId, userId, archivedAt, pinned, updatedAt])
   @@index([sectionId])
@@ -521,6 +524,28 @@ model ScratchpadItem {
   @@map("scratchpad_items")
 }
 
+model SiteLogin {
+  id             String       @id @default(cuid())
+  workspaceId    String
+  workspace      Organization @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  host           String
+  url            String?
+  username       String
+  secretId       String
+  secret         Secret       @relation("SiteLoginSecret", fields: [secretId], references: [id], onDelete: Cascade)
+  createdByBotId String?
+  createdByBot   Bot?         @relation(fields: [createdByBotId], references: [id], onDelete: SetNull)
+  share          String       @default("workspace")
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([workspaceId, userId, host, username])
+  @@index([workspaceId, userId, host])
+  @@map("site_logins")
+}
+
 model TaughtSkill {
   id          String    @id @default(cuid())
   workspaceId String
@@ -774,6 +799,7 @@ model Secret {
   createdAt   DateTime @default(now())
   mcpServers  McpServer[]
   workspaceMemoryConfig WorkspaceMemoryConfig?
+  siteLogins  SiteLogin[] @relation("SiteLoginSecret")
 
   @@index([userId, workspaceId])
   @@map("secrets")

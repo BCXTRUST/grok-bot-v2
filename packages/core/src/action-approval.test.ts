@@ -24,6 +24,10 @@ describe("toolRequiresApproval", () => {
       "write_file",
       "shell",
       "remember",
+      "vault_list",
+      "vault_get",
+      "vault_put",
+      "vault_delete",
       "spawn_bot",
       "run_subagent",
     ]) {
