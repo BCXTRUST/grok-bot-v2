@@ -478,15 +478,19 @@ export function ShellPage() {
   async function refreshComputerScreen(id: string, force = false) {
     if (!force && !computerVisible.current) return null;
     const request = ++screenRequest.current;
-    const screen = await rpc.computer.screenUrl({ botId: id }).catch(() => ({ url: null }));
+    const screen = await rpc.computer
+      .screenUrl({ botId: id })
+      .catch(() => ({ url: null as string | null, error: "screen request failed" }));
     if (
       request !== screenRequest.current ||
       activeBotId.current !== id ||
-      !computerVisible.current
+      (!force && !computerVisible.current)
     ) {
       return null;
     }
     setScreenUrl(screen.url);
+    if (screen.url) setComputerError(null);
+    else if (screen.error) setComputerError(screen.error);
     return screen.url;
   }
 

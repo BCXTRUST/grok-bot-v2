@@ -603,7 +603,11 @@ export class E2BSandboxProvider implements SandboxProvider {
       ensurePrimaryViewCommand(layout, randomBytes(9).toString("base64url")),
       { signal: context.signal },
     );
-    if (result.exitCode !== 0) throw new ComputerScreenUnavailableError();
+    if (result.exitCode !== 0) {
+      throw new ComputerScreenUnavailableError(
+        String(result.stderr || result.stdout || "primary view failed").slice(0, 500),
+      );
+    }
     return parseExtraDisplayViewPassword(result.stdout);
   }
 

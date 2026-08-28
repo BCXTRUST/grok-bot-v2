@@ -1358,7 +1358,12 @@ export function createRouter(deps: RouterDeps) {
           !bot.computer?.providerRef ||
           (bot.computer.state !== "running" && bot.computer.state !== "booting")
         ) {
-          return { url: null };
+          return {
+            url: null,
+            error: !bot.computer?.providerRef
+              ? "computer not provisioned"
+              : `computer is ${bot.computer?.state ?? "stopped"}`,
+          };
         }
         let session: { url: string | null };
         try {
@@ -1382,12 +1387,13 @@ export function createRouter(deps: RouterDeps) {
             ),
           );
         } catch (error) {
+          const message = screenConnectErrorMessage(error);
           if (!isComputerScreenUnavailable(error)) {
             console.error("computer screenUrl", error);
           }
-          return { url: null };
+          return { url: null, error: message };
         }
-        if (!session.url) return { url: null };
+        if (!session.url) return { url: null, error: "empty screen url" };
         scheduleComputerSleep(deps.jobs, bot.computer.id);
         const viewUrl = withViewOnly(
           session.url,
@@ -2844,6 +2850,11 @@ async function computerStatus(
     botName: bot.name,
   });
   return toComputerStatus(botId, bot.computer, busyBotName);
+}
+
+function screenConnectErrorMessage(error: unknown): string {
+  if (error instanceof Error && error.message.trim()) return error.message.trim().slice(0, 240);
+  return "screen unavailable";
 }
 
 async function expireStaleComputerControl(
