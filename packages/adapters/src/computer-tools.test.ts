@@ -66,4 +66,16 @@ describe("computer tool bridge", () => {
     expect(text && "text" in text ? text.text : "").toContain("Files (focused)");
     expect(text && "text" in text ? text.text : "").toContain("Living with chronic pain");
   });
+
+  it("tells the model to leave a CAPTCHA wall", () => {
+    const observation = computerObservation(Uint8Array.from([1, 2, 3]), {
+      mimeType: "image/png",
+      width: 1280,
+      height: 800,
+      windows: [{ id: "1", title: "https://www.google.com/sorry/index", focused: true }],
+    });
+    const result = observationToolResult(observation);
+    const text = result.content.find((part) => part.type === "text");
+    expect(text && "text" in text ? text.text : "").toContain("request_takeover");
+  });
 });
