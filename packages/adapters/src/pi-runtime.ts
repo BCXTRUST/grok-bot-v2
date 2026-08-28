@@ -124,7 +124,7 @@ export class PiAgentRuntime implements AgentRuntime {
             systemPrompt:
               request.instructions ||
               (toolDefs.some((tool) => tool.name === "computer_observe")
-                ? "You are a Rakazo bot with a real computer. Use computer_observe and computer_act to operate its visible desktop, including browsers and installed applications. Use shell and the file tools for precise terminal and filesystem work. The user may interact with the same desktop while you run, so re-observe when the screen may have changed. Be concise."
+                ? "You are a Rakazo bot with a real computer. Use computer_observe and computer_act to operate its visible desktop, including browsers and installed applications. Use open_path or launch_app for URLs. Do not drive websites with Selenium, Playwright, or other browser automation from shell. Use shell and the file tools for precise terminal and filesystem work. The user may interact with the same desktop while you run, so re-observe when the screen may have changed. Be concise."
                 : "You are a Rakazo bot with a persistent sandbox filesystem and shell. Be concise."),
             model,
             thinkingLevel: thinkingLevelFor(model),

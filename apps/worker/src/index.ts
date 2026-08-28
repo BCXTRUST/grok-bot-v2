@@ -10,6 +10,7 @@ import {
   createPostgresReconciliationLeadership,
   createRunExecutor,
   createRunSandbox,
+  createAgentMailInboxProvider,
   EncryptedSecretStore,
   ExpoPushProvider,
   GraphileJobPublisher,
@@ -89,6 +90,10 @@ async function main() {
   await connector.start();
   const memoryProviders = new WorkspaceMemoryProviderResolver(prisma, secrets);
   const home = new LocalAgentHomeStore(dataDir);
+  const inbox = await createAgentMailInboxProvider({
+    apiKey: process.env.AGENTMAIL_API_KEY,
+    domain: process.env.AGENTMAIL_DOMAIN,
+  });
   const artifacts = new LocalArtifactStore(dataDir);
   const inMemoryJobs = process.env.WAKEUP_DRIVER === "memory" ? new InMemoryJobQueue() : undefined;
   const jobs: JobPublisher = inMemoryJobs ?? new GraphileJobPublisher(databaseUrl);
@@ -103,15 +108,18 @@ async function main() {
     artifacts,
     connector: stack.connector,
     listConnectedPluginSlugs: stack.composio?.listConnectedSlugs.bind(stack.composio),
-    secrets: [process.env.OPENROUTER_API_KEY ?? "", process.env.COMPOSIO_API_KEY ?? ""].filter(
-      Boolean,
-    ),
+    secrets: [
+      process.env.OPENROUTER_API_KEY ?? "",
+      process.env.COMPOSIO_API_KEY ?? "",
+      process.env.AGENTMAIL_API_KEY ?? "",
+    ].filter(Boolean),
     secretStore: secrets,
     deploymentModelKey: process.env.OPENROUTER_API_KEY,
     dataDir,
     notifications: new ExpoPushProvider(dataDir),
     jobs,
     events,
+    inbox,
   });
 
   const jobHandlers = createBackgroundJobHandlers({

@@ -35,6 +35,7 @@ import {
 } from "./computer-workspace.js";
 import {
   allocateExtraDisplayCommand,
+  type ExtraDisplayLayout,
   ensureExtraDisplayCommand,
   extraDisplayActionCommand,
   extraDisplayControlStartCommand,
@@ -46,7 +47,6 @@ import {
   parseExtraDisplayObservation,
   parseExtraDisplayViewPassword,
   parseReleasedExtraDisplay,
-  primaryStreamCleanupCommand,
   releaseExtraDisplayCommand,
   screenControlKey,
 } from "./extra-displays.js";
@@ -78,6 +78,44 @@ export function isUnrecoverableSandboxError(error: unknown): boolean {
 }
 
 export const E2B_BROWSER_APPS = ["google-chrome", "firefox", "chromium"] as const;
+
+function e2bStreamAuthKey(desktop: Sandbox): string | undefined {
+  try {
+    return desktop.stream.getAuthKey();
+  } catch {
+    return undefined;
+  }
+}
+
+function e2bSdkStreamUrl(desktop: Sandbox): string | null {
+  try {
+    const authKey = e2bStreamAuthKey(desktop);
+    const fromSdk =
+      typeof desktop.stream.getUrl === "function"
+        ? desktop.stream.getUrl({
+            autoConnect: true,
+            viewOnly: true,
+            resize: "scale",
+            ...(authKey ? { authKey } : {}),
+          })
+        : null;
+    return typeof fromSdk === "string" && fromSdk.length > 0 ? fromSdk : null;
+  } catch {
+    return null;
+  }
+}
+
+function e2bPrimaryViewUrl(desktop: Sandbox, layout: ExtraDisplayLayout): string {
+  const fromSdk = e2bSdkStreamUrl(desktop);
+  if (fromSdk) return fromSdk;
+  const authKey = e2bStreamAuthKey(desktop);
+  const url = new URL(`https://${desktop.getHost(layout.viewPort)}/vnc.html`);
+  url.searchParams.set("autoconnect", "true");
+  url.searchParams.set("resize", "scale");
+  url.searchParams.set("view_only", "true");
+  if (authKey) url.searchParams.set("authKey", authKey);
+  return url.toString();
+}
 
 export async function openDesktopBrowser(desktop: {
   launch: (application: string, uri?: string) => Promise<void>;
@@ -160,13 +198,21 @@ export class E2BSandboxProvider implements SandboxProvider {
   }
 
   private async initializeStream(desktop: Sandbox) {
-    await desktop.commands.run(primaryStreamCleanupCommand()).catch(() => undefined);
-    await desktop.stream.start({ requireAuth: true });
     try {
-      await desktop.commands.run("x11vnc -R viewonly");
+      await Promise.race([
+        desktop.stream.start({ requireAuth: true }),
+        new Promise<never>((_, reject) => {
+          setTimeout(() => reject(new Error("stream start timed out")), 8_000);
+        }),
+      ]);
     } catch (error) {
-      await desktop.stream.stop().catch(() => undefined);
-      throw error;
+      // Reconnected SDK clients forget stream.url even when noVNC is already up.
+      if (!e2bSdkStreamUrl(desktop) && !desktop.getHost) throw error;
+    }
+    try {
+      await desktop.commands.run("x11vnc -R viewonly", { timeoutMs: 2_500 });
+    } catch {
+      // View-only is preferred; a hung or failed remote-control flag must not blank the live screen.
     }
     const current = this.boxes.get(desktop.sandboxId);
     if (current !== desktop) {
@@ -278,23 +324,8 @@ export class E2BSandboxProvider implements SandboxProvider {
           close: async () => undefined,
         };
       }
-      let authKey: string | undefined;
-      try {
-        authKey = desktop.stream.getAuthKey();
-      } catch {
-        authKey = undefined;
-      }
-      const url =
-        typeof desktop.stream.getUrl === "function"
-          ? desktop.stream.getUrl({
-              autoConnect: true,
-              viewOnly: true,
-              resize: "scale",
-              ...(authKey ? { authKey } : {}),
-            })
-          : null;
       return {
-        url,
+        url: e2bPrimaryViewUrl(desktop, layout),
         mimeType: "text/html",
         close: async () => {
           await desktop.stream.stop().catch(() => undefined);
@@ -588,10 +619,23 @@ export class E2BSandboxProvider implements SandboxProvider {
   }
 
   private async resolveLayout(desktop: Sandbox, screenKey: string, leaseId?: string) {
-    const allocation = await desktop.commands.run(allocateExtraDisplayCommand(screenKey, leaseId));
-    if (allocation.exitCode !== 0) throw new ComputerScreenUnavailableError();
-    const index = parseAllocatedExtraDisplay(allocation.stdout);
-    return extraDisplayLayout(index, desktop.display ?? ":0");
+    try {
+      const allocation = await desktop.commands.run(
+        allocateExtraDisplayCommand(screenKey, leaseId),
+        {
+          timeoutMs: 8_000,
+        },
+      );
+      if (allocation.exitCode !== 0) throw new ComputerScreenUnavailableError();
+      const index = parseAllocatedExtraDisplay(allocation.stdout);
+      return extraDisplayLayout(index, desktop.display ?? ":0");
+    } catch (error) {
+      if (error instanceof ComputerScreenUnavailableError) throw error;
+      if (error instanceof TimeoutError) {
+        return extraDisplayLayout(0, desktop.display ?? ":0");
+      }
+      throw error;
+    }
   }
 
   private async ensureExtraDisplay(

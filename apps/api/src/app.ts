@@ -14,6 +14,7 @@ import {
   createJobReconciler,
   createRunExecutor,
   createRunSandbox,
+  createAgentMailInboxProvider,
   type DestinationEmulator,
   destroyBot,
   EncryptedSecretStore,
@@ -117,6 +118,10 @@ export async function createApp(
   const memoryProviders = new WorkspaceMemoryProviderResolver(prisma, secrets);
   const oauthLogins = new PiOAuthLogins();
   const home = new LocalAgentHomeStore(env.dataDir);
+  const inbox = await createAgentMailInboxProvider({
+    apiKey: env.agentMailApiKey,
+    domain: env.agentMailDomain,
+  });
   const artifacts = new LocalArtifactStore(env.dataDir);
   const memory = new MarkdownMemoryStore(prisma);
   const mcp = new McpConnector(
@@ -160,6 +165,8 @@ export async function createApp(
       "http://127.0.0.1:8081",
       "http://localhost:19006",
       "http://127.0.0.1:19006",
+      "https://*.trycloudflare.com",
+      "http://*.trycloudflare.com",
     ],
     beforeDeleteUser: async (userId) => {
       const bots = await prisma.bot.findMany({
@@ -196,13 +203,16 @@ export async function createApp(
     artifacts,
     connector: stack.connector,
     listConnectedPluginSlugs: stack.composio?.listConnectedSlugs.bind(stack.composio),
-    secrets: [env.openRouterKey ?? "", env.composioApiKey ?? ""].filter(Boolean),
+    secrets: [env.openRouterKey ?? "", env.composioApiKey ?? "", env.agentMailApiKey ?? ""].filter(
+      Boolean,
+    ),
     secretStore: secrets,
     deploymentModelKey: env.openRouterKey,
     dataDir: env.dataDir,
     notifications,
     jobs,
     events,
+    inbox,
   });
 
   const jobHandlers = createBackgroundJobHandlers({
@@ -241,6 +251,7 @@ export async function createApp(
     remoteConnectors,
     artifacts,
     dataDir: env.dataDir,
+    inbox,
     env: {
       defaultProvider: env.defaultProvider,
       defaultModel: env.defaultModel,
@@ -327,7 +338,11 @@ function isTrustedOrigin(origin: string, env: AppEnv) {
   if (origin.startsWith("rakazo://") || origin.startsWith("exp://")) return true;
   try {
     const host = new URL(origin).hostname;
-    return host === "localhost" || host === "127.0.0.1";
+    return (
+      host === "localhost" ||
+      host === "127.0.0.1" ||
+      host.endsWith(".trycloudflare.com")
+    );
   } catch {
     return false;
   }

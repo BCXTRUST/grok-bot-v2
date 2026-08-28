@@ -91,6 +91,7 @@ describe("spawned bot creation", () => {
       name: "Scout",
       title: "Venue researcher",
       threadId: "thread-1",
+      inboxAddress: null,
     });
     expect(enqueue).toHaveBeenCalledOnce();
   });

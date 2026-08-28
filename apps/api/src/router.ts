@@ -3,6 +3,7 @@ import { implement, ORPCError } from "@orpc/server";
 import {
   type AdapterContext,
   type AgentHomeStore,
+  type AgentInboxProvider,
   type ArtifactStore,
   type ConnectorCatalogItem,
   computerControlExpireJobKey,
@@ -30,6 +31,8 @@ import {
   displayBotWorkspacePath,
   type EncryptedSecretStore,
   enqueueTakeoverContinuation,
+  ensureBotInbox,
+  ensureMissingBotInboxes,
   expireComputerControl,
   hasActiveComputerControl,
   isScratchpadStatus,
@@ -103,7 +106,7 @@ import {
 } from "./computer-status.js";
 import { buildMcpUpdateMaterial } from "./mcp-material.js";
 import { chooseFocus, markAppConnected, startOnboarding } from "./onboarding.js";
-import { addScreenProxyCapability } from "./screen-proxy.js";
+import { addScreenProxyCapability, proxiesExternalDesktop } from "./screen-proxy.js";
 import { queryWorkspaceSearch } from "./search.js";
 import { withSerializableRetry } from "./serializable-retry.js";
 import { assertTeachingSendAllowed, createTaughtSkillsService } from "./taught-skills.js";
@@ -188,6 +191,15 @@ function computerContext(actor: Actor, botId: string, operationId: string): Adap
     botId,
     signal: new AbortController().signal,
   };
+}
+
+async function withBotInbox(deps: RouterDeps, actor: Actor, bot: import("@rakazo/contracts").Bot) {
+  const inbox = await ensureBotInbox(
+    { prisma: deps.prisma, inbox: deps.inbox },
+    { id: bot.id, name: bot.name, workspaceId: bot.workspaceId, userId: actor.userId },
+    computerContext(actor, bot.id, "inbox"),
+  ).catch(() => null);
+  return { ...bot, inboxAddress: inbox?.address ?? bot.inboxAddress };
 }
 
 function mcpServerDto(
@@ -294,6 +306,7 @@ export interface RouterDeps {
   remoteConnectors?: RemoteConnectorDependencies;
   artifacts: ArtifactStore;
   dataDir: string;
+  inbox?: AgentInboxProvider;
   env: {
     defaultProvider: string;
     defaultModel: string;
@@ -328,6 +341,11 @@ export function createRouter(deps: RouterDeps) {
     me: authed.me.handler(async ({ context }): Promise<Me> => meDto(deps, context.actor)),
     bootstrap: authed.bootstrap.handler(async ({ context, input }) => {
       const actor = context.actor;
+      await ensureMissingBotInboxes(
+        { prisma: deps.prisma, inbox: deps.inbox },
+        actor,
+        computerContext(actor, actor.userId, "inbox-bootstrap"),
+      );
       const [me, bots, botSections, archivedBots] = await Promise.all([
         meDto(deps, actor),
         repos.listBots(actor),
@@ -517,17 +535,24 @@ export function createRouter(deps: RouterDeps) {
       }),
     },
     bots: {
-      list: authed.bots.list.handler(async ({ context }) => repos.listBots(context.actor)),
+      list: authed.bots.list.handler(async ({ context }) => {
+        await ensureMissingBotInboxes(
+          { prisma: deps.prisma, inbox: deps.inbox },
+          context.actor,
+          computerContext(context.actor, context.actor.userId, "inbox-list"),
+        );
+        return repos.listBots(context.actor);
+      }),
       listArchived: authed.bots.listArchived.handler(async ({ context }) =>
         repos.listBots(context.actor, { archived: true }),
       ),
       get: authed.bots.get.handler(async ({ context, input }) => {
         const found = (await repos.listBots(context.actor)).find((bot) => bot.id === input.botId);
         if (!found) throw new IsolationError();
-        return found;
+        return withBotInbox(deps, context.actor, found);
       }),
       create: authed.bots.create.handler(async ({ context, input }) =>
-        repos.createBot(context.actor, input),
+        withBotInbox(deps, context.actor, await repos.createBot(context.actor, input)),
       ),
       duplicate: authed.bots.duplicate.handler(async ({ context, input }) => {
         const source = await repos.getBot(context.actor, input.botId);
@@ -559,7 +584,7 @@ export function createRouter(deps: RouterDeps) {
             })),
           });
         }
-        return duplicate;
+        return withBotInbox(deps, context.actor, duplicate);
       }),
       update: authed.bots.update.handler(async ({ context, input }) => {
         await repos.getBot(context.actor, input.botId);
@@ -593,7 +618,7 @@ export function createRouter(deps: RouterDeps) {
         const bots = await repos.listBots(context.actor);
         const bot = bots.find((b) => b.id === input.botId);
         if (!bot) throw new IsolationError();
-        return bot;
+        return withBotInbox(deps, context.actor, bot);
       }),
       setComputer: authed.bots.setComputer.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);
@@ -1345,50 +1370,60 @@ export function createRouter(deps: RouterDeps) {
         return { path: input.path, content };
       }),
       screenUrl: authed.computer.screenUrl.handler(async ({ context, input }) => {
-        let bot = await repos.getBot(context.actor, input.botId);
-        if (await expireStaleComputerControl(deps, bot.computer)) {
-          bot = await repos.getBot(context.actor, input.botId);
-        }
-        if (
-          !bot.computer?.providerRef ||
-          (bot.computer.state !== "running" && bot.computer.state !== "booting")
-        ) {
+        try {
+          let bot = await repos.getBot(context.actor, input.botId);
+          if (await expireStaleComputerControl(deps, bot.computer)) {
+            bot = await repos.getBot(context.actor, input.botId);
+          }
+          if (
+            !bot.computer?.providerRef ||
+            (bot.computer.state !== "running" && bot.computer.state !== "booting")
+          ) {
+            return { url: null };
+          }
+          const session = await deps.sandbox
+            .connectScreen(
+              toComputerRef(bot.computer),
+              {
+                view: "stream",
+                interactive:
+                  hasActiveComputerControl(bot.computer) && bot.computer.controlBotId === bot.id,
+                controlToken:
+                  bot.computer.controlBotId === bot.id
+                    ? (bot.computer.controlLeaseId ?? undefined)
+                    : undefined,
+              },
+              await computerScreenContext(
+                deps.prisma,
+                context.actor,
+                bot.computer.id,
+                bot.id,
+                "screen",
+              ),
+            )
+            .catch(() => ({
+              url: null as string | null,
+              mimeType: "text/html",
+              close: async () => undefined,
+            }));
+          if (!session.url) return { url: null };
+          scheduleComputerSleep(deps.jobs, bot.computer.id);
+          const viewUrl = withViewOnly(
+            session.url,
+            !(hasActiveComputerControl(bot.computer) && bot.computer.controlBotId === bot.id),
+          );
+          return {
+            url: addScreenProxyCapability(
+              viewUrl,
+              deps.env.screenProxySecret,
+              deps.env.webOrigin,
+              undefined,
+              { proxyExternal: proxiesExternalDesktop(bot.computer.kind) },
+            ),
+          };
+        } catch {
           return { url: null };
         }
-        const session = await deps.sandbox.connectScreen(
-          toComputerRef(bot.computer),
-          {
-            view: "stream",
-            interactive:
-              hasActiveComputerControl(bot.computer) && bot.computer.controlBotId === bot.id,
-            controlToken:
-              bot.computer.controlBotId === bot.id
-                ? (bot.computer.controlLeaseId ?? undefined)
-                : undefined,
-          },
-          await computerScreenContext(
-            deps.prisma,
-            context.actor,
-            bot.computer.id,
-            bot.id,
-            "screen",
-          ),
-        );
-        if (!session.url) return { url: null };
-        scheduleComputerSleep(deps.jobs, bot.computer.id);
-        const viewUrl = withViewOnly(
-          session.url,
-          !(hasActiveComputerControl(bot.computer) && bot.computer.controlBotId === bot.id),
-        );
-        return {
-          url: addScreenProxyCapability(
-            viewUrl,
-            deps.env.screenProxySecret,
-            deps.env.webOrigin,
-            undefined,
-            { proxyExternal: bot.computer.kind === "box" },
-          ),
-        };
       }),
       heartbeat: authed.computer.heartbeat.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);

@@ -333,7 +333,7 @@ function BotRow({ bot, onLongPress }: { bot: MobileBot; onLongPress: () => void 
   const time = bot.updatedAt ? formatThreadTime(bot.updatedAt) : "";
   const tag = botTag(bot.title, bot.name);
   // Spelled out because an explicit label replaces the one built from the row's children.
-  const label = [bot.name, tag, bot.unread ? "unread" : null, time, preview]
+  const label = [bot.name, tag, bot.inboxAddress, bot.unread ? "unread" : null, time, preview]
     .filter(Boolean)
     .join(", ");
   return (

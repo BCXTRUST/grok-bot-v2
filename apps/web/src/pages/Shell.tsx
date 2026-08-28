@@ -96,6 +96,7 @@ import { connectMcpOauth } from "../lib/mcp-connect";
 import { revokePendingAttachmentPreviews } from "../lib/pending-attachments";
 import { markAfterPaint, markOnce } from "../lib/performance";
 import { rpc } from "../lib/rpc";
+import { embeddableScreenUrl } from "../lib/screen-url";
 import {
   activeThreadRuns,
   clearActiveThreadRuns,
@@ -1355,7 +1356,7 @@ export function ShellPage() {
     await refreshThread(active.id);
   }
 
-  const embeddedScreenUrl = embeddableScreenUrl(screenUrl);
+  const embeddedScreenUrl = embeddableScreenUrl(screenUrl, window.location.href);
   const hasControl = userHoldsComputerControl(computer, active?.id);
   const takeoverBlocked = computerTakeoverBlocked(computer, snapshot?.run?.status);
 
@@ -3534,6 +3535,15 @@ function BotSettings({
         />
       </label>
       <label className="mt-4 block text-[14px] text-[#85858A]">
+        Email
+        <input
+          value={bot.inboxAddress ?? ""}
+          readOnly
+          aria-label="Bot email address"
+          className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
+        />
+      </label>
+      <label className="mt-4 block text-[14px] text-[#85858A]">
         Title
         <input
           value={title}
@@ -3988,22 +3998,6 @@ function DeleteRoutineDialog({
       </div>
     </div>
   );
-}
-
-function embeddableScreenUrl(url: string | null): string | null {
-  if (!url) return null;
-  try {
-    const parsed = new URL(url, window.location.href);
-    const page = new URL(window.location.href);
-    const local = parsed.hostname === "127.0.0.1" || parsed.hostname === "localhost";
-    const pagePort = page.port || (page.protocol === "https:" ? "443" : "80");
-    if (local && parsed.port && parsed.port !== pagePort) {
-      return null;
-    }
-    return parsed.toString();
-  } catch {
-    return url;
-  }
 }
 
 function screenIframeSandbox(url: string | null) {

@@ -150,7 +150,12 @@ describe("builtin tools", () => {
         "run_subagent",
         "spawn_bot",
         "archive_bot",
+        "mail_list",
+        "mail_send",
       ]),
+    );
+    expect(builtinAgentTools.find((t) => t.name === "shell")?.description).toMatch(
+      /Do not drive websites with Selenium/,
     );
   });
 });

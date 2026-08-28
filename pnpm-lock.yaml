@@ -465,6 +465,9 @@ importers:
       '@rakazo/db':
         specifier: workspace:*
         version: link:../db
+      agentmail:
+        specifier: ^0.5.20
+        version: 0.5.20
       d3-dsv:
         specifier: ^3.0.1
         version: 3.0.1
@@ -3954,6 +3957,15 @@ packages:
     resolution: {integrity: sha512-vKrPeEVN3upDF3GjWxsWBbwQgMtNJ8VB1cduPvK3svmmz4ENpS7yaPxbogsbe3w+xp9xp2Cu+0Ar41rjAR4+lA==}
     engines: {node: '>=18.18'}
     hasBin: true
+
+  agentmail@0.5.20:
+    resolution: {integrity: sha512-EA1QAwxkkbH2fUZ8hC/hWZzDsGBV7b50c5LEHcwFi8/e6SArB+U50fDXBMxcbn8jh/UDeNEJZncdYxicrN64SQ==}
+    engines: {node: '>=18.0.0'}
+    peerDependencies:
+      '@x402/fetch': ^2
+    peerDependenciesMeta:
+      '@x402/fetch':
+        optional: true
 
   ajv-draft-04@1.0.0:
     resolution: {integrity: sha512-mv00Te6nmYbRp5DCwclxtt7yV/joXJPGS7nM+97GdxvuttCOfgI3K4U25zboyeX0O+myI8ERluxQe5wljMmVIw==}
@@ -12224,7 +12236,9 @@ snapshots:
       metro-runtime: 0.84.4
     transitivePeerDependencies:
       - '@babel/core'
+      - bufferutil
       - supports-color
+      - utf-8-validate
 
   '@react-native/normalize-colors@0.74.89': {}
 
@@ -13084,6 +13098,13 @@ snapshots:
   agent-base@7.1.4: {}
 
   agent-cli-detector@0.1.6: {}
+
+  agentmail@0.5.20:
+    dependencies:
+      ws: 8.21.3
+    transitivePeerDependencies:
+      - bufferutil
+      - utf-8-validate
 
   ajv-draft-04@1.0.0(ajv@8.20.0):
     optionalDependencies:

@@ -1,6 +1,7 @@
 import type {
   AdapterContext,
   AgentHomeStore,
+  AgentInboxProvider,
   AgentModelOAuthCredential,
   AgentRunRequest,
   AgentRuntime,
@@ -72,6 +73,7 @@ import {
   settleUncertainEffect,
   uncertainEffectResult,
 } from "./approval-effect.js";
+import { ensureBotInbox, inboxRefFromBot, mailInstruction } from "./bot-inbox.js";
 import { builtinAgentTools } from "./builtin-tools.js";
 import { archiveSpawnedBot, spawnBot } from "./child-bots.js";
 import {
@@ -172,6 +174,8 @@ const READ_ONLY_AGENT_TOOLS = new Set([
   "recall_memory",
   "schedule_list",
   "scratchpad_list",
+  "mail_list",
+  "mail_read",
 ]);
 const MAX_MODEL_FILE_BYTES = 250_000;
 // Same tool, same arguments, this many times in a row means the agent is stuck, not paginating.
@@ -204,6 +208,7 @@ export interface ExecutorDeps {
   notifications?: NotificationProvider;
   jobs: JobPublisher;
   listConnectedPluginSlugs?: (userId: string) => Promise<string[]>;
+  inbox?: AgentInboxProvider;
 }
 
 export async function deferFutureRoutine(
@@ -698,12 +703,13 @@ export function createRunExecutor(deps: ExecutorDeps) {
         const groupContext = thread.groupId
           ? await loadGroupContext(deps.prisma, thread.groupId)
           : undefined;
+        const inbox = await ensureBotInbox(deps, bot, context).catch(() => null);
         const availableBuiltins = filterBuiltinToolsForThread(
           graphical
             ? builtinAgentTools
             : builtinAgentTools.filter((tool) => !GRAPHICAL_AGENT_TOOLS.has(tool.name)),
           thread.groupId,
-        );
+        ).filter((tool) => inbox || !tool.name.startsWith("mail_"));
         const builtins = selectMemoryTools(availableBuiltins, semanticMemoryEnabled);
         const exposedConnectorTools = discovered.filter(
           (tool) => !builtinAgentTools.some((builtin) => builtin.name === tool.name),
@@ -728,7 +734,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
         };
         const tools = [...builtins, ...exposedConnectorTools];
         const computerInstruction = graphical
-          ? "You have a persistent computer. Use computer_observe and computer_act for its visible desktop, including browsers and installed applications. Use open_path and launch_app to open graphical files, URLs, and applications. Use the file tools and shell for precise filesystem and terminal work. On a Team Computer you have your own screen; other Team bots may run at the same time on theirs. Another user may interact with your screen while you run, so re-observe when it may have changed."
+          ? "You have a persistent computer. Use computer_observe and computer_act for its visible desktop, including browsers and installed applications. Use open_path and launch_app to open graphical files, URLs, and applications. Use the file tools and shell for precise filesystem and terminal work. Do not drive websites with Selenium, Playwright, or other browser automation from shell; the user watches the same desktop, so browse with the computer's graphical browser. On a Team Computer you have your own screen; other Team bots may run at the same time on theirs. Another user may interact with your screen while you run, so re-observe when the screen may have changed."
           : "You have a persistent sandbox filesystem and shell. This backend does not provide model-visible graphical control, so use the file tools and shell.";
         const workspaceInstruction =
           computerMode === "team"
@@ -1217,6 +1223,49 @@ export function createRunExecutor(deps: ExecutorDeps) {
             );
             return finish({ ok: true });
           }
+          if (
+            name === "mail_list" ||
+            name === "mail_read" ||
+            name === "mail_send" ||
+            name === "mail_reply"
+          ) {
+            const ref = inboxRefFromBot(bot) ?? inbox;
+            if (!deps.inbox || !ref)
+              return { error: "This bot does not have an email address yet." };
+            if (name === "mail_list") {
+              return {
+                address: ref.address,
+                messages: await deps.inbox.listMessages(
+                  ref,
+                  { limit: args.limit !== undefined ? Number(args.limit) : 20 },
+                  context,
+                ),
+              };
+            }
+            if (name === "mail_read") {
+              return deps.inbox.readMessage(ref, String(args.messageId ?? ""), context);
+            }
+            if (name === "mail_send") {
+              const to = Array.isArray(args.to) ? args.to.map((value) => String(value)) : [];
+              if (!to.length) return { error: "to is required" };
+              const sent = await deps.inbox.sendMessage(
+                ref,
+                {
+                  to,
+                  subject: String(args.subject ?? ""),
+                  text: String(args.text ?? ""),
+                },
+                context,
+              );
+              return finish({ ok: true, id: sent.id, from: ref.address });
+            }
+            const sent = await deps.inbox.replyMessage(
+              ref,
+              { messageId: String(args.messageId ?? ""), text: String(args.text ?? "") },
+              context,
+            );
+            return finish({ ok: true, id: sent.id, from: ref.address });
+          }
           if (name === "scratchpad_list") {
             return listScratchpadItemsFromTool(deps, {
               workspaceId: run.workspaceId,
@@ -1626,6 +1675,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 "archive_bot safely archives a bot this bot created, and only that bot. Use it when the user asks to remove that bot or when it is finished and unused. The user can restore it or permanently delete it later. confirm_name must exactly match its name.",
                 pluginLine,
                 taughtSkillsLine,
+                mailInstruction(inbox?.address),
                 'For charts and data visualization, use the render_plot tool: it renders bar, line, scatter, histogram, heatmap, faceted and many more chart types from a JSON spec and attaches the PNG to the chat. Call render_plot with {"help": true} before your first chart to read the full guide.',
                 "When the user asks you to add or connect an MCP server (and gives you its details), use add_mcp_server. If it uses browser sign-in, an approval card appears in the chat — tell the user to click Authorize on it.",
                 "Never print API keys, access tokens, or secret values. Prefer tools over claiming you already did the work.",

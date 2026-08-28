@@ -384,6 +384,28 @@ export interface VoiceCapabilities {
   transcribe: boolean;
 }
 
+export interface AgentInboxCapabilities {
+  provision: boolean;
+  send: boolean;
+  list: boolean;
+}
+
+export interface AgentInboxRef {
+  provider: string;
+  inboxId: string;
+  address: string;
+}
+
+export interface AgentMailMessage {
+  id: string;
+  from: string;
+  to: string[];
+  subject: string;
+  text: string;
+  links?: string[];
+  createdAt?: string;
+}
+
 export interface VoiceVerifyResult {
   ok: boolean;
   message?: string;

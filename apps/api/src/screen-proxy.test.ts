@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addScreenProxyCapability } from "./screen-proxy.js";
+import { addScreenProxyCapability, proxiesExternalDesktop } from "./screen-proxy.js";
 
 describe("screen proxy capability", () => {
   it("signs loopback Docker screen URLs without changing their destination", () => {
@@ -36,5 +36,11 @@ describe("screen proxy capability", () => {
     expect(result.origin).toBe("https://app.example");
     expect(result.pathname).toMatch(/^\/novnc\/remote\/view\/3600100\.[\w-]+\/vnc\.html$/);
     expect(result.toString()).not.toContain("provider-token");
+  });
+
+  it("proxies E2B and Box desktops through the same capability", () => {
+    expect(proxiesExternalDesktop("e2b")).toBe(true);
+    expect(proxiesExternalDesktop("box")).toBe(true);
+    expect(proxiesExternalDesktop("docker")).toBe(false);
   });
 });
