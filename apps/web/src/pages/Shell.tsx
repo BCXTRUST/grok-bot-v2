@@ -98,7 +98,7 @@ import { dictation } from "../lib/dictation";
 import { connectMcpOauth } from "../lib/mcp-connect";
 import { revokePendingAttachmentPreviews } from "../lib/pending-attachments";
 import { markAfterPaint, markOnce } from "../lib/performance";
-import { screenFrameSrc } from "../lib/computer-screen";
+import { latestComputerScreenshotId, screenFrameSrc } from "../lib/computer-screen";
 import { rpc } from "../lib/rpc";
 import {
   activeThreadRuns,
@@ -112,6 +112,7 @@ import {
   reconcileRefreshedThread,
   reduceComputerStatus,
   reduceThreadSnapshot,
+  threadAsksComputerTakeover,
   userHoldsComputerControl,
 } from "../lib/thread-events";
 import { speaker } from "../lib/tts";
@@ -308,6 +309,7 @@ export function ShellPage() {
   activeGroupId.current = groupId;
   const screenRequest = useRef(0);
   const previewRequest = useRef(0);
+  const previewInFlight = useRef<Promise<string | null> | null>(null);
   const screenPreviewRef = useRef<string | null>(null);
   screenPreviewRef.current = screenPreview;
   const contextBot = botMenu ? bots.find((bot) => bot.id === botMenu.botId) : undefined;
@@ -500,25 +502,32 @@ export function ShellPage() {
 
   async function refreshComputerPreview(id: string) {
     if (!computerVisible.current) return null;
+    if (previewInFlight.current) return previewInFlight.current;
     const request = ++previewRequest.current;
-    const frame = await rpc.computer
-      .preview({ botId: id })
-      .catch(() => ({ image: null as string | null, error: "screen request failed" }));
-    if (
-      request !== previewRequest.current ||
-      activeBotId.current !== id ||
-      !computerVisible.current
-    ) {
-      return null;
-    }
-    const src = screenFrameSrc(frame);
-    if (src) {
-      setScreenPreview(src);
-      setComputerError(null);
-    } else if (frame.error && !screenPreviewRef.current) {
-      setComputerError(frame.error);
-    }
-    return src;
+    const work = (async () => {
+      const frame = await rpc.computer
+        .preview({ botId: id })
+        .catch(() => ({ image: null as string | null, error: "screen request failed" }));
+      if (
+        request !== previewRequest.current ||
+        activeBotId.current !== id ||
+        !computerVisible.current
+      ) {
+        return null;
+      }
+      const src = screenFrameSrc(frame);
+      if (src) {
+        setScreenPreview(src);
+        setComputerError(null);
+      } else if (frame.error && !screenPreviewRef.current) {
+        setComputerError(frame.error);
+      }
+      return src;
+    })().finally(() => {
+      previewInFlight.current = null;
+    });
+    previewInFlight.current = work;
+    return work;
   }
 
   async function loadOlderMessages() {
@@ -1388,6 +1397,35 @@ export function ShellPage() {
     return () => window.removeEventListener("keydown", onKey);
   }, [computerOpen]);
 
+  const threadScreenshotId = latestComputerScreenshotId(snapshot?.messages ?? []);
+
+  useEffect(() => {
+    if (!active || !threadScreenshotId) return;
+    const botId = active.id;
+    let cancelled = false;
+    void rpc.artifacts
+      .get({ botId, artifactId: threadScreenshotId })
+      .then((artifact) => {
+        const bytes = decodeArtifactBase64(artifact.contentBase64);
+        const objectUrl = URL.createObjectURL(
+          new Blob([new Uint8Array(bytes)], { type: artifact.mimeType }),
+        );
+        if (cancelled) {
+          URL.revokeObjectURL(objectUrl);
+          return;
+        }
+        setScreenPreview((prev) => {
+          if (prev?.startsWith("blob:")) URL.revokeObjectURL(prev);
+          return objectUrl;
+        });
+        setComputerError(null);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [active?.id, threadScreenshotId]);
+
   useEffect(() => {
     if ((panel !== "computer" && !computerOpen) || !active || computer?.state !== "running") return;
     const ping = () => void rpc.computer.heartbeat({ botId: active.id }).catch(() => undefined);
@@ -1435,7 +1473,9 @@ export function ShellPage() {
 
   const embeddedScreenUrl = embeddableScreenUrl(screenUrl);
   const hasControl = userHoldsComputerControl(computer, active?.id);
-  const takeoverBlocked = computerTakeoverBlocked(computer, snapshot?.run?.status);
+  const takeoverBlocked =
+    computerTakeoverBlocked(computer, snapshot?.run?.status) &&
+    !threadAsksComputerTakeover(snapshot?.messages);
 
   const userName = session.data?.user.name ?? "You";
   const initials = userName
@@ -2572,7 +2612,7 @@ export function ShellPage() {
                   <TeachCaptureOverlay
                     botId={active.id}
                     skill={recordingSkill}
-                    enabled={Boolean(recordingSkill)}
+                    enabled={Boolean(recordingSkill) || hasControl}
                     screenWidth={computer?.screenWidth}
                     screenHeight={computer?.screenHeight}
                   />

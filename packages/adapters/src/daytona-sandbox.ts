@@ -292,6 +292,16 @@ export class DaytonaSandboxProvider implements SandboxProvider {
 
   async observe(computer: ComputerRef, context: AdapterContext): Promise<ComputerObservation> {
     const sandbox = await this.box(computer);
+    if (context.operationId === "preview") {
+      await this.ensureDesktop(sandbox);
+      const screenshot = await sandbox.computerUse.screenshot.takeFullScreen(true);
+      if (!screenshot.screenshot) throw new Error("Daytona screenshot did not contain image data");
+      return computerObservation(decodeBase64Image(screenshot.screenshot), {
+        mimeType: screenshot.screenshot.startsWith("data:image/jpeg") ? "image/jpeg" : "image/png",
+        width: 1280,
+        height: 800,
+      });
+    }
     const layout = await this.resolveLayout(
       sandbox,
       screenSessionKey(context),

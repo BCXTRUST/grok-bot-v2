@@ -1451,6 +1451,12 @@ export function createRouter(deps: RouterDeps) {
             height: observation.height,
           };
         } catch (error) {
+          const fallback = await latestComputerScreenshotArtifact(
+            deps,
+            context.actor,
+            bot.id,
+          ).catch(() => null);
+          if (fallback) return fallback;
           const message = screenConnectErrorMessage(error);
           if (!isComputerScreenUnavailable(error)) {
             console.error("computer preview", error);
@@ -2909,6 +2915,37 @@ function abortAfter(ms: number): { signal: AbortSignal; cancel: () => void } {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), ms);
   return { signal: controller.signal, cancel: () => clearTimeout(timer) };
+}
+
+async function latestComputerScreenshotArtifact(
+  deps: RouterDeps,
+  actor: Actor,
+  botId: string,
+): Promise<{
+  image: string;
+  mimeType: "image/png" | "image/jpeg";
+  width?: number;
+  height?: number;
+} | null> {
+  const row = await deps.prisma.artifact.findFirst({
+    where: {
+      botId,
+      workspaceId: actor.workspaceId,
+      userId: actor.userId,
+      name: { startsWith: "computer-screen" },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+  if (!row?.storageKey) return null;
+  const bytes = await deps.artifacts.get(
+    row.storageKey,
+    computerContext(actor, botId, "preview-fallback"),
+  );
+  if (!bytes.byteLength) return null;
+  return {
+    image: Buffer.from(bytes).toString("base64"),
+    mimeType: row.mimeType.includes("jpeg") ? "image/jpeg" : "image/png",
+  };
 }
 
 function screenConnectErrorMessage(error: unknown): string {

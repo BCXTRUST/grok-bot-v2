@@ -578,4 +578,30 @@ describe("E2B computer backend", () => {
       { id: "9", title: "Chrome" },
     ]);
   });
+
+  it("takes a primary screenshot for watch preview without allocating extra displays", async () => {
+    const command = vi.fn(async () => ({ stdout: "", stderr: "", exitCode: 0 }));
+    const screenshot = vi.fn(async () => new Uint8Array([137, 80, 78, 71]));
+    const desktop = {
+      sandboxId: "preview-box",
+      display: ":0",
+      commands: { run: command },
+      screenshot,
+      getScreenSize: vi.fn(async () => ({ width: 1280, height: 800 })),
+      getCursorPosition: vi.fn(async () => ({ x: 4, y: 8 })),
+      getCurrentWindowId: vi.fn(async () => undefined),
+    } as unknown as Sandbox;
+    const provider = new E2BSandboxProvider("test-key", {
+      create: vi.fn(async () => desktop),
+      connect: vi.fn(async () => desktop),
+      pause: vi.fn(async () => undefined),
+    });
+    const computer = await provider.provision({ botId: "bot-1", homePath: "/unused" }, context);
+    const observation = await provider.observe(computer, { ...context, operationId: "preview" });
+    expect(screenshot).toHaveBeenCalledOnce();
+    expect(observation.image.byteLength).toBeGreaterThan(0);
+    expect(command.mock.calls.some(([value]) => String(value).includes("RAKAZO_SCREEN_INDEX"))).toBe(
+      false,
+    );
+  });
 });

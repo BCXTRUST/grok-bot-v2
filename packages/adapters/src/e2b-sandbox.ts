@@ -393,6 +393,9 @@ export class E2BSandboxProvider implements SandboxProvider {
 
   async observe(computer: ComputerRef, context: AdapterContext): Promise<ComputerObservation> {
     const desktop = await this.box(computer);
+    if (context.operationId === "preview") {
+      return observeE2BDesktop(desktop, context);
+    }
     const layout = await this.resolveLayout(
       desktop,
       screenSessionKey(context),
