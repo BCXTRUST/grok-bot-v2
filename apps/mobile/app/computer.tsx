@@ -1,7 +1,7 @@
 import type { ComputerMode, ComputerReleaseReason } from "@rakazo/contracts";
 import { useLocalSearchParams, useNavigation } from "expo-router";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Modal, Pressable, Text, View } from "react-native";
+import { Modal, Pressable, Text, View, Image } from "react-native";
 import {
   initialWindowMetrics,
   SafeAreaProvider,
@@ -20,6 +20,7 @@ import {
   previewPlaceholder,
   readScreenUrl,
   SCREEN_URL_OPEN_ATTEMPTS,
+  screenFrameSrc,
 } from "../lib/computer";
 
 export default function Computer() {
@@ -28,6 +29,7 @@ export default function Computer() {
   const name = nameParam || "Bot";
   const [computer, setComputer] = useState<ComputerStatus | null>(null);
   const [screenUrl, setScreenUrl] = useState<string | null>(null);
+  const [screenPreview, setScreenPreview] = useState<string | null>(null);
   const [screenError, setScreenError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
@@ -57,11 +59,27 @@ export default function Computer() {
     }
   }
 
+  async function refreshPreview() {
+    if (!botId) return;
+    try {
+      const frame = await rpc<{ image: string | null; mimeType?: string }>("computer/preview", {
+        botId,
+      });
+      const src = screenFrameSrc(frame);
+      if (src) {
+        setScreenPreview(src);
+        setScreenError(null);
+      }
+    } catch {
+      // Keep the last frame. Observe can lag while the bot is using the desktop.
+    }
+  }
+
   async function refresh(options?: { screenAttempts?: number }) {
     if (!botId) return;
     const status = await rpc<ComputerStatus>("computer/status", { botId });
     setComputer(status);
-    await refreshScreen(options?.screenAttempts ?? 1);
+    await Promise.all([refreshScreen(options?.screenAttempts ?? 1), refreshPreview()]);
     setReady(true);
     return status;
   }
@@ -192,6 +210,13 @@ export default function Computer() {
             onError={() =>
               setScreenError("Could not load the desktop. This device cannot reach the screen URL.")
             }
+          />
+        ) : computer?.state === "running" && screenPreview ? (
+          <Image
+            accessibilityLabel="Bot screen preview"
+            source={{ uri: screenPreview }}
+            resizeMode="contain"
+            style={{ width: "100%", height: "100%", backgroundColor: "#000" }}
           />
         ) : (
           <View style={{ flex: 1, alignItems: "center", justifyContent: "center", padding: 16 }}>
@@ -389,6 +414,13 @@ export default function Computer() {
                         "Could not load the desktop. This device cannot reach the screen URL.",
                       )
                     }
+                  />
+                ) : computer?.state === "running" && screenPreview ? (
+                  <Image
+                    accessibilityLabel="Bot screen"
+                    source={{ uri: screenPreview }}
+                    resizeMode="contain"
+                    style={{ width: "100%", height: "100%", backgroundColor: "#000" }}
                   />
                 ) : (
                   <View

@@ -254,6 +254,15 @@ export const appContract = {
     screenUrl: oc
       .input(botId)
       .output(z.object({ url: z.string().nullable(), error: z.string().optional() })),
+    preview: oc.input(botId).output(
+      z.object({
+        image: z.string().nullable(),
+        mimeType: z.enum(["image/png", "image/jpeg"]).optional(),
+        width: z.number().optional(),
+        height: z.number().optional(),
+        error: z.string().optional(),
+      }),
+    ),
     heartbeat: oc.input(botId).output(z.object({ ok: z.literal(true) })),
   },
   mail: {

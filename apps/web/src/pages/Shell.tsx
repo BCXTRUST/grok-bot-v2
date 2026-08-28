@@ -98,6 +98,7 @@ import { dictation } from "../lib/dictation";
 import { connectMcpOauth } from "../lib/mcp-connect";
 import { revokePendingAttachmentPreviews } from "../lib/pending-attachments";
 import { markAfterPaint, markOnce } from "../lib/performance";
+import { screenFrameSrc } from "../lib/computer-screen";
 import { rpc } from "../lib/rpc";
 import {
   activeThreadRuns,
@@ -256,6 +257,7 @@ export function ShellPage() {
   const [runningRoutine, setRunningRoutine] = useState(false);
   const [routineError, setRoutineError] = useState<string | null>(null);
   const [screenUrl, setScreenUrl] = useState<string | null>(null);
+  const [screenPreview, setScreenPreview] = useState<string | null>(null);
   const [computerOpen, setComputerOpen] = useState(false);
   const [computerError, setComputerError] = useState<string | null>(null);
   const [usage, setUsage] = useState<{
@@ -305,6 +307,9 @@ export function ShellPage() {
   const activeGroupId = useRef<string | undefined>(groupId);
   activeGroupId.current = groupId;
   const screenRequest = useRef(0);
+  const previewRequest = useRef(0);
+  const screenPreviewRef = useRef<string | null>(null);
+  screenPreviewRef.current = screenPreview;
   const contextBot = botMenu ? bots.find((bot) => bot.id === botMenu.botId) : undefined;
   const closeBotMenu = useCallback(() => setBotMenu(null), []);
   const updateBotUnread = useCallback((id: string, unread: boolean) => {
@@ -490,8 +495,30 @@ export function ShellPage() {
     }
     setScreenUrl(screen.url);
     if (screen.url) setComputerError(null);
-    else if (screen.error) setComputerError(screen.error);
     return screen.url;
+  }
+
+  async function refreshComputerPreview(id: string) {
+    if (!computerVisible.current) return null;
+    const request = ++previewRequest.current;
+    const frame = await rpc.computer
+      .preview({ botId: id })
+      .catch(() => ({ image: null as string | null, error: "screen request failed" }));
+    if (
+      request !== previewRequest.current ||
+      activeBotId.current !== id ||
+      !computerVisible.current
+    ) {
+      return null;
+    }
+    const src = screenFrameSrc(frame);
+    if (src) {
+      setScreenPreview(src);
+      setComputerError(null);
+    } else if (frame.error && !screenPreviewRef.current) {
+      setComputerError(frame.error);
+    }
+    return src;
   }
 
   async function loadOlderMessages() {
@@ -674,7 +701,9 @@ export function ShellPage() {
       pinnedAroundRef.current = null;
     }
     screenRequest.current += 1;
+    previewRequest.current += 1;
     setScreenUrl(null);
+    setScreenPreview(null);
     expandedHistoryThread.current = null;
     historyEpoch.current += 1;
     const abort = new AbortController();
@@ -1287,13 +1316,22 @@ export function ShellPage() {
 
   useEffect(() => {
     if (panel !== "computer" && !computerOpen) return;
-    if (!active || computer?.state !== "running" || screenUrl) return;
+    if (!active || computer?.state !== "running") return;
+    if (embeddableScreenUrl(screenUrl)) return;
     const botId = active.id;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let lastUrlAttempt = Date.now();
     const pull = async () => {
-      const url = await refreshComputerScreen(botId, true).catch(() => null);
-      if (cancelled || url) return;
+      const now = Date.now();
+      if (!embeddableScreenUrl(screenUrl) && now - lastUrlAttempt > 15_000) {
+        lastUrlAttempt = now;
+        void refreshComputerScreen(botId, true).catch(() => undefined);
+      }
+      if (!embeddableScreenUrl(screenUrl)) {
+        await refreshComputerPreview(botId).catch(() => undefined);
+      }
+      if (cancelled) return;
       timer = setTimeout(() => void pull(), 1500);
     };
     void pull();
@@ -1306,6 +1344,7 @@ export function ShellPage() {
   useEffect(() => {
     setComputerOpen(false);
     setComputerError(null);
+    setScreenPreview(null);
   }, [active?.id]);
 
   useEffect(() => {
@@ -1924,14 +1963,12 @@ export function ShellPage() {
                       This bot runs on this computer, not a Linux desktop. Shell and files use your
                       home folder.
                     </div>
-                  ) : computer?.state === "running" && embeddedScreenUrl ? (
-                    <iframe
+                  ) : computer?.state === "running" && (embeddedScreenUrl || screenPreview) ? (
+                    <LiveDesktopView
+                      embeddedScreenUrl={embeddedScreenUrl}
+                      previewSrc={screenPreview}
                       title="Bot screen preview"
-                      src={embeddedScreenUrl}
-                      sandbox={screenIframeSandbox(embeddedScreenUrl)}
-                      className="h-full w-full border-0 bg-black"
-                      allow="clipboard-read; clipboard-write"
-                      style={{ pointerEvents: "none" }}
+                      interactive={false}
                     />
                   ) : (
                     <div className="grid h-full place-items-center text-sm text-[#6C6C70]">
@@ -2523,17 +2560,13 @@ export function ShellPage() {
                 This bot runs on this computer. There is no separate Linux desktop. Ask it to use
                 the shell; working directories under your home folder are allowed.
               </div>
-            ) : computer?.state === "running" && embeddedScreenUrl ? (
+            ) : computer?.state === "running" && (embeddedScreenUrl || screenPreview) ? (
               <>
-                <iframe
+                <LiveDesktopView
+                  embeddedScreenUrl={embeddedScreenUrl}
+                  previewSrc={screenPreview}
                   title="Bot screen"
-                  src={embeddedScreenUrl}
-                  sandbox={screenIframeSandbox(embeddedScreenUrl)}
-                  className="h-full w-full border-0 bg-black"
-                  allow="clipboard-read; clipboard-write; fullscreen"
-                  style={{
-                    pointerEvents: recordingSkill || !hasControl ? "none" : "auto",
-                  }}
+                  interactive={hasControl && !recordingSkill}
                 />
                 {active ? (
                   <TeachCaptureOverlay
@@ -4144,6 +4177,42 @@ function DeleteRoutineDialog({
       </div>
     </div>
   );
+}
+
+function LiveDesktopView({
+  embeddedScreenUrl,
+  previewSrc,
+  title,
+  interactive,
+}: {
+  embeddedScreenUrl: string | null;
+  previewSrc: string | null;
+  title: string;
+  interactive: boolean;
+}) {
+  if (embeddedScreenUrl) {
+    return (
+      <iframe
+        title={title}
+        src={embeddedScreenUrl}
+        sandbox={screenIframeSandbox(embeddedScreenUrl)}
+        className="h-full w-full border-0 bg-black"
+        allow="clipboard-read; clipboard-write; fullscreen"
+        style={{ pointerEvents: interactive ? "auto" : "none" }}
+      />
+    );
+  }
+  if (previewSrc) {
+    return (
+      <img
+        alt={title}
+        src={previewSrc}
+        className="h-full w-full bg-black object-contain"
+        draggable={false}
+      />
+    );
+  }
+  return null;
 }
 
 function embeddableScreenUrl(url: string | null): string | null {
