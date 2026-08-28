@@ -285,6 +285,38 @@ describe("E2B computer backend", () => {
     expect(streamStop).toHaveBeenCalled();
   });
 
+  it("still exposes a watch URL when x11vnc cannot switch to view-only", async () => {
+    const command = vi.fn(async (value: string) => {
+      if (value.includes("RAKAZO_SCREEN_INDEX=")) {
+        return { stdout: "RAKAZO_SCREEN_INDEX=0\n", stderr: "", exitCode: 0 };
+      }
+      if (value === "x11vnc -R viewonly") throw new Error("viewonly remote not supported");
+      return { stdout: "", stderr: "", exitCode: 0 };
+    });
+    const streamStop = vi.fn(async () => undefined);
+    const desktop = {
+      sandboxId: "e2b-watch-box",
+      display: ":0",
+      getHost: (port: number) => `${port}-desktop.test`,
+      commands: { run: command },
+      stream: {
+        start: vi.fn(async () => undefined),
+        stop: streamStop,
+        getAuthKey: () => "screen-key",
+        getUrl: vi.fn(() => "https://desktop.test/vnc.html"),
+      },
+    } as unknown as Sandbox;
+    const provider = new E2BSandboxProvider("test-key", {
+      create: vi.fn(async () => desktop),
+      connect: vi.fn(async () => desktop),
+      pause: vi.fn(async () => undefined),
+    });
+    const computer = await provider.provision({ botId: "bot-1", homePath: "/unused" }, context);
+    const screen = await provider.connectScreen(computer, { view: "stream" }, context);
+    expect(screen.url).toBe("https://desktop.test/vnc.html");
+    expect(streamStop).not.toHaveBeenCalled();
+  });
+
   it("gives Team bots distinct E2B screens and shared files", async () => {
     const files = new Map<string, Uint8Array>();
     const screenSlots = new Map<string, number>();
