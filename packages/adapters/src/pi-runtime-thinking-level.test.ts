@@ -132,8 +132,8 @@ describe("Pi agent thinking level", () => {
       id: "stealth/ox-alpha",
       provider: "openrouter",
       reasoning: true,
-      contextWindow: 16_384,
-      maxTokens: 4_096,
+      contextWindow: 131_072,
+      maxTokens: 16_384,
     });
     // Unknown OpenRouter PI_DEFAULT_MODEL must not force thinking off (#114).
     expect(levels).toEqual(["medium", "medium"]);

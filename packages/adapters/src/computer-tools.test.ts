@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { computerObservation } from "./computer-support.js";
-import { observationToolResult, parseComputerActions } from "./computer-tools.js";
+import { observationScreenshot, observationToolResult, parseComputerActions } from "./computer-tools.js";
 
 describe("computer tool bridge", () => {
   it("normalizes a bounded batch into provider-neutral actions", () => {
@@ -36,6 +36,11 @@ describe("computer tool bridge", () => {
       expect.objectContaining({ type: "text" }),
       { type: "image", data: "AQID", mimeType: "image/png" },
     ]);
+    expect(observationScreenshot(result)).toEqual({
+      bytes: Uint8Array.from([1, 2, 3]),
+      mimeType: "image/png",
+      name: "computer-screen.png",
+    });
   });
 
   it("does not resend an unchanged screenshot", () => {
