@@ -35,7 +35,7 @@ describe("extra display ports", () => {
   it("uses a locked sandbox registry for cross-process screen assignment", () => {
     const allocate = allocateExtraDisplayCommand("writer", "run-2:2");
     const release = releaseExtraDisplayCommand("writer", "run-2:2");
-    expect(allocate).toContain("flock 9");
+    expect(allocate).toContain("flock -w 5 9");
     expect(allocate).not.toContain("writer");
     expect(release).toContain("RAKAZO_SCREEN_RELEASE=stale");
     expect(release.indexOf("pkill -f")).toBeLessThan(release.indexOf('rm -f "$slot"'));
@@ -70,7 +70,8 @@ describe("extra display ports", () => {
 
   it("starts view-only noVNC on the primary display ports", () => {
     const command = ensurePrimaryViewCommand(extraDisplayLayout(0, ":0"), "secret");
-    expect(command).toContain("timeout 0.2");
+    expect(command).toContain("s.settimeout(0.2)");
+    expect(command).toContain("flock -w 5 8");
     expect(command).not.toContain("pkill -f 'novnc_proxy");
     expect(() => ensurePrimaryViewCommand(extraDisplayLayout(1, ":0"), "secret")).toThrow(
       /primary display/,
