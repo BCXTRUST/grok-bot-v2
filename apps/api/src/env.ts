@@ -1,4 +1,9 @@
-import { resolveAuthSecret, resolveEncryptionKey, resolveSupervisorToken } from "@rakazo/core";
+import {
+  DEFAULT_OPENROUTER_MODEL_ID,
+  resolveAuthSecret,
+  resolveEncryptionKey,
+  resolveSupervisorToken,
+} from "@rakazo/core";
 
 export interface AppEnv {
   databaseUrl: string;
@@ -67,7 +72,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     pipedreamEnvironment:
       source.PIPEDREAM_ENVIRONMENT === "production" ? "production" : "development",
     defaultProvider: source.PI_DEFAULT_PROVIDER ?? "openrouter",
-    defaultModel: source.PI_DEFAULT_MODEL ?? "deepseek/deepseek-v4-flash-0731",
+    defaultModel: source.PI_DEFAULT_MODEL ?? DEFAULT_OPENROUTER_MODEL_ID,
     wakeupDriver: source.WAKEUP_DRIVER ?? "graphile",
     mcpStdioEnabled: source.MCP_STDIO_ENABLED === "true",
     mcpStdioAllowedCommands: (source.MCP_STDIO_ALLOWED_COMMANDS ?? "")

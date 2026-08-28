@@ -1,4 +1,5 @@
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
+import { DEFAULT_OPENROUTER_MODEL_ID } from "@rakazo/core";
 import type { ModelOAuthSignInMode } from "@rakazo/contracts";
 import { LOCAL_PROVIDER_ID, registerLocalProvider } from "./pi-local-provider.js";
 import { SUBSCRIPTION_SIGN_IN_PROVIDERS } from "./pi-oauth.js";
@@ -63,6 +64,21 @@ function buildPiCatalog(): PiCatalogEntry[] {
 
   const envDefaultModel = process.env.PI_DEFAULT_MODEL?.trim();
   const envDefaultProvider = process.env.PI_DEFAULT_PROVIDER?.trim() || "openrouter";
+  if (
+    envDefaultProvider === "openrouter" &&
+    !models.getModel("openrouter", DEFAULT_OPENROUTER_MODEL_ID) &&
+    envDefaultModel !== DEFAULT_OPENROUTER_MODEL_ID
+  ) {
+    entries.unshift({
+      provider: "openrouter",
+      providerName: "OpenRouter",
+      id: DEFAULT_OPENROUTER_MODEL_ID,
+      label: "Grok 4.6",
+      billing: "Uses your OpenRouter API key. Rakazo does not pay for model usage.",
+      auth: "api-key",
+      subscription: false,
+    });
+  }
   if (
     envDefaultProvider === "openrouter" &&
     envDefaultModel &&

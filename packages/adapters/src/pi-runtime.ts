@@ -9,7 +9,7 @@ import type {
   AgentToolExecutionResult,
   ConnectorTool,
 } from "@rakazo/adapter-kit";
-import { COMPUTER_AUTONOMY_INSTRUCTION } from "@rakazo/core";
+import { COMPUTER_AUTONOMY_INSTRUCTION, DEFAULT_OPENROUTER_MODEL_ID } from "@rakazo/core";
 import { builtinAgentTools, DELEGATION_TOOL_NAMES } from "./builtin-tools.js";
 import { PiRuntimeCredentialStore, toOAuthCredential } from "./pi-credentials.js";
 import { registerLocalProvider } from "./pi-local-provider.js";
@@ -73,7 +73,7 @@ export class PiAgentRuntime implements AgentRuntime {
         const envDefaultProvider = process.env.PI_DEFAULT_PROVIDER?.trim() || "openrouter";
         const modelId =
           request.model.id === "scripted"
-            ? envDefaultModel || "deepseek/deepseek-v4-flash-0731"
+            ? envDefaultModel || DEFAULT_OPENROUTER_MODEL_ID
             : request.model.id.trim();
         const models = modelsForRequest(request, provider);
         let model = models.getModel(provider, modelId);
@@ -247,10 +247,10 @@ function configuredOpenRouterModel(id: string): Model<"openai-completions"> {
     provider: "openrouter",
     baseUrl: "https://openrouter.ai/api/v1",
     reasoning: true,
-    input: ["text"],
+    input: ["text", "image"],
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-    contextWindow: 16_384,
-    maxTokens: 4_096,
+    contextWindow: 131_072,
+    maxTokens: 16_384,
   };
 }
 

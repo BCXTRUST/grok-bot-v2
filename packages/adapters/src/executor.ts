@@ -28,6 +28,7 @@ import {
   appendToolCallSegment,
   assertTransition,
   blocksToAgentHistoryText,
+  DEFAULT_OPENROUTER_MODEL_ID,
   COMPUTER_AUTONOMY_INSTRUCTION,
   connectorKindFromToolName,
   containsSecret,
@@ -41,6 +42,7 @@ import {
   nextFence,
   prepareSandboxShellCommand,
   promptInvokesSkill,
+  resolveOpenRouterModelId,
   redactSecrets,
   resolveActionApproval,
   sandboxCommandTimeoutMs,
@@ -101,7 +103,7 @@ import {
   resolveBotWorkspacePath,
   teamBotWorkspaceDirectory,
 } from "./computer-support.js";
-import { observationToolResult, parseComputerActions } from "./computer-tools.js";
+import { observationScreenshot, observationToolResult, parseComputerActions } from "./computer-tools.js";
 import { checkpointAndRecordComputerWorkspace } from "./computer-workspace.js";
 import { handoffToGroupBot, loadGroupContext } from "./group-handoff.js";
 import {
@@ -274,12 +276,11 @@ export function createRunExecutor(deps: ExecutorDeps) {
         credential?.provider ??
         settings?.defaultModelProvider ??
         (deps.deploymentModelKey ? "openrouter" : "scripted");
-      const id =
+      const id = resolveOpenRouterModelId(
         credential?.defaultModel ??
-        settings?.defaultModelId ??
-        (deps.deploymentModelKey
-          ? (process.env.PI_DEFAULT_MODEL ?? "deepseek/deepseek-v4-flash-0731")
-          : "scripted");
+          settings?.defaultModelId ??
+          (deps.deploymentModelKey ? (process.env.PI_DEFAULT_MODEL ?? DEFAULT_OPENROUTER_MODEL_ID) : "scripted"),
+      );
       return {
         provider,
         id,
@@ -785,12 +786,32 @@ export function createRunExecutor(deps: ExecutorDeps) {
           pendingProgress = "";
           lastProgressAt = Date.now();
         };
-        const formatObservation = (
+        const formatObservation = async (
           observation: Awaited<ReturnType<SandboxProvider["observe"]>>,
           note?: string,
         ) => {
           const result = observationToolResult(observation, note, lastComputerFrameId);
           lastComputerFrameId = observation.frameId;
+          const shot = observationScreenshot(result);
+          if (shot && deps.artifacts) {
+            try {
+              const attached = await attachWorkspaceFileToThread(
+                { prisma: deps.prisma, artifacts: deps.artifacts },
+                {
+                  workspaceId: run.workspaceId,
+                  userId: run.userId,
+                  botId: bot.id,
+                  runId,
+                  filePath: shot.name,
+                  bytes: shot.bytes,
+                  operationId: runId,
+                },
+              );
+              await publishMessage(deps, run, "bot", [attached.block]);
+            } catch (error) {
+              console.error("computer screenshot attach", error);
+            }
+          }
           return result;
         };
 
@@ -1639,7 +1660,9 @@ export function createRunExecutor(deps: ExecutorDeps) {
               tools,
               model: {
                 provider: credential?.provider ?? settings?.defaultModelProvider ?? "scripted",
-                id: credential?.defaultModel ?? settings?.defaultModelId ?? "scripted",
+                id: resolveOpenRouterModelId(
+                  credential?.defaultModel ?? settings?.defaultModelId ?? "scripted",
+                ),
                 apiKey: resolved.oauth ? undefined : resolved.apiKey,
                 baseUrl: resolved.baseUrl,
                 oauth: resolved.oauth

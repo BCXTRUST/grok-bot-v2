@@ -108,6 +108,20 @@ export function observationToolResult(
   };
 }
 
+export function observationScreenshot(
+  result: AgentToolExecutionResult,
+): { bytes: Uint8Array; mimeType: string; name: string } | undefined {
+  const image = result.content.find((part) => part.type === "image");
+  if (!image || image.type !== "image" || !image.data) return undefined;
+  const mimeType = image.mimeType || "image/png";
+  const ext = mimeType.includes("jpeg") ? "jpg" : mimeType.includes("webp") ? "webp" : "png";
+  return {
+    bytes: Uint8Array.from(Buffer.from(image.data, "base64")),
+    mimeType,
+    name: `computer-screen.${ext}`,
+  };
+}
+
 function finiteCoordinate(value: unknown, name: string) {
   const number = Math.round(Number(value));
   if (!Number.isFinite(number) || number < 0 || number > 100_000) {
