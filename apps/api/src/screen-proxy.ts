@@ -9,6 +9,18 @@ export interface ScreenProxyOptions {
   proxyExternal?: boolean;
 }
 
+/** Same-origin iframe for remote HTTPS desktops (E2B, Box, Daytona). Loopback Docker stays on the local HMAC path. */
+export function shouldProxyComputerScreen(url: string, kind: string): boolean {
+  if (kind === "docker" || kind === "desktop") return false;
+  try {
+    const host = new URL(url).hostname;
+    if (host === "127.0.0.1" || host === "localhost" || host === "::1") return false;
+  } catch {
+    return false;
+  }
+  return true;
+}
+
 export function addScreenProxyCapability(
   url: string,
   secret: string,
