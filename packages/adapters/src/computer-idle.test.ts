@@ -119,6 +119,19 @@ describe("e2b create options", () => {
     });
     expect(launched).toEqual(["google-chrome", "firefox"]);
   });
+
+  it("does not fall back to Google when no browser binary launches", async () => {
+    const opened: string[] = [];
+    await openDesktopBrowser({
+      launch: async () => {
+        throw new Error("missing");
+      },
+      open: async (fileOrUrl) => {
+        opened.push(fileOrUrl);
+      },
+    });
+    expect(opened).toEqual(["about:blank"]);
+  });
 });
 
 function idleHarness(options: { exportError?: Error } = {}) {

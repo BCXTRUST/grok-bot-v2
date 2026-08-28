@@ -97,14 +97,14 @@ export async function openDesktopBrowser(desktop: {
 }): Promise<void> {
   for (const app of E2B_BROWSER_APPS) {
     try {
-      await desktop.launch(app);
+      await desktop.launch(app, "about:blank");
       await exposeBrowserDesktop(desktop);
       return;
     } catch {
       // try the next installed browser
     }
   }
-  await desktop.open("https://www.google.com").catch(() => undefined);
+  await desktop.open("about:blank").catch(() => undefined);
   await exposeBrowserDesktop(desktop);
 }
 

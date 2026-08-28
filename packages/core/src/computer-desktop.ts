@@ -118,6 +118,12 @@ export function isFileManagerLabel(label: string): boolean {
   return /nautilus|thunar|pcmanfm|nemo|caja|dolphin|\bfiles\b|file manager/i.test(label);
 }
 
+export function looksLikeCaptchaWall(text: string): boolean {
+  return /i['’]?m not a robot|recaptcha|hcaptcha|unusual traffic|google\.com\/sorry|checking your browser/i.test(
+    text,
+  );
+}
+
 export function listVisibleWindowsCommand(display: string): string {
   return [
     `focus=$(DISPLAY=${display} xdotool getwindowfocus 2>/dev/null || true)`,
@@ -153,4 +159,4 @@ export function parseVisibleWindows(
 }
 
 export const COMPUTER_AUTONOMY_INSTRUCTION =
-  "Never ask the user to close windows, click the desktop, or tell you how to proceed. Close overlapping file-manager windows yourself, raise the browser, type into the address bar, and keep working until the task is done. Only request_takeover for CAPTCHA, password entry, or payment.";
+  "Never ask the user to close windows, click the desktop, or tell you how to proceed. Close overlapping file-manager windows yourself. Open the task's exact http(s) URL with open_path — do not start at Google Search, google.com/sorry, or a news query. If the screen shows a CAPTCHA, recaptcha, or unusual-traffic check, call request_takeover immediately, then open_path the assigned URL so work continues off Google. Raise the browser, type into the address bar, and keep working until the task is done. Only request_takeover for CAPTCHA, password entry, or payment.";

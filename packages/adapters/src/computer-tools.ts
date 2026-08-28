@@ -3,6 +3,7 @@ import type {
   ComputerAction,
   ComputerObservation,
 } from "@rakazo/adapter-kit";
+import { looksLikeCaptchaWall } from "@rakazo/core";
 
 export function parseComputerActions(value: unknown): ComputerAction[] {
   if (!Array.isArray(value) || value.length === 0) {
@@ -77,12 +78,21 @@ export function observationToolResult(
         .map((window) => `${window.title || window.id}${window.focused ? " (focused)" : ""}`)
         .join("; ")}`
     : "";
+  const wallText = [
+    observation.activeWindow?.title,
+    ...(observation.windows ?? []).map((window) => window.title),
+  ]
+    .filter(Boolean)
+    .join("\n");
+  const captchaLine = looksLikeCaptchaWall(wallText)
+    ? "\nCAPTCHA or bot-check is on screen. Call request_takeover, then open_path with the task's exact http(s) URL. Do not stay on Google."
+    : "";
   return {
     kind: "agent_tool_result",
     content: [
       {
         type: "text",
-        text: `${note}${unchanged ? " (screen unchanged)" : ""}${windowLine}\n${JSON.stringify(details)}`,
+        text: `${note}${unchanged ? " (screen unchanged)" : ""}${windowLine}${captchaLine}\n${JSON.stringify(details)}`,
       },
       ...(unchanged
         ? []
