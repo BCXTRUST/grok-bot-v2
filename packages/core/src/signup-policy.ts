@@ -34,6 +34,8 @@ export function resolveSignupPolicy(input: {
   }
   return {
     open: signupsOpen(input.envEnabled),
+    // A boot-created settings row is the live lock. Env allowlists only apply
+    // when that row does not exist yet (fresh tests / first process start).
     allowlist: parseAllowlist(input.envAllowlist),
   };
 }

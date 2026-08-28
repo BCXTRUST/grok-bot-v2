@@ -44,4 +44,14 @@ describe("signup policy", () => {
       }),
     ).toEqual({ open: true, allowlist: ["@company.com"] });
   });
+
+  it("does not keep an env allowlist once stored settings exist", () => {
+    expect(
+      resolveSignupPolicy({
+        envEnabled: "true",
+        envAllowlist: "@rakazo.test,owner@example.com",
+        stored: { signupsEnabled: true, signupAllowlist: "" },
+      }),
+    ).toEqual({ open: true, allowlist: [] });
+  });
 });
