@@ -131,6 +131,10 @@ export function extraDisplayLayout(index: number, primaryDisplay: string): Extra
   };
 }
 
+function tcpListenReadyCommand(port: number): string {
+  return `timeout 0.2 bash -c ${shellQuote(`echo >/dev/tcp/127.0.0.1/${port}`)} >/dev/null 2>&1`;
+}
+
 /** View-only noVNC for the vendor primary display when the SDK stream URL is missing. */
 export function ensurePrimaryViewCommand(layout: ExtraDisplayLayout, viewPassword: string): string {
   if (!layout.isPrimary) {
@@ -145,7 +149,7 @@ export function ensurePrimaryViewCommand(layout: ExtraDisplayLayout, viewPasswor
     "exec 8>/tmp/rakazo/screen-primary.lock",
     "flock 8",
     `if [ -s ${shellQuote(passwordFile)} ]; then view_password=$(cat ${shellQuote(passwordFile)}); else umask 077; view_password=${shellQuote(viewPassword)}; printf %s "$view_password" >${shellQuote(passwordFile)}; fi`,
-    `if xdpyinfo -display ${layout.display} >/dev/null 2>&1 && (echo >/dev/tcp/127.0.0.1/${layout.viewVncPort}) >/dev/null 2>&1 && (echo >/dev/tcp/127.0.0.1/${layout.viewPort}) >/dev/null 2>&1; then printf 'RAKAZO_SCREEN_PASSWORD=%s\\n' "$view_password"; exit 0; fi`,
+    `if xdpyinfo -display ${layout.display} >/dev/null 2>&1 && ${tcpListenReadyCommand(layout.viewVncPort)} && ${tcpListenReadyCommand(layout.viewPort)}; then printf 'RAKAZO_SCREEN_PASSWORD=%s\\n' "$view_password"; exit 0; fi`,
     `xdpyinfo -display ${layout.display} >/dev/null 2>&1 || exit 1`,
     `pkill -f '^x11vnc .* -rfbport ${layout.viewVncPort}' || true`,
     `pkill -f '^/usr/bin/python3 .*websockify.*${layout.viewPort}' || true`,
@@ -159,7 +163,7 @@ export function ensurePrimaryViewCommand(layout: ExtraDisplayLayout, viewPasswor
     `else`,
     `  exit 1`,
     `fi`,
-    `for i in $(seq 1 50); do if (echo >/dev/tcp/127.0.0.1/${layout.viewVncPort}) >/dev/null 2>&1 && (echo >/dev/tcp/127.0.0.1/${layout.viewPort}) >/dev/null 2>&1; then printf 'RAKAZO_SCREEN_PASSWORD=%s\\n' "$view_password"; exit 0; fi; sleep 0.1; done`,
+    `for i in $(seq 1 50); do if ${tcpListenReadyCommand(layout.viewVncPort)} && ${tcpListenReadyCommand(layout.viewPort)}; then printf 'RAKAZO_SCREEN_PASSWORD=%s\\n' "$view_password"; exit 0; fi; sleep 0.1; done`,
     "exit 1",
   ].join("\n");
 }
