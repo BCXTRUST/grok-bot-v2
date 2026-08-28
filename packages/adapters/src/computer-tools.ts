@@ -85,7 +85,7 @@ export function observationToolResult(
     .filter(Boolean)
     .join("\n");
   const captchaLine = looksLikeCaptchaWall(wallText)
-    ? "\nCAPTCHA or bot-check is on screen. Call request_takeover, then open_path with the task's exact http(s) URL. Do not stay on Google."
+    ? "\nCAPTCHA or bot-check is on screen. Do not wait there. Leave with open_path to a non-Google http(s) URL for the user's request. request_takeover only if the destination site is blocked."
     : "";
   return {
     kind: "agent_tool_result",
