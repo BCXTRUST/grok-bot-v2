@@ -132,7 +132,7 @@ export function extraDisplayLayout(index: number, primaryDisplay: string): Extra
 }
 
 function tcpListenReadyCommand(port: number): string {
-  return `timeout 0.2 bash -c ${shellQuote(`echo >/dev/tcp/127.0.0.1/${port}`)} >/dev/null 2>&1`;
+  return `python3 -c 'import socket,sys;s=socket.socket();s.settimeout(0.2);s.connect(("127.0.0.1",int(sys.argv[1])))' ${port} >/dev/null 2>&1`;
 }
 
 /** View-only noVNC for the vendor primary display when the SDK stream URL is missing. */

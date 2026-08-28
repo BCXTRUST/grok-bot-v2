@@ -70,7 +70,7 @@ describe("extra display ports", () => {
 
   it("starts view-only noVNC on the primary display ports", () => {
     const command = ensurePrimaryViewCommand(extraDisplayLayout(0, ":0"), "secret");
-    expect(command).toContain("timeout 0.2");
+    expect(command).toContain("s.settimeout(0.2)");
     expect(command).not.toContain("pkill -f 'novnc_proxy");
     expect(() => ensurePrimaryViewCommand(extraDisplayLayout(1, ":0"), "secret")).toThrow(
       /primary display/,
