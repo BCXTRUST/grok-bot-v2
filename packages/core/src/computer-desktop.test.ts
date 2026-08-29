@@ -9,6 +9,7 @@ import {
   openHttpUrlCommand,
   openPathDesktopCommand,
   parseVisibleWindows,
+  refuseBrowserHuntShell,
 } from "./computer-desktop.js";
 
 describe("computer desktop window helpers", () => {
@@ -62,5 +63,15 @@ describe("computer desktop window helpers", () => {
     expect(looksLikeCaptchaWall("https://www.google.com/sorry/index?q=top+news")).toBe(true);
     expect(looksLikeCaptchaWall("I'm not a robot")).toBe(true);
     expect(looksLikeCaptchaWall("Example Domain")).toBe(false);
+  });
+
+  it("stops shell from hunting for browsers instead of using the screen", () => {
+    expect(
+      refuseBrowserHuntShell(
+        "which firefox chromium google-chrome google-chrome-stable brave-browser 2>/dev/null; ls /usr",
+      ),
+    ).toMatch(/already has a browser/i);
+    expect(refuseBrowserHuntShell("command -v google-chrome")).toMatch(/already has a browser/i);
+    expect(refuseBrowserHuntShell("ls notes")).toBeUndefined();
   });
 });
