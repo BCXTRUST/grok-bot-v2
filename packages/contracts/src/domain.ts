@@ -184,6 +184,29 @@ export const CreateScratchpadItemInput = z.object({
 export const TaughtSkillStatusSchema = z.enum(["recording", "drafting", "draft", "saved"]);
 export type TaughtSkillStatus = z.infer<typeof TaughtSkillStatusSchema>;
 
+export const SiteLoginShareSchema = z.enum(["workspace", "creator"]);
+export type SiteLoginShare = z.infer<typeof SiteLoginShareSchema>;
+
+export const SiteLoginSchema = z.object({
+  id: Id,
+  host: z.string(),
+  url: z.string(),
+  username: z.string(),
+  share: SiteLoginShareSchema,
+  createdByBotId: Id.nullable(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+export type SiteLogin = z.infer<typeof SiteLoginSchema>;
+
+export const UpsertSiteLoginInput = z.object({
+  botId: Id,
+  site: z.string().min(1).max(2_048),
+  username: z.string().min(1).max(200),
+  password: z.string().min(1).max(500),
+  share: SiteLoginShareSchema.optional(),
+});
+
 export const SkillPlaybookSchema = z.object({
   whenToUse: z.string(),
   inputs: z.array(z.string()),

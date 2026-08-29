@@ -377,7 +377,7 @@ describe("compactHistory", () => {
     expect(request.tools).toEqual([]);
     expect(request.model).toEqual({
       provider: "openrouter",
-      id: "deepseek/deepseek-v4-flash-0731",
+      id: "google/gemini-2.5-flash",
       apiKey: "openrouter-key",
     });
     expect(request.prompt).toContain("message 0");
@@ -765,15 +765,15 @@ describe("compactHistory", () => {
     });
   });
 
-  it("uses PI_DEFAULT_MODEL as the platform default summarizer when it is configured", async () => {
+  it("uses PI_AUX_MODEL as the platform default summarizer when it is configured", async () => {
     const harness = compactionHarness({ deploymentModelKey: "openrouter-key" });
-    const previous = process.env.PI_DEFAULT_MODEL;
-    process.env.PI_DEFAULT_MODEL = "moonshotai/kimi-k2";
+    const previous = process.env.PI_AUX_MODEL;
+    process.env.PI_AUX_MODEL = "moonshotai/kimi-k2";
     try {
       await compactHistory(harness.deps, "thread-1");
     } finally {
-      if (previous === undefined) delete process.env.PI_DEFAULT_MODEL;
-      else process.env.PI_DEFAULT_MODEL = previous;
+      if (previous === undefined) delete process.env.PI_AUX_MODEL;
+      else process.env.PI_AUX_MODEL = previous;
     }
 
     const [request] = harness.runtime.run.mock.calls[0]!;

@@ -125,7 +125,7 @@ export class PiAgentRuntime implements AgentRuntime {
             systemPrompt:
               request.instructions ||
               (toolDefs.some((tool) => tool.name === "computer_observe")
-                ? `You are a Rakazo bot with a real computer. Use computer_observe and computer_act to operate its visible desktop, including browsers and installed applications. Open web pages with open_path and an http(s) URL so the browser is raised over file-manager windows. If a file manager still covers the page, close it, then re-observe before clicking. Use shell and the file tools for precise terminal and filesystem work. The user may interact with the same desktop while you run, so re-observe when the screen may have changed. Be concise. ${COMPUTER_AUTONOMY_INSTRUCTION}`
+                ? `You are a Rakazo bot with a real computer. Use computer_observe and computer_act to operate its visible desktop, including browsers and installed applications. Open web pages with open_path and an http(s) URL so the browser is raised over file-manager windows. If a file manager still covers the page, close it, then act. Observe once, then act or open_path; do not observe twice in a row. Use shell and the file tools for precise terminal and filesystem work. Be concise. ${COMPUTER_AUTONOMY_INSTRUCTION}`
                 : "You are a Rakazo bot with a persistent sandbox filesystem and shell. Be concise."),
             model,
             thinkingLevel: thinkingLevelFor(model),
@@ -332,6 +332,9 @@ export function describeToolActivity(toolName: string, args: unknown): string {
   if (toolName === "add_mcp_server") return `Connecting MCP server: ${detail(record.name)}`;
   if (toolName === "computer_observe") return "Looking at the screen";
   if (toolName === "computer_act") return "Operating the computer";
+  if (toolName === "vault_fill") return "Signing in";
+  if (toolName === "vault_list") return "Checking saved logins";
+  if (toolName === "vault_put") return "Saving a login";
   if (toolName === "run_subagent") return `Delegating to helper: ${detail(record.name)}`;
   if (toolName === "remember") return "Saving a note to memory";
   const mcp = toolName.match(/^mcp__(.+?)__(.+)$/);

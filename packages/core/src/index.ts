@@ -20,6 +20,7 @@ export * from "./search.js";
 export * from "./secrets-guard.js";
 export * from "./self-update.js";
 export * from "./signup-policy.js";
+export * from "./site-login-host.js";
 export * from "./speech-text.js";
 export * from "./teach-playbook.js";
 export * from "./teach-recording.js";

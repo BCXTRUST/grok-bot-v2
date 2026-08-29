@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { computerObservation } from "./computer-support.js";
-import { observationScreenshot, observationToolResult, parseComputerActions } from "./computer-tools.js";
+import {
+  MAX_OBSERVE_WITHOUT_ACT,
+  OBSERVE_WITHOUT_ACT_ERROR,
+  observationScreenshot,
+  observationToolResult,
+  parseComputerActions,
+  shouldAttachObservationToThread,
+  shouldRefuseObserve,
+} from "./computer-tools.js";
 
 describe("computer tool bridge", () => {
   it("normalizes a bounded batch into provider-neutral actions", () => {
@@ -82,5 +90,26 @@ describe("computer tool bridge", () => {
     const result = observationToolResult(observation);
     const text = result.content.find((part) => part.type === "text");
     expect(text && "text" in text ? text.text : "").toContain("Leave with open_path");
+  });
+
+  it("caps observe-without-act and skips duplicate chat screenshots", () => {
+    expect(MAX_OBSERVE_WITHOUT_ACT).toBe(2);
+    expect(shouldRefuseObserve(0)).toBe(false);
+    expect(shouldRefuseObserve(2)).toBe(true);
+    expect(OBSERVE_WITHOUT_ACT_ERROR).toMatch(/computer_act or open_path/);
+    expect(
+      shouldAttachObservationToThread({
+        unchanged: false,
+        source: "observe",
+        attachedObserveInStreak: true,
+      }),
+    ).toBe(false);
+    expect(
+      shouldAttachObservationToThread({
+        unchanged: false,
+        source: "act",
+        attachedObserveInStreak: true,
+      }),
+    ).toBe(true);
   });
 });

@@ -21,8 +21,9 @@ describe("createBackgroundJobHandlers", () => {
     const secretStore = {} as unknown as EncryptedSecretStore;
     const memoryProviders = { resolve: vi.fn(async () => null) };
     const resolveModel = vi.fn();
+    const resolveAuxModel = vi.fn();
     const handlers = createBackgroundJobHandlers({
-      executor: { resolveModel } as unknown as ReturnType<typeof createRunExecutor>,
+      executor: { resolveModel, resolveAuxModel } as unknown as ReturnType<typeof createRunExecutor>,
       prisma,
       sandbox: {} as unknown as SandboxProvider,
       home: {} as unknown as AgentHomeStore,
@@ -45,6 +46,7 @@ describe("createBackgroundJobHandlers", () => {
         memoryProviders,
         deploymentModelKey: "openrouter-key",
         resolveModel,
+        resolveAuxModel,
       },
       "thread-1",
     );
@@ -64,7 +66,15 @@ describe("createBackgroundJobHandlers", () => {
       executor.resolveModel({ userId: "user-1", workspaceId: "workspace-1" }),
     ).resolves.toEqual({
       provider: "openrouter",
-      id: "deepseek/deepseek-v4-flash-0731",
+      id: "x-ai/grok-4.6",
+      apiKey: "deployment-key",
+      oauth: undefined,
+    });
+    await expect(
+      executor.resolveAuxModel({ userId: "user-1", workspaceId: "workspace-1" }),
+    ).resolves.toEqual({
+      provider: "openrouter",
+      id: "google/gemini-2.5-flash",
       apiKey: "deployment-key",
       oauth: undefined,
     });

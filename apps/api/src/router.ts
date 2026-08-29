@@ -36,6 +36,7 @@ import {
   isScratchpadStatus,
   listPiCatalog,
   listScratchpadItems,
+  listSiteLogins,
   McpOAuthBroker,
   type MemoryProviderResolver,
   mapScratchpadItem,
@@ -48,6 +49,7 @@ import {
   provisionComputer,
   type RemoteConnectorDependencies,
   releaseComputerExecutionLease,
+  removeSiteLogin,
   resolveBotWorkspacePath,
   sanitizeComposioError,
   savePushToken,
@@ -60,6 +62,7 @@ import {
   toComputerRef,
   toStringRecord,
   touchRunningComputer,
+  upsertSiteLogin,
   verifyMcpInstall,
 } from "@rakazo/adapters";
 import type { Auth } from "@rakazo/auth";
@@ -1834,6 +1837,62 @@ export function createRouter(deps: RouterDeps) {
         });
         if (!existing) throw new IsolationError();
         await deps.prisma.scratchpadItem.delete({ where: { id: existing.id } });
+        return { ok: true as const };
+      }),
+    },
+    vault: {
+      list: authed.vault.list.handler(async ({ context, input }) => {
+        await repos.getBot(context.actor, input.botId);
+        return listSiteLogins(
+          { prisma: deps.prisma },
+          {
+            workspaceId: context.actor.workspaceId,
+            userId: context.actor.userId,
+            botId: input.botId,
+            includeOrphans: true,
+          },
+        );
+      }),
+      upsert: authed.vault.upsert.handler(async ({ context, input }) => {
+        await repos.getBot(context.actor, input.botId);
+        const result = await upsertSiteLogin(
+          { prisma: deps.prisma, secrets: deps.secrets },
+          {
+            workspaceId: context.actor.workspaceId,
+            userId: context.actor.userId,
+            botId: input.botId,
+            site: input.site,
+            username: input.username,
+            password: input.password,
+            share: input.share,
+            from: "user",
+          },
+        );
+        if ("error" in result) {
+          throw new ORPCError("BAD_REQUEST", { message: result.error });
+        }
+        return result.login;
+      }),
+      remove: authed.vault.remove.handler(async ({ context, input }) => {
+        const existing = await deps.prisma.siteLogin.findFirst({
+          where: {
+            id: input.loginId,
+            workspaceId: context.actor.workspaceId,
+            userId: context.actor.userId,
+          },
+        });
+        if (!existing) throw new IsolationError();
+        const result = await removeSiteLogin(
+          { prisma: deps.prisma },
+          {
+            workspaceId: context.actor.workspaceId,
+            userId: context.actor.userId,
+            botId: existing.createdByBotId ?? "",
+            loginId: existing.id,
+            from: "user",
+          },
+        );
+        if ("error" in result) throw new IsolationError();
         return { ok: true as const };
       }),
     },
