@@ -45,6 +45,7 @@ import {
   resolveAuxOpenRouterModelId,
   resolveOpenRouterModelId,
   redactSecrets,
+  refuseBrowserHuntShell,
   resolveActionApproval,
   sandboxCommandTimeoutMs,
   screenAllowsVaultFill,
@@ -1262,6 +1263,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
           }
           if (name === "shell") {
             const command = prepareSandboxShellCommand(String(args.command ?? args.cmd ?? ""));
+            const refused = refuseBrowserHuntShell(command);
+            if (refused) return finish({ error: refused });
             const cwd = resolveBotWorkspaceCwd(
               computerMode,
               bot.id,

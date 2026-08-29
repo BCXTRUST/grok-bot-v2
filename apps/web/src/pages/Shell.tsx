@@ -99,6 +99,7 @@ import { connectMcpOauth } from "../lib/mcp-connect";
 import { revokePendingAttachmentPreviews } from "../lib/pending-attachments";
 import { markAfterPaint, markOnce } from "../lib/performance";
 import { latestComputerScreenshotId, screenFrameSrc } from "../lib/computer-screen";
+import { modelLabel } from "../lib/model-label";
 import { rpc } from "../lib/rpc";
 import {
   activeThreadRuns,
@@ -1825,39 +1826,47 @@ export function ShellPage() {
             >
               <Menu size={19} strokeWidth={1.7} />
             </button>
-            <button
-              type="button"
-              data-testid="bot-settings-trigger"
-              onClick={() => setPanel(inGroup ? "group-settings" : "settings")}
-              className="flex min-w-0 items-center gap-3"
-            >
-              {inGroup ? (
-                <GroupAvatar
-                  members={activeSnapshot?.members ?? activeGroup?.members ?? []}
-                  size={26}
-                />
-              ) : active ? (
-                <BotAvatar color={active.color} size={26} status={active.status} />
-              ) : null}
-                <span className="min-w-0">
-                <span className="block truncate text-[16px] font-medium text-[#ECECEE]" dir="auto">
+            <div className="flex min-w-0 items-center gap-3">
+              <button
+                type="button"
+                data-testid="bot-settings-trigger"
+                onClick={() => setPanel(inGroup ? "group-settings" : "settings")}
+                className="shrink-0"
+              >
+                {inGroup ? (
+                  <GroupAvatar
+                    members={activeSnapshot?.members ?? activeGroup?.members ?? []}
+                    size={26}
+                  />
+                ) : active ? (
+                  <BotAvatar color={active.color} size={26} status={active.status} />
+                ) : null}
+              </button>
+              <span className="min-w-0 text-start">
+                <button
+                  type="button"
+                  onClick={() => setPanel(inGroup ? "group-settings" : "settings")}
+                  className="block max-w-full truncate text-[16px] font-medium text-[#ECECEE]"
+                  dir="auto"
+                >
                   {inGroup
                     ? (activeGroup?.name ?? activeSnapshot?.groupName ?? "Group")
                     : (active?.name ?? "Select a bot")}
-                </span>
+                </button>
                 {!inGroup ? (
                   <button
                     type="button"
+                    data-testid="active-model-label"
                     onClick={() => setModelsOpen(true)}
-                    className="mt-0.5 max-w-[220px] truncate text-start text-[12px] text-[#85858A] hover:text-[#C9C9CE]"
+                    className="mt-0.5 block max-w-[220px] truncate text-start text-[12px] text-[#85858A] hover:text-[#C9C9CE]"
                     aria-label="Change model"
                     title="Change model"
                   >
-                    {modelLabel(bootstrapMe?.defaultModel)}
+                    {modelLabel(bootstrapMe?.defaultModel, bootstrapMe?.needsModel)}
                   </button>
                 ) : null}
               </span>
-            </button>
+            </div>
           </div>
           <div className="flex items-center gap-1">
             {!inGroup && active ? (
@@ -4300,15 +4309,6 @@ function computerLabel(mode: ComputerStatus["mode"] | undefined, botName: string
   return mode === "dedicated" ? `${botName}’s computer` : "Team Computer";
 }
 
-function modelLabel(id: string | null | undefined) {
-  if (!id) return "Choose model";
-  if (id.includes("grok-4.6")) return "Grok 4.6";
-  if (id.includes("aion")) return "Grok 4.6";
-  if (id.includes("grok")) return "Grok";
-  const short = id.split("/").pop() ?? id;
-  return short.replace(/-/g, " ");
-}
-
 function ChoiceCard({
   botId,
   block,
@@ -4724,12 +4724,14 @@ function ArtifactImage({
 }) {
   const [src, setSrc] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
-  const [visible, setVisible] = useState(false);
+  const isComputerScreen = name.startsWith("computer-screen");
+  const [visible, setVisible] = useState(isComputerScreen);
   const container = useRef<HTMLDivElement>(null);
   const targetBotId = "botId" in target ? target.botId : undefined;
   const targetGroupId = "groupId" in target ? target.groupId : undefined;
 
   useEffect(() => {
+    if (isComputerScreen) return;
     const element = container.current;
     if (!element || typeof IntersectionObserver === "undefined") {
       setVisible(true);
@@ -4746,13 +4748,20 @@ function ArtifactImage({
     );
     observer.observe(element);
     return () => observer.disconnect();
-  }, []);
+  }, [isComputerScreen]);
 
   useEffect(() => {
     if (!visible) return;
     let cancelled = false;
     let objectUrl: string | null = null;
     setSrc(null);
+
+    const loadFromBytes = (bytes: Uint8Array, mimeType: string) => {
+      objectUrl = URL.createObjectURL(new Blob([new Uint8Array(bytes)], { type: mimeType }));
+      if (cancelled) URL.revokeObjectURL(objectUrl);
+      else setSrc(objectUrl);
+    };
+
     void rpc.artifacts
       .get(
         targetBotId
@@ -4760,19 +4769,20 @@ function ArtifactImage({
           : { groupId: targetGroupId ?? "", artifactId },
       )
       .then((artifact) => {
-        const bytes = decodeArtifactBase64(artifact.contentBase64);
-        objectUrl = URL.createObjectURL(
-          new Blob([new Uint8Array(bytes)], { type: artifact.mimeType }),
-        );
-        if (cancelled) URL.revokeObjectURL(objectUrl);
-        else setSrc(objectUrl);
+        loadFromBytes(decodeArtifactBase64(artifact.contentBase64), artifact.mimeType);
       })
-      .catch(() => undefined);
+      .catch(async () => {
+        if (!isComputerScreen || !targetBotId) return;
+        const preview = await rpc.computer.preview({ botId: targetBotId }).catch(() => null);
+        if (!preview?.image || cancelled) return;
+        const bytes = Uint8Array.from(atob(preview.image), (char) => char.charCodeAt(0));
+        loadFromBytes(bytes, preview.mimeType || "image/png");
+      });
     return () => {
       cancelled = true;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [artifactId, targetBotId, targetGroupId, visible]);
+  }, [artifactId, isComputerScreen, targetBotId, targetGroupId, visible]);
 
   return (
     <div ref={container}>
