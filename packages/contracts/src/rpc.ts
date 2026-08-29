@@ -36,6 +36,7 @@ import {
   RoutineSchema,
   ScratchpadItemSchema,
   ScratchpadItemStatusSchema,
+  SiteLoginSchema,
   SkillPlaybookSchema,
   TaughtSkillSchema,
   TeachRecordingEventSchema,
@@ -49,6 +50,7 @@ import {
   VoiceInfoSchema,
   VoiceStatusSchema,
   WorkspaceMemoryConfigSchema,
+  UpsertSiteLoginInput,
 } from "./domain.js";
 import { ProductEventSchema } from "./events.js";
 import { Id } from "./ids.js";
@@ -349,6 +351,11 @@ export const appContract = {
       )
       .output(ScratchpadItemSchema),
     remove: oc.input(z.object({ itemId: Id })).output(z.object({ ok: z.literal(true) })),
+  },
+  vault: {
+    list: oc.input(botId).output(z.array(SiteLoginSchema)),
+    upsert: oc.input(UpsertSiteLoginInput).output(SiteLoginSchema),
+    remove: oc.input(z.object({ loginId: Id })).output(z.object({ ok: z.literal(true) })),
   },
   skills: {
     list: oc.input(botId).output(z.array(TaughtSkillSchema)),

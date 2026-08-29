@@ -1,7 +1,7 @@
 import type { AgentRunRequest, AgentRuntime, JobPublisher } from "@rakazo/adapter-kit";
 import { historyCompactJob } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
-import { blocksToAgentHistoryText } from "@rakazo/core";
+import { DEFAULT_AUX_MODEL_ID, blocksToAgentHistoryText } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import type {
   ConfiguredMemoryProvider,
@@ -116,7 +116,7 @@ export const MAX_TRANSCRIPT_CHARS = 40_000;
 /** Bounds a hung summarization call, which would otherwise hold a background-worker slot open. */
 const SUMMARIZE_TIMEOUT_MS = 120_000;
 
-const DEFAULT_SUMMARIZER_MODEL_ID = "deepseek/deepseek-v4-flash-0731";
+const DEFAULT_SUMMARIZER_MODEL_ID = DEFAULT_AUX_MODEL_ID;
 
 export interface CompactHistoryDeps {
   prisma: PrismaClient;
@@ -125,6 +125,10 @@ export interface CompactHistoryDeps {
   memoryProviders: MemoryProviderResolver;
   deploymentModelKey?: string;
   resolveModel?: (scope: {
+    userId: string;
+    workspaceId: string;
+  }) => Promise<AgentRunRequest["model"]>;
+  resolveAuxModel?: (scope: {
     userId: string;
     workspaceId: string;
   }) => Promise<AgentRunRequest["model"]>;
@@ -240,12 +244,14 @@ export async function compactHistory(deps: CompactHistoryDeps, threadId: string)
   // "scripted" means nothing at all is configured: ScriptedAgentRuntime answers by echoing canned
   // text keyed off the prompt, so summarizing with it would save nonsense to external memory and
   // advance the cursor past messages that are then lost from both stores. Skip instead.
-  const model = deps.resolveModel
+  const model = deps.resolveAuxModel
+    ? await deps.resolveAuxModel({ userId: thread.userId, workspaceId: thread.workspaceId })
+    : deps.resolveModel
     ? await deps.resolveModel({ userId: thread.userId, workspaceId: thread.workspaceId })
     : deps.deploymentModelKey
       ? {
           provider: "openrouter",
-          id: process.env.PI_DEFAULT_MODEL ?? DEFAULT_SUMMARIZER_MODEL_ID,
+          id: process.env.PI_AUX_MODEL ?? DEFAULT_SUMMARIZER_MODEL_ID,
           apiKey: deps.deploymentModelKey,
         }
       : await (async () => {

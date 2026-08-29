@@ -154,6 +154,9 @@ const CallView = lazy(() => import("./CallView").then((module) => ({ default: mo
 const ScratchpadSection = lazy(() =>
   import("./ScratchpadSection").then((module) => ({ default: module.ScratchpadSection })),
 );
+const LoginVaultSection = lazy(() =>
+  import("./LoginVaultSection").then((module) => ({ default: module.LoginVaultSection })),
+);
 
 type Panel =
   | "computer"
@@ -3781,6 +3784,9 @@ function BotSettings({
         Link-building research prompt
       </button>
       <BotMailSection botId={bot.id} />
+      <Suspense fallback={null}>
+        <LoginVaultSection botId={bot.id} />
+      </Suspense>
       <ComputerModePicker value={computerMode} onChange={setComputerMode} />
       {memoryProviderConfigured ? (
         <div className="mt-4 text-[14px] text-[#85858A]">

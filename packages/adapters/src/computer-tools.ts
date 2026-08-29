@@ -58,6 +58,33 @@ export function parseComputerActions(value: unknown): ComputerAction[] {
   return actions;
 }
 
+export const MAX_OBSERVE_WITHOUT_ACT = 2;
+export const OBSERVE_WITHOUT_ACT_ERROR =
+  "Screen already captured. Call computer_act or open_path now; do not observe again until the screen should have changed.";
+
+export function shouldRefuseObserve(observeWithoutAct: number): boolean {
+  return observeWithoutAct >= MAX_OBSERVE_WITHOUT_ACT;
+}
+
+export function shouldAttachObservationToThread(input: {
+  unchanged: boolean;
+  source: "observe" | "act";
+  attachedObserveInStreak: boolean;
+}): boolean {
+  if (input.unchanged) return false;
+  if (input.source === "observe" && input.attachedObserveInStreak) return false;
+  return true;
+}
+
+export function observationWallText(observation: ComputerObservation): string {
+  return [
+    observation.activeWindow?.title,
+    ...(observation.windows ?? []).map((window) => window.title),
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
 export function observationToolResult(
   observation: ComputerObservation,
   note = "computer observed",
@@ -78,12 +105,7 @@ export function observationToolResult(
         .map((window) => `${window.title || window.id}${window.focused ? " (focused)" : ""}`)
         .join("; ")}`
     : "";
-  const wallText = [
-    observation.activeWindow?.title,
-    ...(observation.windows ?? []).map((window) => window.title),
-  ]
-    .filter(Boolean)
-    .join("\n");
+  const wallText = observationWallText(observation);
   const captchaLine = looksLikeCaptchaWall(wallText)
     ? "\nCAPTCHA or bot-check is on screen. Do not wait there. Leave with open_path to a non-Google http(s) URL for the user's request. request_takeover only if the destination site is blocked."
     : "";

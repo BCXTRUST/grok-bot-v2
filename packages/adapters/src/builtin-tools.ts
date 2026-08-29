@@ -12,7 +12,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "computer_observe",
     description:
-      "Capture the current screen of this bot's computer. Returns frame metadata and an image. Observe before coordinate-based actions and whenever another actor may have changed the desktop.",
+      "Capture the current screen of this bot's computer. Returns frame metadata and an image. Observe once before coordinate-based actions. Do not call this twice in a row; act or open_path after the first capture.",
     inputSchema: { type: "object", properties: {} },
   },
   {
@@ -132,7 +132,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "request_takeover",
     description:
-      "Ask the user to take the screen only for the destination site's CAPTCHA, their real password, or payment. Do not use this to collect forum lists, throwaway usernames, emails, or invented passwords — handle those yourself. If Google shows a CAPTCHA, leave Google with open_path instead of waiting.",
+      "Ask the user to take the screen only for the destination site's CAPTCHA, a login that is not in the vault, or payment. Do not use this to collect forum lists, throwaway usernames, emails, or invented passwords — handle those yourself. If a vault login exists, click the password field and vault_fill instead. If Google shows a CAPTCHA, leave Google with open_path instead of waiting.",
     inputSchema: {
       type: "object",
       properties: { reason: { type: "string" } },
@@ -307,6 +307,55 @@ export const builtinAgentTools: ConnectorTool[] = [
         itemId: { type: "string" },
       },
       required: ["itemId"],
+    },
+  },
+  {
+    name: "vault_list",
+    description:
+      "List site logins in the vault this bot can use (host, username, and loginId only — never passwords).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        site: { type: "string", description: "Optional hostname or URL to filter." },
+      },
+    },
+  },
+  {
+    name: "vault_fill",
+    description:
+      "Type a vault password into the focused field on this computer. Pass loginId from vault_list. The password never appears in the tool result. The current screen must already be that site. Click the password field first.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        loginId: { type: "string", description: "Opaque id from vault_list." },
+        site: { type: "string", description: "Hostname or URL if loginId is omitted." },
+        username: { type: "string", description: "Required when several accounts exist for the site." },
+      },
+    },
+  },
+  {
+    name: "vault_put",
+    description:
+      "Store a throwaway site username and password you just created. Do not use remember for passwords. Never store a password the user typed in chat.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        site: { type: "string", description: "Hostname or page URL." },
+        username: { type: "string" },
+        password: { type: "string" },
+      },
+      required: ["site", "username", "password"],
+    },
+  },
+  {
+    name: "vault_delete",
+    description: "Remove a vault login this bot created.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        loginId: { type: "string" },
+      },
+      required: ["loginId"],
     },
   },
   {
