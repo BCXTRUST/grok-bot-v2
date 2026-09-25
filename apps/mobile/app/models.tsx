@@ -1,9 +1,14 @@
 import type { ModelOAuthBegin } from "@rakazo/contracts";
 import {
+  mergeModelOptions,
   OPENAI_COMPATIBLE_BASE_URL_HINT,
   OPENAI_COMPATIBLE_PROVIDER_ID,
+  OPENROUTER_PROVIDER_ID,
   openAiCompatibleConnectReady,
   openAiCompatibleProbeSuccessMessage,
+  preferredModelId,
+  providerAllowsCustomModelId,
+  sortModelProviderGroups,
 } from "@rakazo/contracts";
 import { useFocusEffect } from "expo-router";
 import { useCallback, useMemo, useRef, useState } from "react";
@@ -42,6 +47,8 @@ export default function Models() {
   const [showEndpointHelp, setShowEndpointHelp] = useState(false);
   const [showApiKey, setShowApiKey] = useState(false);
   const [probeModels, setProbeModels] = useState<string[]>([]);
+  const [openRouterModels, setOpenRouterModels] = useState<Array<{ id: string; name: string }>>([]);
+  const [modelQuery, setModelQuery] = useState("");
   const [probedBaseUrl, setProbedBaseUrl] = useState<string | null>(null);
   const [probing, setProbing] = useState(false);
   const [oauth, setOauth] = useState<ModelOAuthBegin | null>(null);
@@ -80,20 +87,19 @@ export default function Models() {
       nextCatalog[0]?.provider ??
       "";
     const nextCredential = nextCredentials.find((entry) => entry.provider === nextProvider);
-    const nextModel =
-      nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID
-        ? preferred.modelId?.trim() ||
-          nextCredential?.modelId ||
-          (nextMe.defaultProvider === OPENAI_COMPATIBLE_PROVIDER_ID ? nextMe.defaultModel : "") ||
-          ""
-        : (nextCatalog.find(
-            (entry) => entry.provider === nextProvider && entry.id === preferred.modelId,
-          )?.id ??
-          nextCatalog.find(
-            (entry) => entry.provider === nextProvider && entry.id === nextMe.defaultModel,
-          )?.id ??
-          nextCatalog.find((entry) => entry.provider === nextProvider)?.id ??
-          "");
+    const catalogIds = nextCatalog
+      .filter((entry) => entry.provider === nextProvider)
+      .map((entry) => entry.id);
+    const nextModel = preferredModelId({
+      provider: nextProvider,
+      catalogIds,
+      requested: preferred.modelId,
+      stored: nextCredential?.modelId,
+      workspaceDefaultProvider: nextMe.defaultProvider,
+      workspaceDefaultModel: nextMe.defaultModel,
+      allowCustom:
+        nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID || providerAllowsCustomModelId(nextProvider),
+    });
     setMe(nextMe);
     setCatalog(nextCatalog);
     setCredentials(nextCredentials);
@@ -129,22 +135,49 @@ export default function Models() {
       entries.push(entry);
       grouped.set(entry.provider, entries);
     }
-    return [...grouped].map(([id, entries]) => ({
-      id,
-      name: entries[0]?.providerName ?? id,
-      entries,
-    }));
+    return sortModelProviderGroups(
+      [...grouped].map(([id, entries]) => ({
+        id,
+        name: entries[0]?.providerName ?? id,
+        entries,
+      })),
+    );
   }, [catalog]);
   const modelsForProvider = catalog.filter((entry) => entry.provider === provider);
-  const selected = modelsForProvider.find((entry) => entry.id === modelId) ?? modelsForProvider[0];
   const isOpenAiCompatible = provider === OPENAI_COMPATIBLE_PROVIDER_ID;
+  const isOpenRouter = provider === OPENROUTER_PROVIDER_ID;
+  const allowCustomModel = isOpenAiCompatible || providerAllowsCustomModelId(provider);
+  const pickerOptions = useMemo(() => {
+    const template = modelsForProvider[0];
+    if (!template) return modelsForProvider;
+    const remote = isOpenRouter
+      ? openRouterModels.map((entry) => ({
+          ...template,
+          id: entry.id,
+          label: entry.name && entry.name !== entry.id ? entry.name : entry.id,
+        }))
+      : [];
+    const merged = mergeModelOptions(modelsForProvider, remote);
+    const trimmed = modelId.trim();
+    if (allowCustomModel && trimmed && !merged.some((entry) => entry.id === trimmed)) {
+      return [{ ...template, id: trimmed, label: trimmed }, ...merged];
+    }
+    return merged;
+  }, [allowCustomModel, isOpenRouter, modelId, modelsForProvider, openRouterModels]);
+  const selected = pickerOptions.find((entry) => entry.id === modelId) ?? pickerOptions[0];
+  const visibleModels = useMemo(() => {
+    const needle = modelQuery.trim().toLowerCase();
+    if (!needle) return pickerOptions;
+    return pickerOptions.filter((entry) =>
+      `${entry.id} ${entry.label}`.toLowerCase().includes(needle),
+    );
+  }, [modelQuery, pickerOptions]);
   const credential = credentials.find((entry) => entry.provider === provider);
   const currentEntry = catalog.find(
     (entry) => entry.provider === me?.defaultProvider && entry.id === me?.defaultModel,
   );
-  const isActive =
-    me?.defaultProvider === selected?.provider &&
-    me?.defaultModel === (isOpenAiCompatible ? modelId.trim() : selected?.id);
+  const activeModelId = (allowCustomModel ? modelId.trim() : selected?.id) ?? "";
+  const isActive = me?.defaultProvider === provider && me?.defaultModel === activeModelId;
   const acceptsKey = selected?.auth !== "oauth";
   const subscriptionSignIn = selected?.signIn !== undefined;
   const busy = pending !== null || oauthPending;
@@ -179,9 +212,16 @@ export default function Models() {
     cancelOAuth();
     setProvider(nextProvider);
     setModelId(
-      nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID
-        ? (credentials.find((entry) => entry.provider === nextProvider)?.modelId ?? "")
-        : (catalog.find((entry) => entry.provider === nextProvider)?.id ?? ""),
+      preferredModelId({
+        provider: nextProvider,
+        catalogIds: catalog
+          .filter((entry) => entry.provider === nextProvider)
+          .map((entry) => entry.id),
+        stored: credentials.find((entry) => entry.provider === nextProvider)?.modelId,
+        allowCustom:
+          nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID ||
+          providerAllowsCustomModelId(nextProvider),
+      }),
     );
     setBaseUrl(
       nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID
@@ -189,6 +229,8 @@ export default function Models() {
         : "",
     );
     setApiKey("");
+    setOpenRouterModels([]);
+    setModelQuery("");
     resetOpenAiCompatibleProbe();
     setError(null);
     setNotice(null);
@@ -220,10 +262,31 @@ export default function Models() {
     }
   }
 
+  async function probeOpenRouterCatalog() {
+    const requestId = ++probeRequestIdRef.current;
+    setProbing(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const result = await rpc<{ models: Array<{ id: string; name: string }> }>(
+        "models/probeOpenRouter",
+        { apiKey: apiKey.trim() || undefined },
+      );
+      if (requestId !== probeRequestIdRef.current) return;
+      setOpenRouterModels(result.models);
+      setModelId((current) => current.trim() || result.models[0]?.id || "");
+      setNotice(openAiCompatibleProbeSuccessMessage(result.models.length));
+    } catch (err) {
+      if (requestId !== probeRequestIdRef.current) return;
+      setError(err instanceof Error ? err.message : "Could not list OpenRouter models");
+    } finally {
+      if (requestId === probeRequestIdRef.current) setProbing(false);
+    }
+  }
+
   async function setModelDefault() {
     if (!selected || !credential) return;
-    const activeModelId = isOpenAiCompatible ? modelId.trim() : selected.id;
-    if (isOpenAiCompatible && !activeModelId) return;
+    if (!activeModelId) return;
     setError(null);
     setNotice(null);
     setPending("default");
@@ -262,7 +325,7 @@ export default function Models() {
           : {
               provider: selected.provider,
               apiKey: apiKey.trim(),
-              modelId: selected.id,
+              modelId: activeModelId,
               label: selected.providerName ?? selected.provider,
             },
       );
@@ -519,31 +582,74 @@ export default function Models() {
                 )}
               </>
             ) : (
-              <View style={styles.card}>
-                {modelsForProvider.map((entry) => (
+              <>
+                <TextInput
+                  accessibilityLabel="Search models"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  onChangeText={setModelQuery}
+                  placeholder="Search or paste a model id"
+                  placeholderTextColor={native.tertiaryLabel}
+                  style={styles.keyInput}
+                  value={modelQuery}
+                />
+                {allowCustomModel &&
+                modelQuery.trim() &&
+                !pickerOptions.some((entry) => entry.id === modelQuery.trim()) ? (
                   <Pressable
-                    key={`${entry.provider}:${entry.id}`}
-                    accessibilityRole="radio"
-                    accessibilityState={{ selected: entry.id === selected.id }}
+                    accessibilityRole="button"
                     onPress={() => {
                       cancelOAuth();
-                      setModelId(entry.id);
+                      setModelId(modelQuery.trim());
                       setError(null);
                       setNotice(null);
                     }}
+                  >
+                    <Text style={styles.helpLabel}>Use {modelQuery.trim()}</Text>
+                  </Pressable>
+                ) : null}
+                {isOpenRouter ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    disabled={busy || probing}
+                    onPress={() => void probeOpenRouterCatalog()}
                     style={({ pressed }) => [
-                      styles.modelRow,
-                      entry.id === selected.id && styles.selectedRow,
+                      styles.outlineButton,
+                      (busy || probing) && styles.disabled,
                       pressed && styles.pressed,
                     ]}
                   >
-                    <View style={styles.radio}>
-                      {entry.id === selected.id ? <View style={styles.radioDot} /> : null}
-                    </View>
-                    <Text style={styles.modelLabel}>{entry.label}</Text>
+                    <Text style={styles.outlineLabel}>
+                      {probing ? "Finding…" : "All OpenRouter models"}
+                    </Text>
                   </Pressable>
-                ))}
-              </View>
+                ) : null}
+                <View style={styles.card}>
+                  {visibleModels.map((entry) => (
+                    <Pressable
+                      key={`${entry.provider}:${entry.id}`}
+                      accessibilityRole="radio"
+                      accessibilityState={{ selected: entry.id === selected.id }}
+                      onPress={() => {
+                        cancelOAuth();
+                        setModelId(entry.id);
+                        setError(null);
+                        setNotice(null);
+                      }}
+                      style={({ pressed }) => [
+                        styles.modelRow,
+                        entry.id === selected.id && styles.selectedRow,
+                        pressed && styles.pressed,
+                      ]}
+                    >
+                      <View style={styles.radio}>
+                        {entry.id === selected.id ? <View style={styles.radioDot} /> : null}
+                      </View>
+                      <Text style={styles.modelLabel}>{entry.label}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+              </>
             )}
             {!isOpenAiCompatible ? <Text style={styles.billing}>{selected.billing}</Text> : null}
 

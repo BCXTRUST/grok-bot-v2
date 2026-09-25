@@ -40,6 +40,7 @@ export * from "./memory-provider-factory.js";
 export * from "./model-connect.js";
 export * from "./openai-compatible-url.js";
 export * from "./openai-voice.js";
+export * from "./openrouter-catalog.js";
 export * from "./pi-models.js";
 export * from "./pi-oauth.js";
 export * from "./pi-openai-compatible-provider.js";

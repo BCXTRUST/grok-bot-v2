@@ -1,12 +1,18 @@
 import {
+  mergeModelOptions,
   OPENAI_COMPATIBLE_BASE_URL_HINT,
   OPENAI_COMPATIBLE_PROVIDER_ID,
+  OPENROUTER_PROVIDER_ID,
   openAiCompatibleConnectReady,
   openAiCompatibleProbeSuccessMessage,
+  preferredModelId,
+  providerAllowsCustomModelId,
+  sortModelProviderGroups,
 } from "@rakazo/contracts";
 import { ChevronDown } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { ModelPicker } from "../components/ModelPicker";
 import { type ModelCatalogEntry, providerHint } from "../lib/model-auth";
 import { rpc } from "../lib/rpc";
 import { useModelOAuthSignIn } from "../lib/use-model-oauth-signin";
@@ -21,6 +27,7 @@ export function OnboardingPage() {
   const [apiKey, setApiKey] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
   const [probeModels, setProbeModels] = useState<string[]>([]);
+  const [openRouterModels, setOpenRouterModels] = useState<Array<{ id: string; name: string }>>([]);
   const [probedBaseUrl, setProbedBaseUrl] = useState<string | null>(null);
   const [probing, setProbing] = useState(false);
   const [name, setName] = useState("");
@@ -58,7 +65,19 @@ export function OnboardingPage() {
           models[0];
         if (preferred) {
           setProvider(preferred.provider);
-          setModelId(preferred.provider === OPENAI_COMPATIBLE_PROVIDER_ID ? "" : preferred.id);
+          setModelId(
+            preferredModelId({
+              provider: preferred.provider,
+              catalogIds: models
+                .filter((entry) => entry.provider === preferred.provider)
+                .map((entry) => entry.id),
+              workspaceDefaultProvider: me.defaultProvider,
+              workspaceDefaultModel: me.defaultModel,
+              allowCustom:
+                preferred.provider === OPENAI_COMPATIBLE_PROVIDER_ID ||
+                providerAllowsCustomModelId(preferred.provider),
+            }),
+          );
         }
         setStep("model");
       })
@@ -73,7 +92,13 @@ export function OnboardingPage() {
     for (const entry of catalog) {
       if (!seen.has(entry.provider)) seen.set(entry.provider, entry);
     }
-    return [...seen.values()];
+    return sortModelProviderGroups(
+      [...seen.values()].map((entry) => ({
+        id: entry.provider,
+        name: entry.providerName ?? entry.provider,
+        entry,
+      })),
+    ).map((group) => group.entry);
   }, [catalog]);
 
   const filteredProviders = useMemo(() => {
@@ -95,9 +120,27 @@ export function OnboardingPage() {
     () => catalog.filter((entry) => entry.provider === provider),
     [catalog, provider],
   );
-
-  const selected = modelsForProvider.find((entry) => entry.id === modelId) ?? modelsForProvider[0];
   const isOpenAiCompatible = provider === OPENAI_COMPATIBLE_PROVIDER_ID;
+  const isOpenRouter = provider === OPENROUTER_PROVIDER_ID;
+  const allowCustomModel = isOpenAiCompatible || providerAllowsCustomModelId(provider);
+  const pickerOptions = useMemo(() => {
+    const template = modelsForProvider[0];
+    if (!template) return modelsForProvider;
+    const remote = isOpenRouter
+      ? openRouterModels.map((entry) => ({
+          ...template,
+          id: entry.id,
+          label: entry.name && entry.name !== entry.id ? entry.name : entry.id,
+        }))
+      : [];
+    const merged = mergeModelOptions(modelsForProvider, remote);
+    const trimmed = modelId.trim();
+    if (allowCustomModel && trimmed && !merged.some((entry) => entry.id === trimmed)) {
+      return [{ ...template, id: trimmed, label: trimmed }, ...merged];
+    }
+    return merged;
+  }, [allowCustomModel, isOpenRouter, modelId, modelsForProvider, openRouterModels]);
+  const selected = pickerOptions.find((entry) => entry.id === modelId) ?? pickerOptions[0];
   const subscriptionSignIn = selected?.signIn !== undefined;
   const acceptsKey = selected?.auth !== "oauth";
   const signInLabel = selected?.oauthLabel ?? "Sign in";
@@ -152,6 +195,27 @@ export function OnboardingPage() {
     }
   }
 
+  async function probeOpenRouterCatalog() {
+    const requestId = ++probeRequestIdRef.current;
+    setProbing(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const result = await rpc.models.probeOpenRouter({
+        apiKey: apiKey.trim() || undefined,
+      });
+      if (requestId !== probeRequestIdRef.current) return;
+      setOpenRouterModels(result.models);
+      setModelId((current) => current.trim() || result.models[0]?.id || "");
+      setNotice(openAiCompatibleProbeSuccessMessage(result.models.length));
+    } catch (err) {
+      if (requestId !== probeRequestIdRef.current) return;
+      setError(err instanceof Error ? err.message : "Could not list OpenRouter models");
+    } finally {
+      if (requestId === probeRequestIdRef.current) setProbing(false);
+    }
+  }
+
   async function saveModel() {
     setError(null);
     try {
@@ -167,7 +231,7 @@ export function OnboardingPage() {
         await rpc.models.connect({
           provider,
           apiKey,
-          modelId,
+          modelId: modelId.trim() || selected?.id,
           label: selected?.providerName ?? provider,
         });
       }
@@ -211,7 +275,9 @@ export function OnboardingPage() {
         {step === "model" ? (
           <div>
             <h1 className="text-[32px] font-medium text-[#F1F1F2]">Connect a model</h1>
-            <p className="mt-2 text-[#85858A]">Choose a model to get started.</p>
+            <p className="mt-2 text-[#85858A]">
+              OpenAI key, ChatGPT Plus/Pro, or any OpenRouter model.
+            </p>
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
@@ -227,11 +293,18 @@ export function OnboardingPage() {
                     cancelOAuthAttempt();
                     setProvider(entry.provider);
                     setModelId(
-                      entry.provider === OPENAI_COMPATIBLE_PROVIDER_ID
-                        ? ""
-                        : (catalog.find((item) => item.provider === entry.provider)?.id ?? ""),
+                      preferredModelId({
+                        provider: entry.provider,
+                        catalogIds: catalog
+                          .filter((item) => item.provider === entry.provider)
+                          .map((item) => item.id),
+                        allowCustom:
+                          entry.provider === OPENAI_COMPATIBLE_PROVIDER_ID ||
+                          providerAllowsCustomModelId(entry.provider),
+                      }),
                     );
                     setBaseUrl("");
+                    setOpenRouterModels([]);
                     resetOpenAiCompatibleProbe();
                     setError(null);
                     setNotice(null);
@@ -322,21 +395,27 @@ export function OnboardingPage() {
               ) : (
                 <>
                   <span>Model</span>
-                  <select
-                    value={selected?.id ?? modelId}
-                    onChange={(e) => {
-                      cancelOAuthAttempt();
-                      setModelId(e.target.value);
-                    }}
-                    aria-label="Model"
-                    className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
-                  >
-                    {modelsForProvider.map((entry) => (
-                      <option key={`${entry.provider}:${entry.id}`} value={entry.id}>
-                        {entry.label}
-                      </option>
-                    ))}
-                  </select>
+                  {selected ? (
+                    <ModelPicker
+                      options={pickerOptions}
+                      value={selected.id}
+                      allowCustom={allowCustomModel}
+                      onChange={(nextModelId) => {
+                        cancelOAuthAttempt();
+                        setModelId(nextModelId);
+                      }}
+                    />
+                  ) : null}
+                  {isOpenRouter ? (
+                    <button
+                      type="button"
+                      disabled={probing}
+                      onClick={() => void probeOpenRouterCatalog()}
+                      className="mt-3 rounded-[11px] border border-[#26262A] px-4 py-2 text-sm text-[#ECECEE] disabled:opacity-40"
+                    >
+                      {probing ? "Finding…" : "All OpenRouter models"}
+                    </button>
+                  ) : null}
                 </>
               )}
             </div>
@@ -434,7 +513,7 @@ export function OnboardingPage() {
                   <input
                     value={apiKey}
                     onChange={(e) => updateApiKey(e.target.value)}
-                    placeholder="sk-…"
+                    placeholder={provider === OPENROUTER_PROVIDER_ID ? "sk-or-…" : "sk-…"}
                     type="password"
                     autoComplete="new-password"
                     className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"

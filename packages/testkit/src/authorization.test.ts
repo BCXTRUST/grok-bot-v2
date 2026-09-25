@@ -57,6 +57,8 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["models/list"],
       ["models/credentials"],
       ["models/connect", { provider: "test", apiKey: "not-a-real-key" }],
+      ["models/probeOpenAiCompatible", { baseUrl: "http://127.0.0.1:9/v1" }],
+      ["models/probeOpenRouter", {}],
       ["models/beginOAuth", { provider: "openai-codex" }],
       ["models/submitOAuthCode", { loginId: "missing-login", code: "fake-code" }],
       ["models/completeOAuth", { loginId: "missing-login" }],
