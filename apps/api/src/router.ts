@@ -122,6 +122,7 @@ import {
   listLbHosts,
   listLbPlacements,
   listLbProjects,
+  listLbProxyLeases,
   listLbRunSteps,
   listLbRuns,
   listLbThreads,
@@ -2991,6 +2992,11 @@ export function createRouter(deps: RouterDeps) {
       hosts: {
         list: authed.linkBuilder.hosts.list.handler(async ({ context, input }) =>
           listLbHosts(deps, context.actor, input.projectId),
+        ),
+      },
+      proxyLeases: {
+        list: authed.linkBuilder.proxyLeases.list.handler(async ({ context, input }) =>
+          listLbProxyLeases(deps, context.actor, input.projectId),
         ),
       },
       placements: {

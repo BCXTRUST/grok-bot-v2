@@ -149,6 +149,49 @@ describe("link builder routes", () => {
     );
   });
 
+  it("returns active proxy leases without credentials", async () => {
+    const row = projectRow();
+    const findMany = vi.fn(async () => [
+      {
+        id: "lease-1",
+        country: "DE",
+        kind: "static_isp",
+        provider: "iproyal",
+        renewsAt: new Date("2026-10-12T12:00:00.000Z"),
+        status: "active",
+        endpointSecretId: "secret-proxy",
+        password: "s3cret-proxy-password",
+        stickyKey: "user:s3cret-proxy-password@proxy.example:8080",
+      },
+    ]);
+    const prisma = {
+      lbProject: { findFirst: vi.fn(async () => row) },
+      lbProxyLease: { findMany },
+    } as unknown as PrismaClient;
+    const { response } = await call(deps(prisma), actor, "linkBuilder/proxyLeases/list", {
+      projectId: "project-1",
+    });
+    expect(response?.status).toBe(200);
+    const text = JSON.stringify(await response?.json());
+    expect(text).toContain("iproyal");
+    expect(text).toContain("DE");
+    expect(text).not.toContain("s3cret-proxy-password");
+    expect(text).not.toContain("secret-proxy");
+    expect(text).not.toContain("proxy.example");
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        select: {
+          id: true,
+          country: true,
+          kind: true,
+          provider: true,
+          renewsAt: true,
+          status: true,
+        },
+      }),
+    );
+  });
+
   it("refuses to start a project that is missing a mailbox or Captell seat", async () => {
     const row = projectRow({ mailboxId: null, captchaSecretId: null });
     const prisma = {
