@@ -1209,6 +1209,8 @@ model LbCaptchaEvent {
   balanceAfter       Int?
   outcome            String
   helperVersion      String?
+  /** Solver task id. Never a token, an answer or an image. */
+  taskId             String?
   createdAt          DateTime     @default(now())
 
   @@index([workspaceId, projectId, createdAt])

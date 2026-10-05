@@ -241,13 +241,27 @@ describe.skipIf(!gate.available)(
       const finalRun = await prisma.lbRun.findUniqueOrThrow({ where: { id: run.id } });
       expect(finalRun).toMatchObject({ newToday: 1, liveToday: 1, uniqueHosts: 1 });
 
+      const events = await prisma.lbCaptchaEvent.findMany({ where: { projectId: project.id } });
+      const placed = events.find((event) => event.outcome === "placed_submitted");
+      expect(placed).toMatchObject({
+        type: "image_letters",
+        door: "https_api",
+        taskId: "fake-task-1",
+      });
+      expect(JSON.stringify(placed)).not.toContain(FAKE_CAPTELL_TOKEN);
+      expect(JSON.stringify(placed)).not.toContain(CAPTCHA_ANSWER);
+
       const steps = await prisma.lbRunStep.findMany({
         where: { runId: run.id },
         orderBy: { stepIndex: "asc" },
       });
+      expect(steps.find((step) => step.kind === "helper_connected")?.outcome).toMatchObject({
+        helperVersion: "2026.10.4.16",
+      });
       expect(steps.map((step) => step.kind)).toEqual([
         "select_host",
         "open_session",
+        "helper_connected",
         "cookie_wall",
         "register",
         "captcha",
@@ -436,6 +450,54 @@ describe.skipIf(!gate.available)(
       const placement = await prisma.lbPlacement.findFirstOrThrow({ where: { hostId: host.id } });
       expect(placement).toMatchObject({ status: "live", counted: true });
       expect(fixture.registrationSubmits()).toBe(3);
+    }, 180_000);
+
+    it("records placed_submitted when the fixture Page Helper places the check", async () => {
+      const fixture = await startPhpbbFixture({
+        challenge: "widget",
+        activation: "none",
+        cookieWall: false,
+        linkRuleMinPosts: 0,
+        deliverMail: () => undefined,
+      });
+      fixtures.push(fixture);
+      const { project } = await wizardProject(h, fixture, "Widget Board", "Noa Feld");
+      const runner = new LinkBuilderRealRunner({
+        prisma: h.db.prisma,
+        secrets: h.secrets,
+        artifacts: h.artifacts,
+        browsers: h.factory,
+        captcha: new FakeCaptchaSolver(),
+        mailbox: h.emulator,
+        allowPrivateVerify: true,
+        verifyDelayMs: 0,
+        pageHelperPollMs: 50,
+        workerId: "e2e-worker-widget",
+      });
+      runners.push(runner);
+      const run = await h.db.prisma.lbRun.findFirstOrThrow({ where: { projectId: project.id } });
+      await tickUntil(runner, async () => {
+        const rows = await h.db.prisma.lbCaptchaEvent.findMany({
+          where: { projectId: project.id },
+        });
+        return rows.some(
+          (event) => event.outcome === "placed_submitted" && event.door === "page_helper",
+        );
+      });
+      const event = await h.db.prisma.lbCaptchaEvent.findFirstOrThrow({
+        where: { projectId: project.id, outcome: "placed_submitted" },
+      });
+      expect(event).toMatchObject({
+        door: "page_helper",
+        type: "recaptcha_v2",
+        buttonTextObserved: "Placed. Submit the form.",
+        siteKeyFound: true,
+        helperVersion: "2026.10.4.16",
+      });
+      expect(event.taskId).toBeNull();
+      expect(JSON.stringify(event)).not.toContain("fixture-token");
+      const current = await h.db.prisma.lbRun.findUniqueOrThrow({ where: { id: run.id } });
+      expect(current.status === "succeeded" || current.status === "running").toBe(true);
     }, 180_000);
   },
 );

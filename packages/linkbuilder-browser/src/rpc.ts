@@ -25,7 +25,20 @@ export const BrowserRpcRequestSchema = z.discriminatedUnion("method", [
   z.object({ method: z.literal("text"), selector }).strict(),
   z.object({ method: z.literal("exists"), selector }).strict(),
   z.object({ method: z.literal("attribute"), selector, name: z.string().min(1).max(200) }).strict(),
-  z.object({ method: z.literal("elementScreenshotPng"), selector }).strict(),
+  z
+    .object({
+      method: z.literal("elementScreenshotPng"),
+      selector,
+      paddingPx: z.number().int().min(0).max(200).optional(),
+    })
+    .strict(),
+  z
+    .object({
+      method: z.literal("injectToken"),
+      fieldName: z.string().regex(/^[A-Za-z0-9_-]{1,80}$/),
+      token: z.string().min(1).max(8_000),
+    })
+    .strict(),
   z.object({ method: z.literal("pageText") }).strict(),
   z
     .object({
@@ -36,6 +49,7 @@ export const BrowserRpcRequestSchema = z.discriminatedUnion("method", [
     .strict(),
   z.object({ method: z.literal("screenshotPng") }).strict(),
   z.object({ method: z.literal("loadedExtensions") }).strict(),
+  z.object({ method: z.literal("extensionVersions") }).strict(),
   z.object({ method: z.literal("close") }).strict(),
 ]);
 export type BrowserRpcRequest = z.infer<typeof BrowserRpcRequestSchema>;
@@ -93,7 +107,13 @@ export class BrowserRpcServer {
       case "attribute":
         return session.attribute(request.selector, request.name);
       case "elementScreenshotPng":
-        return binary(await session.elementScreenshotPng(request.selector));
+        return binary(
+          await session.elementScreenshotPng(request.selector, { paddingPx: request.paddingPx }),
+        );
+      case "injectToken":
+        this.secrets.add(request.token);
+        if (!session.injectToken) throw new Error("This browser cannot place a captcha token");
+        return session.injectToken(request.fieldName, request.token);
       case "pageText":
         return session.pageText();
       case "waitFor":
@@ -102,6 +122,8 @@ export class BrowserRpcServer {
         return binary(await session.screenshotPng());
       case "loadedExtensions":
         return session.loadedExtensions ? session.loadedExtensions() : [];
+      case "extensionVersions":
+        return session.extensionVersions ? session.extensionVersions() : [];
       case "close":
         return session.close();
     }
@@ -168,8 +190,16 @@ export class RpcBrowserSession implements BrowserSession {
       .parse(await this.call({ method: "attribute", selector, name }));
   }
 
-  elementScreenshotPng(selector: string): Promise<Uint8Array> {
-    return this.bytes({ method: "elementScreenshotPng", selector });
+  elementScreenshotPng(selector: string, options?: { paddingPx?: number }): Promise<Uint8Array> {
+    return this.bytes({
+      method: "elementScreenshotPng",
+      selector,
+      paddingPx: options?.paddingPx,
+    });
+  }
+
+  async injectToken(fieldName: string, token: string): Promise<void> {
+    await this.call({ method: "injectToken", fieldName, token });
   }
 
   async pageText(): Promise<string> {
@@ -188,6 +218,12 @@ export class RpcBrowserSession implements BrowserSession {
 
   async loadedExtensions(): Promise<string[]> {
     return z.array(z.string()).parse(await this.call({ method: "loadedExtensions" }));
+  }
+
+  async extensionVersions(): Promise<Array<{ id: string; version: string }>> {
+    return z
+      .array(z.object({ id: z.string(), version: z.string() }))
+      .parse(await this.call({ method: "extensionVersions" }));
   }
 
   async close(): Promise<void> {

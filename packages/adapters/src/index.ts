@@ -4,6 +4,8 @@ export * from "./background-job-handlers.js";
 export * from "./box-emulator.js";
 export * from "./box-sandbox.js";
 export * from "./builtin-tools.js";
+export * from "./captell-emulator.js";
+export * from "./captell-solver.js";
 export * from "./cartesia-voice.js";
 export * from "./child-bots.js";
 export * from "./composio-catalog-cache.js";

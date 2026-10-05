@@ -1,2 +1,2 @@
 export * from "./phpbb-fixture.js";
-export { noisePng } from "./png.js";
+export { noisePng, TINY_PNG } from "./png.js";

@@ -1,4 +1,5 @@
 import { RPCHandler } from "@orpc/server/fetch";
+import { CaptellEmulator, captellCues } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import { LB_RESPONSIBILITY_ACK_TEXT_VERSION } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
@@ -296,25 +297,27 @@ describe("link builder routes", () => {
     expect(get).toHaveBeenCalledTimes(1);
   });
 
-  it("checks Captell balance with the fake solver and never returns the token", async () => {
+  it("checks Captell balance through the HTTP solver and never returns the token", async () => {
     const token = "ct_live_placeholder";
     const load = vi.fn(() => token);
+    const emulator = new CaptellEmulator([captellCues.balance(812)]);
     const prisma = {
       lbProject: { findFirst: vi.fn(async () => projectRow()) },
       secret: { findFirst: vi.fn(async () => ({ ciphertext: "ciphertext-not-the-token" })) },
     } as unknown as PrismaClient;
-    const { response } = await call(
-      deps(prisma, { load, put: vi.fn() }),
-      actor,
-      "linkBuilder/captell/checkBalance",
-      { projectId: "project-1" },
-    );
+    const routerDeps = deps(prisma, { load, put: vi.fn() });
+    routerDeps.captellFetch = emulator.fetch;
+    const { response } = await call(routerDeps, actor, "linkBuilder/captell/checkBalance", {
+      projectId: "project-1",
+    });
     expect(response.status).toBe(200);
     const body = (await response.json()) as { json: { credits: number; helperVersion: string } };
     expect(body.json.helperVersion).toBe("2026.10.4.16");
-    expect(body.json.credits).toBeGreaterThan(0);
+    expect(body.json.credits).toBe(812);
     expect(JSON.stringify(body)).not.toContain(token);
     expect(JSON.stringify(body)).not.toContain("ciphertext");
+    expect(emulator.requests[0]?.authorization).toBe(`Bearer ${token}`);
+    expect(emulator.requests[0]?.url).toBe("https://captell.run/api/v1/balance");
     expect(load).toHaveBeenCalledWith("ciphertext-not-the-token");
     expect(prisma.secret.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({ where: { id: "secret-1", workspaceId: "workspace-1" } }),

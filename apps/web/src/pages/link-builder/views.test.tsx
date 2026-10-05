@@ -110,6 +110,12 @@ describe("link builder screens", () => {
     expect(renderToStaticMarkup(<OperatorView {...props} />)).toContain('aria-label="Live screen"');
   });
 
+  it("shows a sandbox hint on the Captchas tab", () => {
+    const html = renderToStaticMarkup(<LinkBuilderPreview screen="captchas" />);
+    expect(html).toContain("placed_submitted");
+    expect(html).toContain("Sandbox answer. The Captell desk is not production-configured.");
+  });
+
   it("renders the brand step", () => {
     const html = renderToStaticMarkup(<LinkBuilderPreview screen="wizard" />);
     expect(html).toContain("Brand &amp; domains");

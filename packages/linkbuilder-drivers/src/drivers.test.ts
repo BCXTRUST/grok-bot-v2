@@ -1,17 +1,32 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type AdapterContext, type BrowserSession, FakeCaptchaSolver } from "@rakazo/adapter-kit";
+import {
+  type AdapterContext,
+  type BrowserPersona,
+  type BrowserSession,
+  CaptchaSolverError,
+  FakeBrowserSession,
+  FakeCaptchaSolver,
+} from "@rakazo/adapter-kit";
 import { LocalBrowserSessionFactory } from "@rakazo/linkbuilder-browser";
 import { browserTestGate, FIXTURE_PAGE_HELPER_DIR } from "@rakazo/linkbuilder-browser/testing";
-import { HELPER_LABELS, TEST_PACING } from "@rakazo/linkbuilder-core";
+import { HELPER_LABELS, HELPER_PLACING_TIMEOUT_MS, TEST_PACING } from "@rakazo/linkbuilder-core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { runPageHelper, solveImageCaptcha } from "./captcha.js";
+import {
+  captchaCropAcceptable,
+  detectKnowledgeQuestion,
+  looksLikeKnowledgeQuestion,
+  runPageHelper,
+  solveImageCaptcha,
+} from "./captcha.js";
 import { acceptCookieWall } from "./cookie-wall.js";
 import { boardDriverFor, supportedPlatforms } from "./index.js";
 import { PhpbbDriver, phpbbPermalink } from "./phpbb.js";
 import { type FixtureMail, renderBbcode, startPhpbbFixture } from "./testing/phpbb-fixture.js";
+import { noisePng, TINY_PNG } from "./testing/png.js";
 import { normalizeTargetUrl, VerifyRefused, verifyPlacement } from "./verify.js";
+import { detectWidget } from "./widgets.js";
 
 const context: AdapterContext = {
   operationId: "op",
@@ -139,6 +154,96 @@ describe("logged-out verification", () => {
   });
 });
 
+const persona: BrowserPersona = {
+  projectId: "p",
+  profileKey: "drivers",
+  locale: "en-US",
+  timezoneId: "UTC",
+};
+
+describe("captcha crop and widgets", () => {
+  it("accepts a wide letter captcha and rejects a tiny or square crop", () => {
+    expect(TINY_PNG.byteLength).toBeLessThan(100);
+    expect(captchaCropAcceptable(TINY_PNG)).toBe(false);
+    expect(captchaCropAcceptable(noisePng(160, 48, 1))).toBe(true);
+    expect(captchaCropAcceptable(noisePng(40, 40, 1))).toBe(false);
+  });
+
+  it("recognises knowledge questions and widget site keys", async () => {
+    expect(looksLikeKnowledgeQuestion("Wie heißt die Hauptstadt von Deutschland?")).toBe(true);
+    expect(looksLikeKnowledgeQuestion("What is 7 + 4?")).toBe(true);
+    expect(looksLikeKnowledgeQuestion("Username")).toBe(false);
+    const session = new FakeBrowserSession("s", persona, {
+      "https://board.example/register": {
+        elements: {
+          "#qa_answer": { text: "" },
+          "label[for='qa_answer']": { text: "Wie heißt die Hauptstadt von Deutschland?" },
+          ".h-captcha": { attributes: { "data-sitekey": "h-key" } },
+          "iframe[src*='recaptcha'][src*='k=']": {
+            attributes: { src: "https://www.recaptcha.net/recaptcha/api2/anchor?k=frame-key" },
+          },
+          "[data-ipsCaptcha-key]": { attributes: { "data-ipsCaptcha-key": "ips-key" } },
+        },
+      },
+      "https://board.example/frame": {
+        elements: {
+          "iframe[src*='recaptcha'][src*='k=']": {
+            attributes: { src: "https://www.google.com/recaptcha/api2/anchor?k=from-frame" },
+          },
+        },
+      },
+    });
+    await session.goto("https://board.example/register");
+    expect(await detectKnowledgeQuestion(session)).toMatchObject({
+      kind: "question",
+      question: "Wie heißt die Hauptstadt von Deutschland?",
+      answerSelector: "#qa_answer",
+    });
+    expect(await detectWidget(session)).toEqual({
+      kind: "widget",
+      type: "hcaptcha",
+      siteKey: "h-key",
+    });
+    await session.goto("https://board.example/frame");
+    expect(await detectWidget(session)).toEqual({
+      kind: "widget",
+      type: "recaptcha_v2",
+      siteKey: "from-frame",
+    });
+  });
+
+  it("does not submit a Placing button after the injected clock passes the timeout", async () => {
+    const session = new FakeBrowserSession("s", persona, {
+      "https://board.example/register": {
+        elements: {
+          "[data-page-helper]": {
+            text: HELPER_LABELS.placing,
+            onClick: (page) => page.setText("[data-page-helper]", HELPER_LABELS.missingSiteKey),
+          },
+          "#submit": { text: "Submit" },
+        },
+      },
+    });
+    await session.goto("https://board.example/register");
+    let now = 0;
+    const run = await runPageHelper(session, {
+      buttonSelector: "[data-page-helper]",
+      submitSelector: "#submit",
+      pageMessages: async () => [],
+      now: () => now,
+      sleep: async () => {
+        now += HELPER_PLACING_TIMEOUT_MS + 1;
+      },
+      pollMs: 1,
+    });
+    expect(run.decision.action).toBe("stop_host");
+    expect(run.decision.reason).toBe("missing_site_key");
+    expect(
+      session.actions.some((action) => action.kind === "click" && action.selector === "#submit"),
+    ).toBe(false);
+  });
+});
+
 const gate = browserTestGate();
 
 describe.skipIf(!gate.available)(
@@ -199,6 +304,8 @@ describe.skipIf(!gate.available)(
       await driver.fillRegistration(session, account);
       const solver = new FakeCaptchaSolver({ outcomes: ["K7XQ2"] });
       const solution = await solveImageCaptcha(session, challenge, solver, context);
+      expect(solution.ok).toBe(true);
+      if (!solution.ok) return;
       expect(solution.credits).toBeGreaterThan(0);
       const request = solver.requests[0];
       expect(request?.type === "ImageToText" && request.imagePng.byteLength).toBeGreaterThanOrEqual(
@@ -260,5 +367,67 @@ describe.skipIf(!gate.available)(
         }
       },
     );
+
+    it("screenshots the helper once the check is placed", async () => {
+      await session.goto(`${fixture.origin}/widget.php?case=ok`);
+      expect(await session.waitFor("[data-page-helper]", { timeoutMs: 10_000 })).toBe(true);
+      await session.click("[data-page-helper]");
+      await expect
+        .poll(() => session.text("[data-page-helper]"), { timeout: 5_000 })
+        .toBe(HELPER_LABELS.placed);
+      const png = await session.screenshotPng();
+      await mkdir("/opt/cursor/artifacts", { recursive: true });
+      await writeFile("/opt/cursor/artifacts/page-helper-placed.png", png);
+      expect(png.byteLength).toBeGreaterThan(100);
+    });
+
+    it("does not send a captcha image that stays under 100 bytes or the wrong shape", async () => {
+      const tiny = await startPhpbbFixture({
+        captchaImage: "tiny",
+        cookieWall: false,
+        deliverMail: () => undefined,
+      });
+      try {
+        await session.goto(tiny.origin);
+        expect(await driver.openRegistration(session, tiny.origin)).toBe("form");
+        const challenge = await driver.detectCaptcha(session);
+        expect(challenge.kind).toBe("image");
+        if (challenge.kind !== "image") return;
+        const solver = new FakeCaptchaSolver();
+        await expect(solveImageCaptcha(session, challenge, solver, context)).resolves.toEqual({
+          ok: false,
+          reason: "crop_rejected",
+        });
+        expect(solver.requests).toHaveLength(0);
+      } finally {
+        await tiny.close();
+      }
+    });
+
+    it("re-crops once when the image cannot be read, then types the answer", async () => {
+      const board = await startPhpbbFixture({ cookieWall: false, deliverMail: () => undefined });
+      try {
+        await session.goto(board.origin);
+        expect(await driver.openRegistration(session, board.origin)).toBe("form");
+        const challenge = await driver.detectCaptcha(session);
+        expect(challenge.kind).toBe("image");
+        if (challenge.kind !== "image") return;
+        const solver = new FakeCaptchaSolver({
+          outcomes: [new CaptchaSolverError("not_read"), "K7XQ2"],
+        });
+        const solution = await solveImageCaptcha(session, challenge, solver, context);
+        expect(solution).toMatchObject({ ok: true, answer: "K7XQ2" });
+        expect(solver.requests).toHaveLength(2);
+        const first = solver.requests[0];
+        const second = solver.requests[1];
+        expect(first?.type).toBe("ImageToText");
+        expect(second?.type).toBe("ImageToText");
+        if (first?.type === "ImageToText" && second?.type === "ImageToText") {
+          expect(second.imagePng.byteLength).toBeGreaterThan(first.imagePng.byteLength);
+        }
+      } finally {
+        await board.close();
+      }
+    });
   },
 );

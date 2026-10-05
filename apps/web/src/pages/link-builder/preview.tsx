@@ -1,6 +1,6 @@
-import type { LbOperatorTicketView, LbProjectCard } from "@rakazo/contracts";
+import type { LbOperatorTicketView, LbProjectCard, LbProjectDetail } from "@rakazo/contracts";
 import { emptyDraft } from "./model.js";
-import { DashboardView, OperatorView, WizardView } from "./views.js";
+import { DashboardView, OperatorView, ProjectView, WizardView } from "./views.js";
 
 const card: LbProjectCard = {
   id: "demo",
@@ -82,6 +82,35 @@ export function LinkBuilderPreview({ screen }: { screen: string }) {
           onNext={() => undefined}
           onCheckBalance={() => undefined}
           onStart={() => undefined}
+        />
+      </div>
+    );
+  }
+  if (screen === "captchas") {
+    return (
+      <div className="min-h-screen bg-[#050506]">
+        <ProjectView
+          project={{ name: "Nordlicht" } as LbProjectDetail}
+          status={null}
+          hosts={[]}
+          placements={[]}
+          runs={[]}
+          steps={[]}
+          threads={[]}
+          drafts={[]}
+          captchas={[
+            { id: "cap-1", outcome: "placed_submitted", domain: "forum.nordlicht.example" },
+            { id: "cap-2", outcome: "sandbox", domain: "fragen.nordlicht.example" },
+          ]}
+          tickets={[]}
+          tab="Captchas"
+          onTab={() => undefined}
+          onStart={() => undefined}
+          onPause={() => undefined}
+          onStop={() => undefined}
+          onVerify={() => undefined}
+          onOpenTicket={() => undefined}
+          busy={false}
         />
       </div>
     );

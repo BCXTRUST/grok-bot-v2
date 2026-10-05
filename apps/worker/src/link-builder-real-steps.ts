@@ -1,11 +1,12 @@
-import type {
-  AdapterContext,
-  ArtifactStore,
-  BrowserPersona,
-  BrowserSession,
-  BrowserSessionFactory,
-  CaptchaSolver,
-  MailboxProvider,
+import {
+  type AdapterContext,
+  type ArtifactStore,
+  type BrowserPersona,
+  type BrowserSession,
+  type BrowserSessionFactory,
+  type CaptchaSolver,
+  CaptchaSolverError,
+  type MailboxProvider,
 } from "@rakazo/adapter-kit";
 import { type EncryptedSecretStore, loadSiteLoginForFill, upsertSiteLogin } from "@rakazo/adapters";
 import type {
@@ -36,6 +37,8 @@ import {
   insertReference,
   isWarmupMet,
   marketForHost,
+  PAGE_HELPER_EXTENSION_ID,
+  PAGE_HELPER_VERSION,
   type RealStepKind,
   type RunCounters,
   recordCountedLive,
@@ -45,6 +48,7 @@ import {
   shouldCount,
   transitionHost,
   transitionPlacement,
+  transitionProject,
   transitionRun,
   validateAnchor,
   validateTargetUrl,
@@ -54,6 +58,9 @@ import {
   acceptCookieWall,
   type BoardDriver,
   boardDriverFor,
+  type CaptchaChallenge,
+  enrichCaptchaChallenge,
+  placeCaptchaToken,
   type RegistrationResult,
   runPageHelper,
   solveImageCaptcha,
@@ -81,6 +88,8 @@ export interface RealWorkerServices {
   reverifyAfterMs: number;
   pageHelperButtonSelector: string;
   pageHelperPollMs: number;
+  /** Clock for the Page Helper TTL. Production injects `Date.now`. */
+  nowMs?: () => number;
   sleep?: (ms: number) => Promise<void>;
 }
 
@@ -89,6 +98,8 @@ export interface PoolEntry {
   session: BrowserSession;
   marketKey: string;
   hostId: string | null;
+  helperConnected: boolean;
+  helperVersion: string | null;
   cookieChecked: boolean;
   registerFormReady: boolean;
   captchaAttempts: number;
@@ -111,6 +122,7 @@ export interface ProjectConfig {
   preferHosts: string[];
   mailboxId: string | null;
   mailboxAddress: string | null;
+  captchaLowBalanceCredits: number;
   operatorTtlHours: number;
 }
 
@@ -183,6 +195,7 @@ type StepHandler = (ctx: StepContext) => Promise<StepResult>;
 export const REAL_STEP_HANDLERS: Record<RealStepKind, StepHandler> = {
   select_host: selectHost,
   open_session: openSession,
+  helper_connected: helperConnected,
   cookie_wall: cookieWall,
   register,
   captcha,
@@ -352,6 +365,8 @@ async function selectHost(ctx: StepContext): Promise<StepResult> {
       if (entry && entry.hostId !== picked.id) {
         Object.assign(entry, {
           hostId: null,
+          helperConnected: false,
+          helperVersion: null,
           cookieChecked: false,
           registerFormReady: false,
           captchaAttempts: 0,
@@ -367,6 +382,8 @@ async function openSession(ctx: StepContext): Promise<StepResult> {
   await entry.session.goto(host.homepageUrl);
   Object.assign(entry, {
     hostId: host.id,
+    helperConnected: false,
+    helperVersion: null,
     cookieChecked: false,
     registerFormReady: false,
     captchaAttempts: 0,
@@ -378,6 +395,56 @@ async function openSession(ctx: StepContext): Promise<StepResult> {
     artifactIds: await screenshot(ctx, entry, "open"),
     outcome: { mode: ctx.services.browsers.mode },
     run: { currentUrl: await entry.session.url() },
+  };
+}
+
+async function readHelperVersion(session: BrowserSession): Promise<{
+  version: string | null;
+  extensionId: string | null;
+}> {
+  const loaded = (await session.extensionVersions?.()) ?? [];
+  const pinned = loaded.find((item) => item.id === PAGE_HELPER_EXTENSION_ID);
+  if (pinned) return { version: pinned.version || null, extensionId: pinned.id };
+  if (loaded.length > 0) {
+    const match = loaded.find((item) => item.version === PAGE_HELPER_VERSION) ?? loaded[0]!;
+    return { version: match.version || null, extensionId: match.id };
+  }
+  await session.waitFor("html[data-page-helper-version]", { timeoutMs: 5_000 });
+  return {
+    version: await session.attribute("html", "data-page-helper-version"),
+    extensionId: null,
+  };
+}
+
+async function helperConnected(ctx: StepContext): Promise<StepResult> {
+  const host = requireHost(ctx);
+  const entry = requireSession(ctx, host);
+  const observed = await readHelperVersion(entry.session);
+  if (observed.version !== PAGE_HELPER_VERSION) {
+    const seen = observed.version ?? "missing";
+    const artifactIds = await screenshot(ctx, entry, "helper");
+    entry.registerFormReady = false;
+    return {
+      kind: "step",
+      lastAction: "Page Helper version does not match",
+      hostId: host.id,
+      artifactIds,
+      outcome: { helperVersion: seen, expected: PAGE_HELPER_VERSION },
+      apply: park(ctx, host, "unknown_page_state", {
+        note: `Page Helper version is ${seen}; expected ${PAGE_HELPER_VERSION}`,
+      }),
+    };
+  }
+  entry.helperConnected = true;
+  entry.helperVersion = observed.version;
+  return {
+    kind: "step",
+    lastAction: "Page Helper connected",
+    hostId: host.id,
+    outcome: {
+      helperVersion: observed.version,
+      extensionId: observed.extensionId,
+    },
   };
 }
 
@@ -612,10 +679,47 @@ interface CaptchaRecord {
   outcome: LbCaptchaOutcome;
   credits: number;
   balanceAfter?: number;
+  taskId?: string | null;
   buttonTextObserved?: string | null;
   humanCheckboxState?: LbHumanCheckboxState;
   imageGridOpen?: boolean;
   siteKeyFound?: boolean;
+  helperVersion?: string | null;
+}
+
+/** Pauses the project once and writes a single credits alert. A second caller finds it already paused. */
+export async function pauseForLowBalance(
+  ctx: StepContext,
+  balance: number,
+  record: Pick<CaptchaRecord, "type" | "door"> = { type: "unsupported", door: "https_api" },
+): Promise<boolean> {
+  const paused = await ctx.services.prisma.$transaction(async (tx) => {
+    const updated = await tx.lbProject.updateMany({
+      where: { id: ctx.project.id, workspaceId: ctx.project.workspaceId, status: "active" },
+      data: { status: transitionProject("active", "paused") },
+    });
+    if (updated.count !== 1) return false;
+    await tx.lbCaptchaEvent.create({
+      data: {
+        workspaceId: ctx.project.workspaceId,
+        projectId: ctx.project.id,
+        runId: ctx.run.id,
+        type: record.type,
+        door: record.door,
+        outcome: "credits",
+        attempt: 1,
+        creditsCharged: 0,
+        balanceAfter: balance,
+        createdAt: ctx.now,
+      },
+    });
+    await tx.lbRun.update({
+      where: { id: ctx.run.id },
+      data: { lastAction: "Paused, Captell balance is low" },
+    });
+    return true;
+  });
+  return paused;
 }
 
 function captchaEvent(ctx: StepContext, host: HostRow, attempt: number, record: CaptchaRecord) {
@@ -636,6 +740,8 @@ function captchaEvent(ctx: StepContext, host: HostRow, attempt: number, record: 
         attempt,
         creditsCharged: record.credits,
         balanceAfter: record.balanceAfter ?? null,
+        taskId: record.taskId ?? null,
+        helperVersion: record.helperVersion ?? null,
       },
     });
 }
@@ -656,103 +762,347 @@ function withEvent(
   };
 }
 
+function widgetRecord(
+  challenge: Extract<CaptchaChallenge, { kind: "widget" }>,
+  door: LbCaptchaDoor,
+  extra: Partial<CaptchaRecord>,
+): CaptchaRecord {
+  return {
+    type: challenge.type,
+    door,
+    outcome: extra.outcome ?? "placed_submitted",
+    credits: extra.credits ?? 0,
+    balanceAfter: extra.balanceAfter,
+    taskId: extra.taskId,
+    buttonTextObserved: extra.buttonTextObserved,
+    humanCheckboxState: extra.humanCheckboxState,
+    imageGridOpen: extra.imageGridOpen ?? false,
+    siteKeyFound: challenge.siteKey !== null,
+    helperVersion: extra.helperVersion,
+  };
+}
+
 async function captcha(ctx: StepContext): Promise<StepResult> {
   const host = requireHost(ctx);
   const entry = requireSession(ctx, host);
   const driver = requireDriver(host);
-  const challenge = await driver.detectCaptcha(entry.session);
+  const challenge = await enrichCaptchaChallenge(
+    entry.session,
+    await driver.detectCaptcha(entry.session),
+    ctx.services.pageHelperButtonSelector,
+  );
   const attempt = entry.captchaAttempts + 1;
-  let record: CaptchaRecord | null = null;
-  let result: RegistrationResult;
-
-  if (challenge.kind === "image") {
-    const solution = await solveImageCaptcha(
-      entry.session,
-      challenge,
-      ctx.services.captcha,
-      ctx.adapter,
+  try {
+    if (challenge.kind === "image")
+      return await imageCaptcha(ctx, host, entry, driver, challenge, attempt);
+    if (challenge.kind === "question") {
+      return await questionCaptcha(ctx, host, entry, driver, challenge, attempt);
+    }
+    if (challenge.kind === "widget")
+      return await widgetCaptcha(ctx, host, entry, driver, challenge, attempt);
+    return finishRegistration(
+      ctx,
+      host,
+      entry,
+      driver,
+      attempt,
+      null,
+      await driver.submitRegistration(entry.session),
     );
-    record = {
+  } catch (error) {
+    if (error instanceof CaptchaSolverError) return solverFailure(ctx, host, entry, attempt, error);
+    throw error;
+  }
+}
+
+async function imageCaptcha(
+  ctx: StepContext,
+  host: HostRow,
+  entry: PoolEntry,
+  driver: BoardDriver,
+  challenge: Extract<CaptchaChallenge, { kind: "image" }>,
+  attempt: number,
+): Promise<StepResult> {
+  const solution = await solveImageCaptcha(
+    entry.session,
+    challenge,
+    ctx.services.captcha,
+    ctx.adapter,
+  );
+  if (!solution.ok) {
+    const artifactIds = await screenshot(ctx, entry, "captcha");
+    entry.registerFormReady = false;
+    const note =
+      solution.reason === "not_read" ? "Captcha image was not read" : "Captcha crop was rejected";
+    return withEvent(
+      {
+        kind: "step",
+        lastAction: "Parked for the operator",
+        hostId: host.id,
+        artifactIds,
+        outcome: { captcha: solution.reason },
+        apply: park(ctx, host, "captcha_unsolved", { note }),
+      },
+      captchaEvent(ctx, host, attempt, {
+        type: "image_letters",
+        door: "https_api",
+        outcome: "operator_parked",
+        credits: 0,
+      }),
+      0,
+    );
+  }
+  return finishRegistration(
+    ctx,
+    host,
+    entry,
+    driver,
+    attempt,
+    {
       type: "image_letters",
       door: "https_api",
       outcome: "placed_submitted",
       credits: solution.credits,
       balanceAfter: solution.balance,
-    };
-    result = await driver.submitRegistration(entry.session);
-  } else if (challenge.kind === "question") {
-    const answer = await ctx.services.captcha.answerQuestion(
-      { question: challenge.question || undefined, pageText: await entry.session.pageText() },
-      ctx.adapter,
-    );
-    if ("couldNotAnswer" in answer) {
-      const artifactIds = await screenshot(ctx, entry, "captcha");
-      entry.registerFormReady = false;
-      return {
+      taskId: solution.taskId,
+    },
+    await driver.submitRegistration(entry.session),
+  );
+}
+
+async function questionCaptcha(
+  ctx: StepContext,
+  host: HostRow,
+  entry: PoolEntry,
+  driver: BoardDriver,
+  challenge: Extract<CaptchaChallenge, { kind: "question" }>,
+  attempt: number,
+): Promise<StepResult> {
+  const answer = await ctx.services.captcha.answerQuestion(
+    { question: challenge.question || undefined, pageText: await entry.session.pageText() },
+    ctx.adapter,
+  );
+  if ("couldNotAnswer" in answer) {
+    const artifactIds = await screenshot(ctx, entry, "captcha");
+    entry.registerFormReady = false;
+    return withEvent(
+      {
         kind: "step",
         lastAction: "Parked for the operator",
         hostId: host.id,
         artifactIds,
         outcome: { captcha: "question_unanswered" },
-        apply: park(ctx, host, "captcha_unsolved"),
-      };
-    }
-    await entry.session.fill(challenge.answerSelector, answer.answer);
-    record = {
+        apply: park(ctx, host, "captcha_unsolved", { note: challenge.question.slice(0, 500) }),
+      },
+      captchaEvent(ctx, host, attempt, {
+        type: "knowledge_question",
+        door: "https_api",
+        outcome: "operator_parked",
+        credits: 0,
+      }),
+      0,
+    );
+  }
+  await entry.session.fill(challenge.answerSelector, answer.answer);
+  return finishRegistration(
+    ctx,
+    host,
+    entry,
+    driver,
+    attempt,
+    {
       type: "knowledge_question",
       door: "https_api",
       outcome: "placed_submitted",
       credits: 0,
+    },
+    await driver.submitRegistration(entry.session),
+  );
+}
+
+async function widgetCaptcha(
+  ctx: StepContext,
+  host: HostRow,
+  entry: PoolEntry,
+  driver: BoardDriver,
+  challenge: Extract<CaptchaChallenge, { kind: "widget" }>,
+  attempt: number,
+): Promise<StepResult> {
+  const helperReady = await entry.session.waitFor(ctx.services.pageHelperButtonSelector, {
+    timeoutMs: 2_000,
+  });
+  if (!helperReady) return widgetViaApi(ctx, host, entry, driver, challenge, attempt);
+  const run = await runPageHelper(entry.session, {
+    buttonSelector: ctx.services.pageHelperButtonSelector,
+    submitSelector: driver.registerSubmitSelector,
+    pageMessages: (session) => driver.pageMessages(session),
+    sleep: ctx.services.sleep,
+    now: ctx.services.nowMs ?? Date.now,
+    pollMs: ctx.services.pageHelperPollMs,
+  });
+  const record = widgetRecord(challenge, "page_helper", {
+    outcome: run.decision.outcome ?? "placed_submitted",
+    buttonTextObserved: run.buttonText,
+    humanCheckboxState: run.humanCheckbox,
+    imageGridOpen: run.imageGridOpen,
+    helperVersion: entry.helperVersion ?? PAGE_HELPER_VERSION,
+  });
+  if (run.decision.action === "pause_project") {
+    await pauseForLowBalance(ctx, 0, { type: challenge.type, door: "page_helper" });
+    return {
+      kind: "step",
+      lastAction: "Paused, Captell balance is low",
+      hostId: host.id,
+      outcome: { helper: run.decision.action },
     };
-    result = await driver.submitRegistration(entry.session);
-  } else if (challenge.kind === "widget") {
-    const run = await runPageHelper(entry.session, {
-      buttonSelector: ctx.services.pageHelperButtonSelector,
-      submitSelector: driver.registerSubmitSelector,
-      pageMessages: (session) => driver.pageMessages(session),
-      sleep: ctx.services.sleep,
-      pollMs: ctx.services.pageHelperPollMs,
-    });
-    record = {
-      type: challenge.type,
-      door: "page_helper",
-      outcome: run.decision.outcome ?? "placed_submitted",
-      credits: 0,
-      buttonTextObserved: run.buttonText,
-      humanCheckboxState: run.humanCheckbox,
-      imageGridOpen: run.imageGridOpen,
-      siteKeyFound: challenge.siteKey !== null,
-    };
-    if (run.decision.action !== "submit") {
-      const artifactIds = await screenshot(ctx, entry, "captcha");
-      entry.registerFormReady = false;
-      const event = run.decision.hostEvent;
-      const base = {
-        kind: "step" as const,
+  }
+  if (run.decision.action !== "submit") {
+    const artifactIds = await screenshot(ctx, entry, "captcha");
+    entry.registerFormReady = false;
+    const event = run.decision.hostEvent;
+    const apply =
+      event && event !== "parked"
+        ? (tx: Tx) => moveHost(tx, host, event, { captchaType: challenge.type })
+        : park(ctx, host, "captcha_unsolved");
+    return withEvent(
+      {
+        kind: "step",
         hostId: host.id,
         artifactIds,
         outcome: { helper: run.decision.action, reason: run.decision.reason ?? null },
-      };
-      const apply =
-        event && event !== "parked"
-          ? (tx: Tx) => moveHost(tx, host, event, { captchaType: challenge.type })
-          : park(ctx, host, "captcha_unsolved");
-      return withEvent(
-        {
-          ...base,
-          lastAction:
-            event && event !== "parked" ? "Captcha not supported" : "Parked for the operator",
-          apply,
-        },
-        captchaEvent(ctx, host, attempt, record),
-        0,
-      );
-    }
-    result = await driver.readRegistrationResult(entry.session, { waitMs: 15_000 });
-  } else {
-    result = await driver.submitRegistration(entry.session);
+        lastAction:
+          event && event !== "parked" ? "Captcha not supported" : "Parked for the operator",
+        apply,
+      },
+      captchaEvent(ctx, host, attempt, record),
+      0,
+    );
   }
+  return finishRegistration(
+    ctx,
+    host,
+    entry,
+    driver,
+    attempt,
+    record,
+    await driver.readRegistrationResult(entry.session, { waitMs: 15_000 }),
+  );
+}
 
+async function widgetViaApi(
+  ctx: StepContext,
+  host: HostRow,
+  entry: PoolEntry,
+  driver: BoardDriver,
+  challenge: Extract<CaptchaChallenge, { kind: "widget" }>,
+  attempt: number,
+): Promise<StepResult> {
+  if (!challenge.siteKey) {
+    entry.registerFormReady = false;
+    const artifactIds = await screenshot(ctx, entry, "captcha");
+    return withEvent(
+      {
+        kind: "step",
+        lastAction: "Captcha not supported",
+        hostId: host.id,
+        artifactIds,
+        outcome: { captcha: "missing_site_key" },
+        apply: (tx) => moveHost(tx, host, "unsupported_captcha", { captchaType: challenge.type }),
+      },
+      captchaEvent(
+        ctx,
+        host,
+        attempt,
+        widgetRecord(challenge, "https_api", { outcome: "missing_site_key" }),
+      ),
+      0,
+    );
+  }
+  const solved = await ctx.services.captcha.solve(
+    { type: challenge.type, websiteURL: await entry.session.url(), websiteKey: challenge.siteKey },
+    ctx.adapter,
+  );
+  await placeCaptchaToken(entry.session, challenge.type, solved.answer);
+  return finishRegistration(
+    ctx,
+    host,
+    entry,
+    driver,
+    attempt,
+    widgetRecord(challenge, "https_api", {
+      outcome: "placed_submitted",
+      credits: solved.credits,
+      balanceAfter: solved.balance,
+      taskId: solved.taskId,
+    }),
+    await driver.submitRegistration(entry.session),
+  );
+}
+
+async function solverFailure(
+  ctx: StepContext,
+  host: HostRow,
+  entry: PoolEntry,
+  attempt: number,
+  error: CaptchaSolverError,
+): Promise<StepResult> {
+  const artifactIds = await screenshot(ctx, entry, "captcha");
+  if (error.code === "credits") {
+    await pauseForLowBalance(ctx, 0);
+    return {
+      kind: "step",
+      lastAction: "Paused, Captell balance is low",
+      hostId: host.id,
+      artifactIds,
+      outcome: { captcha: "credits" },
+    };
+  }
+  const outcome: LbCaptchaOutcome =
+    error.code === "sandbox"
+      ? "sandbox"
+      : error.code === "missing_site_key"
+        ? "missing_site_key"
+        : error.code === "unsupported"
+          ? "unsupported"
+          : error.code === "no_token"
+            ? "no_token"
+            : "operator_parked";
+  entry.registerFormReady = false;
+  const stop = error.code === "missing_site_key" || error.code === "unsupported";
+  const note =
+    error.code === "sandbox"
+      ? "Captell returned a sandbox answer. The desk is not production-configured."
+      : undefined;
+  return withEvent(
+    {
+      kind: "step",
+      lastAction: stop ? "Captcha not supported" : "Parked for the operator",
+      hostId: host.id,
+      artifactIds,
+      outcome: { captcha: error.code },
+      apply: stop
+        ? (tx) => moveHost(tx, host, "unsupported_captcha")
+        : park(ctx, host, "captcha_unsolved", { note }),
+    },
+    captchaEvent(ctx, host, attempt, {
+      type: "unsupported",
+      door: "https_api",
+      outcome,
+      credits: 0,
+    }),
+    0,
+  );
+}
+
+async function finishRegistration(
+  ctx: StepContext,
+  host: HostRow,
+  entry: PoolEntry,
+  driver: BoardDriver,
+  attempt: number,
+  record: CaptchaRecord | null,
+  result: RegistrationResult,
+): Promise<StepResult> {
   const artifactIds = await screenshot(ctx, entry, "submitted");
   const event = record ? captchaEvent(ctx, host, attempt, record) : async () => undefined;
   const credits = record?.credits ?? 0;

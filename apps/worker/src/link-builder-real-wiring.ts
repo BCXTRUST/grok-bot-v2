@@ -1,6 +1,11 @@
 import { join } from "node:path";
-import type { BrowserSessionFactory, SandboxProvider } from "@rakazo/adapter-kit";
-import { toComputerRef } from "@rakazo/adapters";
+import type {
+  AdapterContext,
+  BrowserSessionFactory,
+  CaptchaSolver,
+  SandboxProvider,
+} from "@rakazo/adapter-kit";
+import { CaptellHttpSolver, type EncryptedSecretStore, toComputerRef } from "@rakazo/adapters";
 import type { PrismaClient } from "@rakazo/db";
 import {
   LocalBrowserSessionFactory,
@@ -48,6 +53,42 @@ export function browserFactoryFromEnv(input: {
       });
       if (!computer) throw new Error("The workspace has no team computer for the persona browser");
       return toComputerRef(computer);
+    },
+  });
+}
+
+/**
+ * Real mode uses Captell when the project has a stored token. Without one, the runner
+ * records a refusal and does not open the persona browser.
+ */
+export async function captchaSolverForProject(input: {
+  prisma: PrismaClient;
+  secrets: EncryptedSecretStore;
+  projectId: string;
+  workspaceId: string;
+  redact?: (secret: string) => void;
+  fetch?: typeof fetch;
+  baseUrl?: string;
+}): Promise<CaptchaSolver | null> {
+  const project = await input.prisma.lbProject.findFirst({
+    where: { id: input.projectId, workspaceId: input.workspaceId },
+    select: { captchaSecretId: true },
+  });
+  if (!project?.captchaSecretId) return null;
+  const secret = await input.prisma.secret.findFirst({
+    where: { id: project.captchaSecretId, workspaceId: input.workspaceId },
+    select: { ciphertext: true },
+  });
+  if (!secret) return null;
+  const ciphertext = secret.ciphertext;
+  return new CaptellHttpSolver({
+    fetch: input.fetch,
+    baseUrl: input.baseUrl,
+    onToken: input.redact,
+    token: async (_context: AdapterContext) => {
+      const token = input.secrets.load(ciphertext);
+      input.redact?.(token);
+      return token;
     },
   });
 }
