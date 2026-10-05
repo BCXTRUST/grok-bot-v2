@@ -138,7 +138,7 @@ Required at create (the wizard enforces these):
 - `topicLanes[]`: tag + short description + example questions
 - `geoPolicy`: `dach_first` | `en_fallback` | `en_only`
 - `disclosureMode`: `undisclosed_persona` (**default**) | `disclosed_persona` | `disclosed_brand` | `drafts_only`
-- `responsibilityAck`: `{ acknowledgedAt, acknowledgedByUserId, textVersion }` — one checkbox in the Review step ("I run this persona undisclosed and accept responsibility for compliance in my markets"). Nothing from it is ever shown in posts, profiles or signatures; it exists to protect the tool operator.
+- `responsibilityAck`: `{ acceptedAt, acceptedByUserId, textVersion }` — recorded automatically when the user clicks **Start building**. No checkbox. One sentence sits under the button: "By starting, you confirm you're responsible for this content and its compliance in your markets." The substantive terms (customer responsible for content, facts and compliance in targeted markets; indemnification for third-party claims) live in the ToS accepted at signup. Nothing from this is ever shown in posts, profiles or signatures; it exists so a customer dispute ("I didn't know") is settled by the record. An optional deployment flag can turn it into an explicit checkbox for specific billing regions if counsel asks.
 - `linkRatio`: maximum share of a persona's posts on a host that may carry a link (default `1/3`); the rest are link-free helpful replies. This is what keeps an undisclosed persona looking like a member to moderators and to anyone searching for a pattern.
 - `proxyPolicy`: `static_isp_per_persona` (default) | `none` (dev only)
 
@@ -338,7 +338,7 @@ Controls:
 ## 10. Compliance and safety defaults
 
 - **Undisclosed commercial posting is a legal risk in DACH.** § 5a Abs. 4 UWG treats concealing the commercial purpose of a business act as unfair; § 6 Abs. 1 Nr. 1 DDG requires commercial communication to be recognisable; § 8 Abs. 2 UWG attributes employees'/agents' posts to the company; competitors and consumer associations can issue Abmahnungen. Case law already covers disguised link advertising from editorial contexts (KG GRUR 2007, 254 "Getarnte Link-Werbung").
-- **Decision (Harold, 2026-10-05): the product does not disclose.** `undisclosed_persona` is the default and the primary mode. The plan therefore puts the effort into (a) making undisclosed posts indistinguishable from member posts — warm-up, `linkRatio` cap, `soundsLikeAd` fit check, facts-only grounding, region-coherent identity — because a visible pattern is what makes an Abmahnung possible, and (b) placing responsibility with the customer through the one-click `responsibilityAck` in the Review step, which protects AutoSEO as the operator of the tool. The optional disclosed modes and `drafts_only` exist for customers (often agency clients) who ask for them; nothing defaults to them.
+- **Decision (Harold, 2026-10-05): the product does not disclose.** `undisclosed_persona` is the default and the primary mode. The plan therefore puts the effort into (a) making undisclosed posts indistinguishable from member posts — warm-up, `linkRatio` cap, `soundsLikeAd` fit check, facts-only grounding, region-coherent identity — because a visible pattern is what makes an Abmahnung possible, and (b) placing responsibility with the customer through the ToS and the `responsibilityAck` recorded on **Start building**, which protects AutoSEO (a US company; the realistic exposure is customer refund/chargeback disputes after an Abmahnung hits the promoted brand, not German courts). The optional disclosed modes and `drafts_only` exist for customers (often agency clients) who ask for them; nothing defaults to them.
 - Enforcement is private and pattern-driven: competitors, consumer associations and the Wettbewerbszentrale act via Abmahnung (lawyer costs typically low four figures, Unterlassungserklärung with contractual penalty), then injunction if ignored. Liability lands on the promoted company (§ 8 Abs. 2 UWG) and on the service running the posts. The dashboard never shows this as a warning banner; it is documented in PRODUCT.md and the terms the customer accepts.
 - **Help first is also the ranking strategy.** Google treats UGC links as `rel="ugc"`/`nofollow` on most boards; the value is referral traffic, brand mentions and citations by AI answer engines (the GEO offer on autoseo.run). The placements table shows `rel` honestly.
 - **Forum ToS**: the probe records link rules; hosts whose rules forbid commercial links are set `denied` automatically.
@@ -354,7 +354,7 @@ Desktop-first, mobile-ok. Minimal visible copy; controls carry concise accessibi
 1. **Landing (`apps/www`)**: already live at autoseo.run with content + link-building offers; add the "Link Builder" product section and a Start free CTA to `app.autoseo.run/link-builder`.
 2. **Dashboard** (`/link-builder`): project cards with NEW/LIVE rings for today, week bar, status pill (`running`, `paused`, `overtime`, `needs operator ×n`, `out of window`), last event line.
 3. **New Project wizard** (7 steps, each validates and saves a draft project so the user can leave and return):
-   Brand & domains → Persona & inbox (creates the AgentMail inbox, shows the address) → Captell (paste `ct_live_…`, live balance check, helper version check) → Quotas & schedule (shows the ramp-up: first LIVE expected after warm-up) → Topics & targets (keyword clusters → URLs, facts) → Policy (deny hosts, geo, link ratio; disclosure mode is preselected `undisclosed_persona` behind an "Advanced" disclosure) → Review (shows the one-sentence responsibility checkbox) → **Start building**.
+   Brand & domains → Persona & inbox (creates the AgentMail inbox, shows the address) → Captell (paste `ct_live_…`, live balance check, helper version check) → Quotas & schedule (shows the ramp-up: first LIVE expected after warm-up) → Topics & targets (keyword clusters → URLs, facts) → Policy (deny hosts, geo, link ratio; disclosure mode is preselected `undisclosed_persona` behind an "Advanced" disclosure) → Review → **Start building** (one sentence under the button records `responsibilityAck` on click; no checkbox).
 4. **Project page** tabs: Overview (Start / Pause / Stop, live counters, "why not" panel, live screen thumbnail), Targets, Hosts (funnel columns: discovered / qualified / warming / ready / used / parked / blocked), Threads & Drafts (approval queue in `drafts_only`), Placements (LIVE table with `rel`, verify button, snapshot link), Runs (timeline of `RunStep`s with screenshots), Captchas (CaptchaEvents + Operator queue: **Open computer** → **I've solved it, continue** → optional note → **Skip host**), Settings.
 5. **Operator screen**: big embedded live screen (existing screen proxy), one primary button, one secondary (skip), one note field. Mobile shows the same ticket with a screenshot and the Continue/Skip actions; push notification deep-links here.
 6. **Empty states** with a seeded demo project (DACH wellness brand) so a new user sees real-looking placements and understands the funnel.
@@ -424,12 +424,64 @@ The first implementation session should deliver M0 + M1 end-to-end (wizard → S
 ## 17. Decisions needed from Harold
 
 1. Build inside this monorepo (recommended) instead of a new Next.js app. Yes / no.
-2. ~~Default disclosure mode~~ **Decided 2026-10-05: `undisclosed_persona` is the default; one-click `responsibilityAck` in Review; fabricated testimonials stay forbidden in every mode.**
+2. ~~Default disclosure mode~~ **Decided 2026-10-05: `undisclosed_persona` is the default; no checkbox — `responsibilityAck` is recorded when Start building is clicked, with the terms in the ToS; fabricated testimonials stay forbidden in every mode.**
 3. Proxy vendor for v1 (IPRoyal or Oxylabs both cover DE/AT/CH static ISP). Pick one or let the first adapter be vendor-agnostic HTTP/SOCKS with manual endpoints.
 4. Discovery vendor: DataForSEO (already available) vs Serper (cheaper per query). Default: DataForSEO.
 5. Draft model lane default: Claude Fable 5 (quality) vs Gemini 3.8 Flash (cost) vs pinning a never-refusing fallback model (Kimi K3 / DeepSeek V4.1). Default: Claude Fable 5 with automatic fallback, Gemini 3.8 Flash for classify.
 6. Count `nofollow`/`ugc` links toward LIVE quota by default (recommended yes, shown honestly) or only followable links.
 7. Captell go-live: confirm the desk is production-configured (upstream solver key set, no `sandbox` label) before the first customer run.
+
+If no answer is given, the defaults in each line apply (monorepo yes; vendor-agnostic proxy adapter with IPRoyal as the first concrete config; DataForSEO; Claude Fable 5 + fallback; count `nofollow`/`ugc`).
+
+---
+
+## 18. How the build runs in Cursor
+
+### 18.1 Shape
+
+- One milestone = one Cloud Agent builder = one branch `cursor/lb-m<N>-<slug>` = one PR into `main`. Milestones run strictly in order; M<N+1> starts only after M<N> is merged, because each builds on the contracts of the previous one.
+- A coordinator agent (this conversation, or a human) launches each builder with a pinned model, reviews the diff against this plan, runs `pnpm lint`, `pnpm check`, `pnpm test` (plus `pnpm test:e2e` from M2), and follows CI and review bots until there is no actionable feedback (AGENTS.md rule). Live canaries (real board, Captell seat, proxy) are coordinator-run only, in M3 and M6, with a staging brand.
+- Every builder receives the same spec: this document plus the milestone's acceptance line from section 16. The spec, not the model, keeps the architecture consistent across cheap and expensive milestones.
+
+### 18.2 Model per milestone
+
+| Milestone | Pinned model | Reason |
+| --- | --- | --- |
+| M0 contracts, schema, core state machines | Claude Opus 5.5 (or Fable 5.1) | Everything downstream depends on it; long-horizon agentic coding is where these models lead (Terminal-Bench 4.0 57.9% vs 38.0%, FrontierSWE v2 56.3% vs 29.5%, Sept 2026 vendor tables). |
+| M1 wizard, dashboard, mobile, seed | Grok 4.7 (or Auto) | Well specified, repetitive, visually verifiable; ~5x cheaper per token. |
+| M2 browser adapter in sandbox | Claude Opus 5.5 (or Fable 5.1) | Real side effects, persistent profiles, extension loading; expensive to debug live. |
+| M3 Captell | Claude Opus 5.5 (or Fable 5.1) | State machine with credit and token-TTL consequences. |
+| M4 discovery + drafting lanes | Grok 4.7 (or Auto) | Adapters and prompts behind contracts with offline fixtures. |
+| M5 nine forum drivers | Grok 4.7 (or Auto) | Repetitive per-platform work against HTML fixtures with a shared interface. |
+| M6 identity / proxy / pacing | Claude Opus 5.5 (or Fable 5.1) | Security-sensitive (secrets, sandbox boundary, proxy credentials). |
+| M7 operations, alerts, reports | Grok 4.7 (or Auto) | CRUD-heavy, fully testable with a fake clock. |
+| M8 hardening, provider adapters, docs | Claude Opus 5.5 (or Fable 5.1) | Security review, rate limits, plan limits. |
+
+Auto is acceptable where listed; it chooses by task and capacity and does not know which milestones are expensive to get wrong, so the pinned rows stay pinned.
+
+### 18.3 Kickoff prompt template (paste per milestone)
+
+```text
+Implement milestone M<N> of docs/autoseo-link-builder-plan.md in this repository.
+
+Read AGENTS.md, the whole plan, and the existing code it names (apps/web, apps/api, apps/worker,
+packages/adapters, packages/adapter-kit, packages/contracts, packages/db) before writing code.
+Scope is exactly M<N>; do not start M<N+1>. Follow the contracts and names in the plan; if the plan
+is wrong or ambiguous, say so in the PR description and choose the smallest change that keeps later
+milestones possible.
+
+Done means: the acceptance line for M<N> in section 16 is met, `pnpm lint`, `pnpm check` and
+`pnpm test` pass locally, tests are deterministic and offline, no secret appears in code, tests,
+logs or docs, and the PR description lists what was built, what was skipped and why.
+Branch: cursor/lb-m<N>-<slug>. Open a draft PR against main.
+```
+
+### 18.4 Definition of done per milestone
+
+- Acceptance line from section 16 demonstrably met (screenshot or test output in the PR).
+- CI green; Bugbot / review-bot threads resolved; no `TODO` without an issue link.
+- New contracts documented in the plan's domain model or marked as a deliberate deviation.
+- For M2, M3, M6: coordinator-run live canary passed and its log attached to the PR.
 
 ---
 
