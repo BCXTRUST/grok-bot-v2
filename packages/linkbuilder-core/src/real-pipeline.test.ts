@@ -100,6 +100,11 @@ describe("planRealStep", () => {
     expect(planRealStep(input({ host: warming, warmupMet: false }))).toEqual({
       kind: "select_host",
     });
+    expect(
+      planRealStep(
+        input({ host: warming, warmupMet: false, warmupPostsShort: true, session: onHost }),
+      ),
+    ).toEqual({ kind: "warmup_post" });
     const ready = { id: "h1", ...hostState("ready") };
     expect(planRealStep(input({ host: ready }))).toEqual({ kind: "open_session" });
     expect(planRealStep(input({ host: ready, session: onHost }))).toEqual({ kind: "post" });

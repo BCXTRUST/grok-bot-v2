@@ -334,6 +334,13 @@ function ProjectRoute({ projectId }: { projectId: string }) {
         void rpc.linkBuilder.placements.verify({ projectId, placementId }).then(() => reload())
       }
       onOpenTicket={(ticketId) => navigate(`/link-builder/${projectId}/operator/${ticketId}`)}
+      onDecideDraft={(draftId, decision) => {
+        const call =
+          decision === "approved"
+            ? rpc.linkBuilder.drafts.approve({ projectId, draftId })
+            : rpc.linkBuilder.drafts.discard({ projectId, draftId });
+        void call.then(() => reload());
+      }}
       loadArtifact={loadArtifact}
     />
   );

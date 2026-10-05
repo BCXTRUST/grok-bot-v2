@@ -394,14 +394,16 @@ function sameUrl(left: string, right: string): boolean {
  */
 export function enforceSingleLink(
   body: string,
-  options: { keepUrl?: string } = {},
+  options: { keepUrl?: string; stripAll?: boolean } = {},
 ): { body: string; linkCount: number; removed: number } {
   const found = [...body.matchAll(LINK_PATTERN)];
-  const keepIndex = options.keepUrl
-    ? found.findIndex((match) => sameUrl(describeLink(match).url, options.keepUrl!))
-    : found.length > 0
-      ? 0
-      : -1;
+  const keepIndex = options.stripAll
+    ? -1
+    : options.keepUrl
+      ? found.findIndex((match) => sameUrl(describeLink(match).url, options.keepUrl!))
+      : found.length > 0
+        ? 0
+        : -1;
   let result = "";
   let cursor = 0;
   found.forEach((match, index) => {

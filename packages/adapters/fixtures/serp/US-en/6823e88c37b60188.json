@@ -1,0 +1,68 @@
+[
+  {
+    "url": "https://back-talk.example/t/back-pain/1",
+    "title": "What helps with lower back pain?",
+    "snippet": "Discourse question.",
+    "domain": "back-talk.example"
+  },
+  {
+    "url": "https://spine-board.example/threads/spine.2/",
+    "title": "Desk setup for a sore spine",
+    "snippet": "XenForo.",
+    "domain": "spine-board.example"
+  },
+  {
+    "url": "https://posture-forum.example/viewtopic.php?t=3",
+    "title": "How do you sit through a long day?",
+    "snippet": "phpBB.",
+    "domain": "posture-forum.example"
+  },
+  {
+    "url": "https://fitness-chat.example/showthread.php?t=4",
+    "title": "Strength work with a stiff back",
+    "snippet": "vBulletin.",
+    "domain": "fitness-chat.example"
+  },
+  {
+    "url": "https://mobility-forum.example/d/5-mobility",
+    "title": "Daily mobility, how long?",
+    "snippet": "Flarum.",
+    "domain": "mobility-forum.example"
+  },
+  {
+    "url": "https://rehab-talk.example/showthread.php?tid=6",
+    "title": "Rehab exercises after a strain",
+    "snippet": "MyBB.",
+    "domain": "rehab-talk.example"
+  },
+  {
+    "url": "https://core-board.example/forum/thread/7-core/",
+    "title": "Core work without flaring pain",
+    "snippet": "WoltLab.",
+    "domain": "core-board.example"
+  },
+  {
+    "url": "https://lumbar-forum.example/topic/8-lumbar/",
+    "title": "Lumbar support, does it matter?",
+    "snippet": "Invision.",
+    "domain": "lumbar-forum.example"
+  },
+  {
+    "url": "https://stretch-community.example/topic/9/stretch",
+    "title": "Stretching before a run",
+    "snippet": "NodeBB.",
+    "domain": "stretch-community.example"
+  },
+  {
+    "url": "https://deskpain-forum.example/discussion/10/desk",
+    "title": "Standing desk experiences",
+    "snippet": "Vanilla.",
+    "domain": "deskpain-forum.example"
+  },
+  {
+    "url": "https://sciatica-talk.example/viewtopic.php?t=11",
+    "title": "Sciatica and walking",
+    "snippet": "phpBB.",
+    "domain": "sciatica-talk.example"
+  }
+]

@@ -919,6 +919,8 @@ model LbProject {
   spamRetry                Json                @default("{\"maxRetries\":1,\"sentences\":[\"Die Registrierung ist wegen Spamschutzmaßnahmen fehlgeschlagen.\",\"No soup for you!\"]}")
   content                  Json                @default("{\"toneNotes\":\"\",\"bannedClaims\":[],\"maxReplyChars\":1200}")
   operator                 Json                @default("{\"parkedHostTtlHours\":48,\"channels\":[\"push\",\"email\"]}")
+  /// Set by the discovery pass. Null until the first run after the project starts.
+  lastDiscoveredAt         DateTime?
   archivedAt               DateTime?
   createdAt                DateTime            @default(now())
   updatedAt                DateTime            @updatedAt
@@ -978,6 +980,9 @@ model LbHost {
   platformVersionHint String?
   language            String
   country             String
+  /// Market tag copied from the market that discovered this host. M6 reads it for the session.
+  locale              String              @default("")
+  timezoneId          String              @default("")
   topicTags           String[]            @default([])
   qualityScore        Float               @default(0)
   hrefForNewMembers   String              @default("unknown")

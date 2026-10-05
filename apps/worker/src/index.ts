@@ -2,7 +2,11 @@ import type { JobPublisher, JobWorkerHost } from "@rakazo/adapter-kit";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
 import { startLinkBuilderFakeRunner } from "./link-builder-fake.js";
 import { isLinkBuilderRealEnabled, startLinkBuilderRealRunner } from "./link-builder-real.js";
-import { browserFactoryFromEnv, captchaSolverForProject } from "./link-builder-real-wiring.js";
+import {
+  browserFactoryFromEnv,
+  captchaSolverForProject,
+  searchProviderFromEnv,
+} from "./link-builder-real-wiring.js";
 
 loadRootEnv();
 
@@ -24,8 +28,10 @@ import {
   isPipedreamEnabled,
   LocalAgentHomeStore,
   LocalArtifactStore,
+  lanesFromEnv,
   McpConnector,
   McpOAuthBroker,
+  OpenRouterTextModel,
   PiAgentRuntime,
   PipedreamConnector,
   PostgresRealtimeFanout,
@@ -151,6 +157,14 @@ async function main() {
         // Live inbox provisioning stays on the emulator until the inbound webhook is wired.
         mailbox: new AgentMailEmulator(),
         workerId: `worker-${process.pid}`,
+        search: searchProviderFromEnv({ env: process.env, prisma, secrets }),
+        textModel: process.env.OPENROUTER_API_KEY
+          ? new OpenRouterTextModel({
+              apiKey: async () => process.env.OPENROUTER_API_KEY ?? "",
+              onSecret: (secret) => secrets.redact(secret),
+              models: lanesFromEnv(process.env),
+            })
+          : undefined,
       })
     : null;
   const reconciler = createJobReconciler({

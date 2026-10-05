@@ -1,0 +1,194 @@
+[
+  {
+    "url": "https://rueckenforum.example/viewtopic.php?t=11",
+    "title": "Was hilft bei Rückenschmerzen?",
+    "snippet": "phpBB thread about morning stiffness.",
+    "domain": "rueckenforum.example"
+  },
+  {
+    "url": "https://fitness-board.example/threads/ruecken.12/",
+    "title": "Übungen nach dem Büro",
+    "snippet": "XenForo thread on desk pain.",
+    "domain": "fitness-board.example"
+  },
+  {
+    "url": "https://health-talk.example/t/rueckenschmerzen/13",
+    "title": "Welche Haltung im Homeoffice?",
+    "snippet": "Discourse question on posture.",
+    "domain": "health-talk.example"
+  },
+  {
+    "url": "https://wirbelsaeule-forum.example/forum/thread/14-wirbel/",
+    "title": "Bandscheibe und langes Sitzen",
+    "snippet": "WoltLab thread.",
+    "domain": "wirbelsaeule-forum.example"
+  },
+  {
+    "url": "https://skoliose-brett.example/viewtopic.php?t=15",
+    "title": "Skoliose Alltag, was nutzt wirklich?",
+    "snippet": "phpBB experiences.",
+    "domain": "skoliose-brett.example"
+  },
+  {
+    "url": "https://bewegung-forum.example/showthread.php?tid=16",
+    "title": "Dehnen vor oder nach dem Training?",
+    "snippet": "MyBB question.",
+    "domain": "bewegung-forum.example"
+  },
+  {
+    "url": "https://ruecken-community.example/d/17-ruecken",
+    "title": "Kurze Pausen am Schreibtisch",
+    "snippet": "Flarum discussion.",
+    "domain": "ruecken-community.example"
+  },
+  {
+    "url": "https://physio-talk.example/showthread.php?t=18",
+    "title": "Physio-Übungen für den unteren Rücken",
+    "snippet": "vBulletin thread.",
+    "domain": "physio-talk.example"
+  },
+  {
+    "url": "https://nacken-forum.example/topic/19-nacken/",
+    "title": "Nacken und Bildschirmhöhe",
+    "snippet": "Invision topic.",
+    "domain": "nacken-forum.example"
+  },
+  {
+    "url": "https://alltag-ruecken.example/topic/20/alltag",
+    "title": "Alltag mit verspanntem Rücken",
+    "snippet": "NodeBB topic.",
+    "domain": "alltag-ruecken.example"
+  },
+  {
+    "url": "https://sport-fragen.example/discussion/21/sport",
+    "title": "Welcher Sport bei Rückenschmerzen?",
+    "snippet": "Vanilla discussion.",
+    "domain": "sport-fragen.example"
+  },
+  {
+    "url": "https://gelenk-forum.example/viewtopic.php?t=22",
+    "title": "Hüfte und Rücken zusammen trainieren?",
+    "snippet": "phpBB.",
+    "domain": "gelenk-forum.example"
+  },
+  {
+    "url": "https://yoga-brett.example/forum/thread/23-yoga/",
+    "title": "Yoga für den unteren Rücken",
+    "snippet": "WoltLab.",
+    "domain": "yoga-brett.example"
+  },
+  {
+    "url": "https://pilates-talk.example/threads/pilates.24/",
+    "title": "Pilates oder Krankengymnastik?",
+    "snippet": "XenForo.",
+    "domain": "pilates-talk.example"
+  },
+  {
+    "url": "https://bandscheibe-forum.example/t/bandscheibe/25",
+    "title": "Vorfall, wann wieder bewegen?",
+    "snippet": "Discourse.",
+    "domain": "bandscheibe-forum.example"
+  },
+  {
+    "url": "https://halten-forum.example/showthread.php?tid=26",
+    "title": "Haltung im Stehen korrigieren",
+    "snippet": "MyBB.",
+    "domain": "halten-forum.example"
+  },
+  {
+    "url": "https://dehnen-community.example/d/27-dehnen",
+    "title": "Tägliches Dehnen, wie lange?",
+    "snippet": "Flarum.",
+    "domain": "dehnen-community.example"
+  },
+  {
+    "url": "https://kreuz-talk.example/showthread.php?t=28",
+    "title": "Kreuzschmerzen nach dem Garten",
+    "snippet": "vBulletin.",
+    "domain": "kreuz-talk.example"
+  },
+  {
+    "url": "https://sitz-forum.example/topic/29-sitzen/",
+    "title": "Sitzkissen, bringt das etwas?",
+    "snippet": "Invision.",
+    "domain": "sitz-forum.example"
+  },
+  {
+    "url": "https://stehen-brett.example/topic/30/stehen",
+    "title": "Stehpult Erfahrungen",
+    "snippet": "NodeBB.",
+    "domain": "stehen-brett.example"
+  },
+  {
+    "url": "https://gehen-forum.example/discussion/31/gehen",
+    "title": "Spazieren als Ausgleich?",
+    "snippet": "Vanilla.",
+    "domain": "gehen-forum.example"
+  },
+  {
+    "url": "https://schmerz-talk.example/viewtopic.php?t=32",
+    "title": "Akuter Hexenschuss, was tun?",
+    "snippet": "phpBB.",
+    "domain": "schmerz-talk.example"
+  },
+  {
+    "url": "https://mobil-forum.example/forum/thread/33-mobil/",
+    "title": "Mobilisation am Morgen",
+    "snippet": "WoltLab.",
+    "domain": "mobil-forum.example"
+  },
+  {
+    "url": "https://kraft-brett.example/threads/kraft.34/",
+    "title": "Krafttraining trotz Rückenschmerz",
+    "snippet": "XenForo.",
+    "domain": "kraft-brett.example"
+  },
+  {
+    "url": "https://balance-forum.example/t/balance/35",
+    "title": "Balanceübungen für den Rumpf",
+    "snippet": "Discourse.",
+    "domain": "balance-forum.example"
+  },
+  {
+    "url": "https://atlas-talk.example/showthread.php?tid=36",
+    "title": "Atlaswirbel und Kopfschmerz",
+    "snippet": "MyBB.",
+    "domain": "atlas-talk.example"
+  },
+  {
+    "url": "https://werbung-frei.example/viewtopic.php?t=37",
+    "title": "Regeln zum Verlinken",
+    "snippet": "Board that forbids commercial links.",
+    "domain": "werbung-frei.example"
+  },
+  {
+    "url": "https://arkose-board.example/viewtopic.php?t=38",
+    "title": "Anmeldung mit Rätsel",
+    "snippet": "FunCaptcha on the register form.",
+    "domain": "arkose-board.example"
+  },
+  {
+    "url": "https://geetest-talk.example/threads/geetest.39/",
+    "title": "Registrierung hängt",
+    "snippet": "GeeTest on the register form.",
+    "domain": "geetest-talk.example"
+  },
+  {
+    "url": "https://keycaptcha-board.example/showthread.php?t=40",
+    "title": "Captcha unbekannt",
+    "snippet": "KeyCaptcha on the register form.",
+    "domain": "keycaptcha-board.example"
+  },
+  {
+    "url": "https://rueckenforum.example/viewtopic.php?t=99",
+    "title": "Doppelter Treffer derselben Domain",
+    "snippet": "Duplicate host, must collapse.",
+    "domain": "rueckenforum.example"
+  },
+  {
+    "url": "https://ruecken-news.example/2026/artikel",
+    "title": "Magazinbeitrag ohne Forum",
+    "snippet": "Not a board.",
+    "domain": "ruecken-news.example"
+  }
+]

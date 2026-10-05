@@ -4,8 +4,16 @@ import type {
   BrowserSessionFactory,
   CaptchaSolver,
   SandboxProvider,
+  SearchProvider,
 } from "@rakazo/adapter-kit";
-import { CaptellHttpSolver, type EncryptedSecretStore, toComputerRef } from "@rakazo/adapters";
+import {
+  CaptellHttpSolver,
+  DataForSeoSearchProvider,
+  type EncryptedSecretStore,
+  RecordedSearchProvider,
+  recordedSerpDir,
+  toComputerRef,
+} from "@rakazo/adapters";
 import type { PrismaClient } from "@rakazo/db";
 import {
   LocalBrowserSessionFactory,
@@ -24,6 +32,32 @@ function dirs(value: string | undefined): string[] {
  * runs it on this host instead; the local factory refuses that in production without
  * `LINK_BUILDER_ALLOW_LOCAL_BROWSER=true`.
  */
+/** Recorded fixtures, or DataForSEO when `LINK_BUILDER_SEARCH=dataforseo` and a `lb_search` secret exists. */
+export function searchProviderFromEnv(input: {
+  env: NodeJS.ProcessEnv;
+  prisma: PrismaClient;
+  secrets: EncryptedSecretStore;
+}): SearchProvider | undefined {
+  if (input.env.LINK_BUILDER_SEARCH === "off") return undefined;
+  const recorded = new RecordedSearchProvider(recordedSerpDir());
+  if (input.env.LINK_BUILDER_SEARCH !== "dataforseo") return recorded;
+  return new DataForSeoSearchProvider({
+    onSecret: (secret) => input.secrets.redact(secret),
+    credentials: async (context: AdapterContext) => {
+      const row = await input.prisma.secret.findFirst({
+        where: { workspaceId: context.workspaceId, kind: "lb_search" },
+        orderBy: { createdAt: "desc" },
+      });
+      if (!row) throw new Error("missing search credentials");
+      const plain = input.secrets.load(row.ciphertext);
+      input.secrets.redact(plain);
+      const split = plain.indexOf(":");
+      if (split <= 0) throw new Error("missing search credentials");
+      return { login: plain.slice(0, split), password: plain.slice(split + 1) };
+    },
+  });
+}
+
 export function browserFactoryFromEnv(input: {
   env: NodeJS.ProcessEnv;
   dataDir: string;

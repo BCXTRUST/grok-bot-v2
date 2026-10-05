@@ -1,0 +1,197 @@
+import type { LbMarket, LbMarketPolicy, LbTopicLane } from "@rakazo/contracts";
+import { marketKey, selectMarkets } from "./market.js";
+import { registrableDomain } from "./policy.js";
+import { type ProbeFacts, type ProbePage, probePages, settleProbe } from "./probe.js";
+
+/**
+ * One combined footprint per lane tag. The OR covers every platform in Appendix A, so discovery
+ * does not send a separate query per platform. Localisation is the market's country and language.
+ */
+export const SEARCH_FOOTPRINT =
+  "(inurl:viewtopic.php OR inurl:/forum/thread/ OR inurl:showthread.php OR inurl:/t/ OR inurl:/threads/ OR inurl:/topic/ OR inurl:/d/)";
+
+export function footprintQuery(keyword: string): string {
+  const cleaned = keyword.replace(/"/g, "").trim();
+  if (!cleaned) throw new RangeError("Footprint query needs a keyword");
+  return `"${cleaned}" ${SEARCH_FOOTPRINT}`;
+}
+
+export interface FootprintQuery {
+  market: LbMarket;
+  laneId: string;
+  laneTag: string;
+  query: string;
+}
+
+/** Primary market first. Later markets only when `marketPolicy` says the supply is short. */
+export function planFootprintQueries(input: {
+  lanes: readonly LbTopicLane[];
+  markets: readonly LbMarket[];
+  policy: LbMarketPolicy;
+  supply: Readonly<Record<string, number>>;
+  need: number;
+}): FootprintQuery[] {
+  const markets = selectMarkets({
+    markets: input.markets,
+    policy: input.policy,
+    supply: input.supply,
+    need: input.need,
+  });
+  const queries: FootprintQuery[] = [];
+  for (const market of markets) {
+    for (const lane of input.lanes) {
+      queries.push({
+        market,
+        laneId: lane.id,
+        laneTag: lane.tag,
+        query: footprintQuery(lane.tag),
+      });
+    }
+  }
+  return queries;
+}
+
+export interface SearchHit {
+  url: string;
+  title: string;
+  snippet: string;
+  market: LbMarket;
+  laneId: string;
+  laneTag: string;
+}
+
+export interface FunnelHost {
+  registrableDomain: string;
+  homepageUrl: string;
+  sampleUrl: string;
+  title: string;
+  market: LbMarket;
+  topicTags: string[];
+  laneIds: string[];
+  facts: ProbeFacts;
+  status: ReturnType<typeof settleProbe>["status"];
+  reason: string | null;
+  score: number;
+}
+
+export type SearchFn = (request: {
+  query: string;
+  country: string;
+  language: string;
+  depth: number;
+}) => Promise<Array<{ url: string; title: string; snippet: string }>>;
+
+/**
+ * SERP hits to registrable domains. Drops deny-list hosts, hosts already used, and duplicates.
+ * The first market to see a domain keeps its tag.
+ */
+export function dedupeHits(
+  hits: readonly SearchHit[],
+  denyHosts: readonly string[],
+  usedHosts: readonly string[],
+): SearchHit[] {
+  const deny = new Set(denyHosts.map((host) => host.toLowerCase()));
+  const used = new Set(usedHosts.map((host) => host.toLowerCase()));
+  const seen = new Set<string>();
+  const kept: SearchHit[] = [];
+  for (const hit of hits) {
+    const domain = registrableDomain(hit.url);
+    if (!domain || deny.has(domain) || used.has(domain) || seen.has(domain)) continue;
+    seen.add(domain);
+    kept.push(hit);
+  }
+  return kept;
+}
+
+/**
+ * Offline-capable funnel: search, dedupe, probe each homepage with the injected fetch.
+ * The fetch is only asked for URLs on the host that the search result already named.
+ */
+export async function discoverHosts(input: {
+  lanes: readonly LbTopicLane[];
+  markets: readonly LbMarket[];
+  policy: LbMarketPolicy;
+  supply: Readonly<Record<string, number>>;
+  need: number;
+  denyHosts?: readonly string[];
+  usedHosts?: readonly string[];
+  depth?: number;
+  search: SearchFn;
+  fetchText: (url: string) => Promise<string | null>;
+}): Promise<FunnelHost[]> {
+  const queries = planFootprintQueries(input);
+  const hits: SearchHit[] = [];
+  for (const planned of queries) {
+    const results = await input.search({
+      query: planned.query,
+      country: planned.market.country,
+      language: planned.market.language,
+      depth: input.depth ?? 100,
+    });
+    for (const result of results) {
+      hits.push({
+        ...result,
+        market: planned.market,
+        laneId: planned.laneId,
+        laneTag: planned.laneTag,
+      });
+    }
+  }
+  const unique = dedupeHits(hits, input.denyHosts ?? [], input.usedHosts ?? []);
+  const hosts: FunnelHost[] = [];
+  for (const hit of unique) {
+    const domain = registrableDomain(hit.url);
+    if (!domain) continue;
+    const homepageUrl = `https://${domain}/`;
+    const pages: ProbePage[] = [];
+    const home = await input.fetchText(homepageUrl);
+    if (home !== null) pages.push({ url: homepageUrl, html: home });
+    if (onHost(hit.url, domain)) {
+      const sample = await input.fetchText(hit.url);
+      if (sample !== null) pages.push({ url: hit.url, html: sample });
+    }
+    const preliminary = probePages({ homepageUrl, sampleUrl: hit.url, pages });
+    if (preliminary.registerUrl && onHost(preliminary.registerUrl, domain)) {
+      const register = await input.fetchText(preliminary.registerUrl);
+      if (register !== null) pages.push({ url: preliminary.registerUrl, html: register });
+    }
+    for (const path of ["/rules", "/faq"]) {
+      const url = `https://${domain}${path}`;
+      const html = await input.fetchText(url);
+      if (html !== null) pages.push({ url, html });
+    }
+    const facts = probePages({ homepageUrl, sampleUrl: hit.url, pages });
+    const settled = settleProbe(facts, home !== null);
+    hosts.push({
+      registrableDomain: domain,
+      homepageUrl,
+      sampleUrl: hit.url,
+      title: hit.title,
+      market: hit.market,
+      topicTags: [hit.laneTag],
+      laneIds: [hit.laneId],
+      facts,
+      status: settled.status,
+      reason: settled.reason,
+      score: settled.score,
+    });
+  }
+  return hosts;
+}
+
+export function countQualified(
+  hosts: readonly FunnelHost[],
+  market: Pick<LbMarket, "country" | "language">,
+): number {
+  const key = marketKey(market);
+  return hosts.filter((host) => host.status === "qualified" && marketKey(host.market) === key)
+    .length;
+}
+
+function onHost(url: string, domain: string): boolean {
+  try {
+    return registrableDomain(url) === domain;
+  } catch {
+    return false;
+  }
+}

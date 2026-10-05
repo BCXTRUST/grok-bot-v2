@@ -113,6 +113,7 @@ import {
   checkLbCaptchaBalance,
   continueLbTicket,
   createLbProject,
+  decideLbDraft,
   followLbProject,
   getLbArtifact,
   getLbProject,
@@ -3016,6 +3017,12 @@ export function createRouter(deps: RouterDeps) {
       drafts: {
         list: authed.linkBuilder.drafts.list.handler(async ({ context, input }) =>
           listLbDrafts(deps, context.actor, input.projectId),
+        ),
+        approve: authed.linkBuilder.drafts.approve.handler(async ({ context, input }) =>
+          decideLbDraft(deps, context.actor, input, "approved"),
+        ),
+        discard: authed.linkBuilder.drafts.discard.handler(async ({ context, input }) =>
+          decideLbDraft(deps, context.actor, input, "discarded"),
         ),
       },
       captcha: {

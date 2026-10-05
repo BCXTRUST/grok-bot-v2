@@ -10,10 +10,15 @@ import {
   CaptchaSolverError,
   type MailboxProvider,
   type RealtimeFanout,
+  type SearchProvider,
+  type TextModel,
 } from "@rakazo/adapter-kit";
 import type { EncryptedSecretStore } from "@rakazo/adapters";
 import {
+  LbContentSchema,
+  LbDisclosureModeSchema,
   type LbHostStatus,
+  LbLinkRatioSchema,
   LbMarketsSchema,
   LbOperatorSettingsSchema,
   LbPersonaSchema,
@@ -22,6 +27,7 @@ import {
   LbRunStatusSchema,
   LbScheduleSchema,
   LbTargetSchema,
+  LbTopicLaneSchema,
   LbWarmupSchema,
 } from "@rakazo/contracts";
 import type { Prisma, PrismaClient } from "@rakazo/db";
@@ -39,6 +45,7 @@ import {
   redactSecrets,
   transitionRun,
 } from "@rakazo/linkbuilder-core";
+import { discoverDueProjects } from "./link-builder-discovery.js";
 import {
   browserPersona,
   isUnique,
@@ -93,6 +100,10 @@ export interface LinkBuilderRealDeps {
   pageHelperButtonSelector?: string;
   pageHelperPollMs?: number;
   sleep?: (ms: number) => Promise<void>;
+  textModel?: TextModel;
+  search?: SearchProvider;
+  probeFetch?: typeof fetch;
+  allowPrivateProbe?: boolean;
 }
 
 const CAPTELL_SECRET_MISSING = "Real mode needs a Captell token for this project";
@@ -150,6 +161,7 @@ export class LinkBuilderRealRunner {
       pageHelperPollMs: deps.pageHelperPollMs ?? 250,
       nowMs: () => (deps.now ? deps.now().getTime() : Date.now()),
       sleep: deps.sleep,
+      textModel: deps.textModel,
     };
   }
 
@@ -159,6 +171,20 @@ export class LinkBuilderRealRunner {
   }
 
   async tick(): Promise<number> {
+    if (this.deps.search) {
+      await discoverDueProjects({
+        prisma: this.deps.prisma,
+        search: this.deps.search,
+        fetchImpl: this.deps.probeFetch,
+        allowPrivate: this.deps.allowPrivateProbe ?? false,
+        now: this.now(),
+      }).catch((error: unknown) => {
+        console.error(
+          "linkbuilder.discover",
+          error instanceof Error ? error.message : "discovery failed",
+        );
+      });
+    }
     const runs = await this.deps.prisma.lbRun.findMany({
       where: { status: { in: ["running", "overtime"] }, project: { status: "active" } },
       select: { id: true },
@@ -428,6 +454,9 @@ export class LinkBuilderRealRunner {
             ...ctx.project.warmup,
           })
         : false,
+      warmupPostsShort: ctx.account
+        ? ctx.account.postCount < ctx.project.warmup.minPostsBeforeLink
+        : false,
       placement: ctx.placement
         ? { status: ctx.placement.status as never, counted: ctx.placement.counted }
         : null,
@@ -506,7 +535,7 @@ export class LinkBuilderRealRunner {
             artifactIds: result.artifactIds ?? [],
             costs: json({
               credits: result.credits ?? 0,
-              tokens: 0,
+              tokens: result.tokens ?? 0,
               bytes: 0,
               ms: Date.now() - startedAt.getTime(),
             }),
@@ -640,6 +669,11 @@ function projectConfig(row: {
   mailboxAddress: string | null;
   captchaLowBalanceCredits: number;
   operator: unknown;
+  facts: string[];
+  content: unknown;
+  disclosureMode: string;
+  linkRatio: unknown;
+  topicLanes: unknown;
 }): ProjectConfig | null {
   if (row.status !== "active") return null;
   const persona = LbPersonaSchema.safeParse(row.persona);
@@ -662,6 +696,12 @@ function projectConfig(row: {
     schedule: schedule.data,
     warmup: warmup.success ? warmup.data : LbWarmupSchema.parse({}),
     targets: targets.success ? targets.data : [],
+    facts: row.facts,
+    content: LbContentSchema.safeParse(row.content).data ?? LbContentSchema.parse({}),
+    disclosureMode:
+      LbDisclosureModeSchema.safeParse(row.disclosureMode).data ?? "undisclosed_persona",
+    linkRatio: LbLinkRatioSchema.safeParse(row.linkRatio).data ?? { links: 1, posts: 3 },
+    topicLanes: LbTopicLaneSchema.array().safeParse(row.topicLanes).data ?? [],
     countNofollow: row.countNofollow,
     denyHosts: row.denyHosts,
     preferHosts: row.preferHosts,

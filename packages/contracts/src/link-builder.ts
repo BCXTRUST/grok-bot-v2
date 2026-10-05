@@ -379,10 +379,28 @@ export const LbSpamRetrySchema = z.object({
 });
 export type LbSpamRetry = z.infer<typeof LbSpamRetrySchema>;
 
+/** What happens to a draft the fit check says is not facts-only. */
+export const LbContentModeSchema = z.enum(["discard", "queue"]);
+export type LbContentMode = z.infer<typeof LbContentModeSchema>;
+
+export const LbModelLaneOverrideSchema = z.object({
+  draft: z.string().trim().min(1).max(120).optional(),
+  classify: z.string().trim().min(1).max(120).optional(),
+  fallback: z.string().trim().min(1).max(120).optional(),
+});
+export type LbModelLaneOverride = z.infer<typeof LbModelLaneOverrideSchema>;
+
 export const LbContentSchema = z.object({
   toneNotes: z.string().max(1000).default(""),
   bannedClaims: z.array(z.string().trim().min(1).max(200)).max(200).default([]),
   maxReplyChars: z.number().int().min(200).max(10_000).default(1200),
+  /** `queue` sends a failed facts-only check to the drafts queue; `discard` drops it. */
+  mode: LbContentModeSchema.default("discard"),
+  /** Thread activity window for selection (plan 6.4). */
+  threadActivityDays: z.number().int().min(1).max(3650).default(180),
+  excludedLaneIds: z.array(z.string().trim().min(1).max(80)).max(20).default([]),
+  /** Per-project OpenRouter model ids. Deployment defaults apply when a lane is omitted. */
+  modelLanes: LbModelLaneOverrideSchema.default({}),
 });
 export type LbContent = z.infer<typeof LbContentSchema>;
 
@@ -440,7 +458,15 @@ export const LbProjectConfigSchema = z.object({
     maxRetries: 1,
     sentences: [...LB_DEFAULT_SPAM_SENTENCES],
   }),
-  content: LbContentSchema.default({ toneNotes: "", bannedClaims: [], maxReplyChars: 1200 }),
+  content: LbContentSchema.default(() => ({
+    toneNotes: "",
+    bannedClaims: [],
+    maxReplyChars: 1200,
+    mode: "discard" as const,
+    threadActivityDays: 180,
+    excludedLaneIds: [],
+    modelLanes: {},
+  })),
   operator: LbOperatorSettingsSchema.default({
     parkedHostTtlHours: 48,
     channels: ["push", "email"],
@@ -466,6 +492,31 @@ export const LbDraftQualityChecksSchema = z.object({
   issues: z.array(z.string()).default([]),
 });
 export type LbDraftQualityChecks = z.infer<typeof LbDraftQualityChecksSchema>;
+
+/** Structured model jobs from plan section 9. The drafter never decides whether to promote. */
+export const LbThreadRelevanceSchema = z.object({
+  relevance: z.number().min(0).max(1),
+  openQuestion: z.boolean(),
+  reasons: z.array(z.string().max(300)).max(12),
+});
+export type LbThreadRelevance = z.infer<typeof LbThreadRelevanceSchema>;
+
+export const LbDraftReplySchema = z.object({
+  body: z.string().max(10_000),
+  linkSlot: LbLinkSlotSchema,
+  targetUrlIndex: z.number().int().min(0).nullable(),
+  anchorText: z.string().max(80).nullable(),
+  confidence: z.number().min(0).max(1),
+});
+export type LbDraftReply = z.infer<typeof LbDraftReplySchema>;
+
+export const LbFitCheckSchema = z.object({
+  fitsThread: z.boolean(),
+  soundsLikeAd: z.boolean(),
+  factsOnly: z.boolean(),
+  issues: z.array(z.string().max(300)).max(20),
+});
+export type LbFitCheck = z.infer<typeof LbFitCheckSchema>;
 
 export const LbRunStepCostsSchema = z.object({
   credits: z.number().int().min(0).default(0),
