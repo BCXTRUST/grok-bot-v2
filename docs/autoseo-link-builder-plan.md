@@ -420,6 +420,13 @@ Desktop-first, mobile-ok. Minimal visible copy; controls carry concise accessibi
 
 The first implementation session should deliver M0 + M1 end-to-end (wizard → Start → fake run events → placements table), exactly as the previous plan intended, but on this repo's stack.
 
+M0 deviations (as built):
+
+- Active proxy leases are unique per project × country (`lb_proxy_leases_one_active_per_project_country`), following section 8; section 5's "one active lease per persona" is read as one per persona and country. `proxyPolicy` keeps the value `static_isp_per_persona`, now meaning ISP where available, otherwise sticky residential.
+- `persona.language` is optional and falls back to the primary market's language. Each market stores its `locale` and `timezoneId` explicitly; deriving defaults from the country is left to the M1 wizard, and the per-session coherence check to M6.
+- `LbCaptchaOutcome` adds `sandbox` for the helper's sandbox label (section 15 emulator).
+- `insertReference` has built-in reference sentences for German and English only. Other languages need a `[REF]` marker from the drafter or a caller template.
+
 ---
 
 ## 17. Decisions needed from Harold
