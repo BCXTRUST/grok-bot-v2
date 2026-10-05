@@ -545,6 +545,18 @@ export class FakeMailboxProvider implements MailboxProvider {
   messages(inboxId: string): InboundMail[] {
     return this.mail.filter((mail) => mail.inboxId === inboxId);
   }
+
+  async listMessages(
+    inboxId: string,
+    options: { since?: Date },
+    context: AdapterContext,
+  ): Promise<InboundMail[]> {
+    throwIfAborted(context);
+    const since = options.since?.getTime();
+    return this.messages(inboxId).filter(
+      (mail) => since === undefined || Date.parse(mail.receivedAt) >= since,
+    );
+  }
 }
 
 export type FakeTextModelReply =
