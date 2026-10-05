@@ -114,6 +114,17 @@ model Organization {
   workspaceMemoryConfig WorkspaceMemoryConfig?
   chatGroups  ChatGroup[]
   siteLogins  SiteLogin[]
+  lbProjects  LbProject[]
+  lbProxyLeases LbProxyLease[]
+  lbHosts     LbHost[]
+  lbHostAccounts LbHostAccount[]
+  lbThreadCandidates LbThreadCandidate[]
+  lbDrafts    LbDraft[]
+  lbPlacements LbPlacement[]
+  lbRuns      LbRun[]
+  lbRunSteps  LbRunStep[]
+  lbCaptchaEvents LbCaptchaEvent[]
+  lbOperatorTickets LbOperatorTicket[]
 
   @@unique([slug])
   @@map("organization")
@@ -540,6 +551,7 @@ model SiteLogin {
   share          String       @default("workspace")
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
+  lbHostAccounts LbHostAccount[]
 
   @@unique([workspaceId, userId, host, username])
   @@index([workspaceId, userId, host])
@@ -800,6 +812,8 @@ model Secret {
   mcpServers  McpServer[]
   workspaceMemoryConfig WorkspaceMemoryConfig?
   siteLogins  SiteLogin[] @relation("SiteLoginSecret")
+  lbCaptchaProjects LbProject[] @relation("LbProjectCaptchaSecret")
+  lbProxyLeases LbProxyLease[] @relation("LbProxyLeaseEndpointSecret")
 
   @@index([userId, workspaceId])
   @@map("secrets")
@@ -865,4 +879,367 @@ model BotMcpServer {
   @@unique([botId, serverId])
   @@index([workspaceId, userId, botId])
   @@map("bot_mcp_servers")
+}
+
+// Link Builder. Status columns are Strings whose allowed values come from
+// @rakazo/contracts (link-builder.ts) and are enforced by CHECK constraints in
+// migrations/20261005120000_link_builder. Secrets are referenced by id only.
+
+model LbProject {
+  id                       String              @id @default(cuid())
+  workspaceId              String
+  workspace                Organization        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdByUserId          String
+  name                     String
+  slug                     String
+  status                   String              @default("draft")
+  brandName                String
+  allowedDomains           String[]            @default([])
+  persona                  Json?
+  mailboxId                String?
+  mailboxAddress           String?
+  captchaSecretId          String?
+  captchaSecret            Secret?             @relation("LbProjectCaptchaSecret", fields: [captchaSecretId], references: [id], onDelete: SetNull)
+  captchaLowBalanceCredits Int                 @default(500)
+  quotas                   Json?
+  schedule                 Json                @default("{\"timezone\":\"Europe/Berlin\",\"weekdaysOnly\":true,\"window\":{\"start\":\"09:00\",\"end\":\"22:00\"},\"overtimeUntilLiveMet\":false,\"hardStopHour\":24}")
+  topicLanes               Json                @default("[]")
+  markets                  Json                @default("[{\"country\":\"DE\",\"language\":\"de\",\"locale\":\"de-DE\",\"timezoneId\":\"Europe/Berlin\"}]")
+  marketPolicy             String              @default("primary_first")
+  disclosureMode           String              @default("undisclosed_persona")
+  responsibilityAck        Json?
+  linkRatio                Json                @default("{\"links\":1,\"posts\":3}")
+  proxyPolicy              String              @default("static_isp_per_persona")
+  countNofollow            Boolean             @default(true)
+  targets                  Json                @default("[]")
+  facts                    String[]            @default([])
+  denyHosts                String[]            @default([])
+  preferHosts              String[]            @default([])
+  warmup                   Json                @default("{\"minPostsBeforeLink\":2,\"minAccountAgeHours\":24}")
+  spamRetry                Json                @default("{\"maxRetries\":1,\"sentences\":[\"Die Registrierung ist wegen Spamschutzmaßnahmen fehlgeschlagen.\",\"No soup for you!\"]}")
+  content                  Json                @default("{\"toneNotes\":\"\",\"bannedClaims\":[],\"maxReplyChars\":1200}")
+  operator                 Json                @default("{\"parkedHostTtlHours\":48,\"channels\":[\"push\",\"email\"]}")
+  archivedAt               DateTime?
+  createdAt                DateTime            @default(now())
+  updatedAt                DateTime            @updatedAt
+  proxyLeases              LbProxyLease[]
+  hosts                    LbHost[]
+  hostAccounts             LbHostAccount[]
+  threadCandidates         LbThreadCandidate[]
+  drafts                   LbDraft[]
+  placements               LbPlacement[]
+  runs                     LbRun[]
+  captchaEvents            LbCaptchaEvent[]
+  operatorTickets          LbOperatorTicket[]
+
+  @@unique([workspaceId, slug])
+  @@index([workspaceId, status])
+  @@index([captchaSecretId])
+  @@map("lb_projects")
+}
+
+// One sticky exit IP per persona and country: partial unique index
+// "lb_proxy_leases_one_active_per_project_country" in the link_builder migration.
+model LbProxyLease {
+  id               String       @id @default(cuid())
+  workspaceId      String
+  workspace        Organization @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  projectId        String
+  project          LbProject    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  provider         String
+  providerLeaseId  String
+  country          String
+  stickyKey        String
+  kind             String       @default("static_isp")
+  endpointSecretId String?
+  endpointSecret   Secret?      @relation("LbProxyLeaseEndpointSecret", fields: [endpointSecretId], references: [id], onDelete: SetNull)
+  status           String       @default("active")
+  leasedAt         DateTime     @default(now())
+  renewsAt         DateTime?
+  releasedAt       DateTime?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  @@index([workspaceId, projectId, status])
+  @@index([status, renewsAt])
+  @@index([endpointSecretId])
+  @@map("lb_proxy_leases")
+}
+
+model LbHost {
+  id                  String              @id @default(cuid())
+  workspaceId         String
+  workspace           Organization        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  projectId           String
+  project             LbProject           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  registrableDomain   String
+  homepageUrl         String
+  platform            String              @default("unknown")
+  platformVersionHint String?
+  language            String
+  country             String
+  topicTags           String[]            @default([])
+  qualityScore        Float               @default(0)
+  hrefForNewMembers   String              @default("unknown")
+  relDefault          String              @default("unknown")
+  signatureLinks      Boolean             @default(false)
+  minPostsForLinks    Int?
+  registerUrl         String?
+  captchaType         String?
+  engineHint          String?
+  status              String              @default("discovered")
+  parkedFrom          String?
+  statusReason        String?
+  lastProbeAt         DateTime?
+  notes               String?
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+  accounts            LbHostAccount[]
+  threadCandidates    LbThreadCandidate[]
+  placements          LbPlacement[]
+  currentRuns         LbRun[]
+  captchaEvents       LbCaptchaEvent[]
+  operatorTickets     LbOperatorTicket[]
+
+  @@unique([workspaceId, projectId, registrableDomain])
+  @@index([workspaceId, projectId, status])
+  @@index([workspaceId, projectId, country, status])
+  @@map("lb_hosts")
+}
+
+// One account per host and persona; v1 has one persona per project.
+model LbHostAccount {
+  id              String        @id @default(cuid())
+  workspaceId     String
+  workspace       Organization  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  projectId       String
+  project         LbProject     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  hostId          String
+  host            LbHost        @relation(fields: [hostId], references: [id], onDelete: Cascade)
+  username        String
+  siteLoginId     String?
+  siteLogin       SiteLogin?    @relation(fields: [siteLoginId], references: [id], onDelete: SetNull)
+  emailVerifiedAt DateTime?
+  adminApprovedAt DateTime?
+  postCount       Int           @default(0)
+  linkPostCount   Int           @default(0)
+  firstPostAt     DateTime?
+  lastPostAt      DateTime?
+  signatureSetAt  DateTime?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  placements      LbPlacement[]
+
+  @@unique([hostId])
+  @@index([workspaceId, projectId])
+  @@index([siteLoginId])
+  @@map("lb_host_accounts")
+}
+
+model LbThreadCandidate {
+  id             String       @id @default(cuid())
+  workspaceId    String
+  workspace      Organization @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  projectId      String
+  project        LbProject    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  hostId         String
+  host           LbHost       @relation(fields: [hostId], references: [id], onDelete: Cascade)
+  url            String
+  title          String
+  excerpt        String       @default("")
+  lastActivityAt DateTime?
+  replyCount     Int          @default(0)
+  relevance      Float        @default(0)
+  laneId         String?
+  openQuestion   Boolean      @default(false)
+  status         String       @default("candidate")
+  rejectReason   String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  drafts         LbDraft[]
+
+  @@unique([hostId, url])
+  @@index([workspaceId, projectId, status])
+  @@map("lb_thread_candidates")
+}
+
+model LbDraft {
+  id                String            @id @default(cuid())
+  workspaceId       String
+  workspace         Organization      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  projectId         String
+  project           LbProject         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  threadCandidateId String
+  threadCandidate   LbThreadCandidate @relation(fields: [threadCandidateId], references: [id], onDelete: Cascade)
+  modelLane         String
+  modelId           String
+  body              String
+  linkSlot          String            @default("none")
+  targetUrl         String?
+  anchorText        String?
+  confidence        Float?
+  qualityChecks     Json              @default("{}")
+  status            String            @default("drafted")
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  placements        LbPlacement[]
+
+  @@index([threadCandidateId])
+  @@index([workspaceId, projectId, status])
+  @@map("lb_drafts")
+}
+
+// "One counted LIVE link per host forever" is the partial unique index
+// "lb_placements_one_counted_per_host" (workspaceId, projectId, hostId) WHERE counted,
+// created in the link_builder migration; Prisma cannot express it.
+model LbPlacement {
+  id                 String        @id @default(cuid())
+  workspaceId        String
+  workspace          Organization  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  projectId          String
+  project            LbProject     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  hostId             String
+  host               LbHost        @relation(fields: [hostId], references: [id], onDelete: Cascade)
+  hostAccountId      String
+  hostAccount        LbHostAccount @relation(fields: [hostAccountId], references: [id], onDelete: Cascade)
+  draftId            String?
+  draft              LbDraft?      @relation(fields: [draftId], references: [id], onDelete: SetNull)
+  threadUrl          String
+  postUrl            String
+  targetUrl          String
+  anchorText         String
+  rel                String[]      @default([])
+  indexable          Boolean       @default(true)
+  status             String        @default("pending")
+  counted            Boolean       @default(false)
+  verifiedAt         DateTime?
+  verifyMethod       String?
+  snapshotArtifactId String?
+  nextVerifyAt       DateTime?
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  @@index([workspaceId, projectId, status])
+  @@index([hostId])
+  @@index([hostAccountId])
+  @@index([draftId])
+  @@index([status, nextVerifyAt])
+  @@map("lb_placements")
+}
+
+model LbRun {
+  id              String             @id @default(cuid())
+  workspaceId     String
+  workspace       Organization       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  projectId       String
+  project         LbProject          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// Local calendar date in the project time zone, YYYY-MM-DD.
+  date            String
+  status          String             @default("queued")
+  newToday        Int                @default(0)
+  liveToday       Int                @default(0)
+  liveWeek        Int                @default(0)
+  uniqueHosts     Int                @default(0)
+  currentHostId   String?
+  currentHost     LbHost?            @relation(fields: [currentHostId], references: [id], onDelete: SetNull)
+  currentUrl      String?
+  lastAction      String?
+  lastError       String?
+  whyNot          Json?
+  leaseOwner      String?
+  leaseFence      Int                @default(0)
+  leaseExpiresAt  DateTime?
+  startedAt       DateTime?
+  finishedAt      DateTime?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  steps           LbRunStep[]
+  captchaEvents   LbCaptchaEvent[]
+  operatorTickets LbOperatorTicket[]
+
+  @@unique([projectId, date])
+  @@index([workspaceId, projectId])
+  @@index([status, leaseExpiresAt])
+  @@index([currentHostId])
+  @@map("lb_runs")
+}
+
+// Append-only; idempotent per (runId, stepIndex).
+model LbRunStep {
+  id          String       @id @default(cuid())
+  workspaceId String
+  workspace   Organization @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  runId       String
+  run         LbRun        @relation(fields: [runId], references: [id], onDelete: Cascade)
+  stepIndex   Int
+  kind        String
+  hostId      String?
+  input       Json         @default("{}")
+  outcome     Json         @default("{}")
+  error       String?
+  artifactIds String[]     @default([])
+  costs       Json         @default("{\"credits\":0,\"tokens\":0,\"bytes\":0,\"ms\":0}")
+  startedAt   DateTime     @default(now())
+  finishedAt  DateTime?
+  createdAt   DateTime     @default(now())
+
+  @@unique([runId, stepIndex])
+  @@index([workspaceId, runId])
+  @@map("lb_run_steps")
+}
+
+model LbCaptchaEvent {
+  id                 String       @id @default(cuid())
+  workspaceId        String
+  workspace          Organization @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  projectId          String
+  project            LbProject    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  hostId             String?
+  host               LbHost?      @relation(fields: [hostId], references: [id], onDelete: SetNull)
+  runId              String?
+  run                LbRun?       @relation(fields: [runId], references: [id], onDelete: SetNull)
+  type               String
+  door               String
+  buttonTextObserved String?
+  humanCheckboxState String?
+  imageGridOpen      Boolean      @default(false)
+  siteKeyFound       Boolean      @default(false)
+  attempt            Int          @default(1)
+  creditsCharged     Int          @default(0)
+  balanceAfter       Int?
+  outcome            String
+  helperVersion      String?
+  createdAt          DateTime     @default(now())
+
+  @@index([workspaceId, projectId, createdAt])
+  @@index([hostId])
+  @@index([runId])
+  @@map("lb_captcha_events")
+}
+
+model LbOperatorTicket {
+  id               String       @id @default(cuid())
+  workspaceId      String
+  workspace        Organization @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  projectId        String
+  project          LbProject    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  hostId           String
+  host             LbHost       @relation(fields: [hostId], references: [id], onDelete: Cascade)
+  runId            String?
+  run              LbRun?       @relation(fields: [runId], references: [id], onDelete: SetNull)
+  reason           String
+  screenUrl        String?
+  note             String?
+  status           String       @default("open")
+  resolvedByUserId String?
+  resolvedAt       DateTime?
+  expiresAt        DateTime?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  @@index([workspaceId, projectId, status])
+  @@index([hostId])
+  @@index([runId])
+  @@index([status, expiresAt])
+  @@map("lb_operator_tickets")
 }
