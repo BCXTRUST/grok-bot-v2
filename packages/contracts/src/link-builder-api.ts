@@ -228,6 +228,8 @@ export const LbRunStepViewSchema = z.object({
   lastAction: z.string().nullable(),
   error: z.string().nullable(),
   costs: LbRunStepCostsSchema,
+  /** Screenshots and snapshots of the step; read them with `linkBuilder.artifacts.get`. */
+  artifactIds: z.array(Id),
   createdAt: IsoDate,
 });
 export type LbRunStepView = z.infer<typeof LbRunStepViewSchema>;
@@ -277,11 +279,21 @@ export const LbOperatorTicketViewSchema = z.object({
   runId: Id.nullable(),
   reason: LbOperatorTicketReasonSchema,
   screenUrl: z.string().nullable(),
+  /** Latest screenshot of the host taken by the run that opened the ticket. */
+  screenshotArtifactId: Id.nullable(),
   note: z.string().nullable(),
   status: LbOperatorTicketStatusSchema,
   createdAt: IsoDate,
 });
 export type LbOperatorTicketView = z.infer<typeof LbOperatorTicketViewSchema>;
+
+export const LbArtifactViewSchema = z.object({
+  id: Id,
+  name: z.string(),
+  mimeType: z.string(),
+  contentBase64: z.string(),
+});
+export type LbArtifactView = z.infer<typeof LbArtifactViewSchema>;
 
 export const LbProjectEventSchema = z.object({
   projectId: Id,
@@ -333,6 +345,9 @@ export const linkBuilderContract = {
       .output(z.array(LbOperatorTicketViewSchema)),
     continue: oc.input(ticketAction).output(LbOperatorTicketViewSchema),
     skip: oc.input(ticketAction).output(LbOperatorTicketViewSchema),
+  },
+  artifacts: {
+    get: oc.input(z.object({ projectId: Id, artifactId: Id })).output(LbArtifactViewSchema),
   },
   captell: {
     checkBalance: oc

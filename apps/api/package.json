@@ -3,6 +3,13 @@
   "version": "0.1.0",
   "license": "Apache-2.0",
   "type": "module",
+  "exports": {
+    "./link-builder": {
+      "types": "./src/link-builder.ts",
+      "development": "./src/link-builder.ts",
+      "default": "./src/link-builder.ts"
+    }
+  },
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "start": "tsx src/index.ts",

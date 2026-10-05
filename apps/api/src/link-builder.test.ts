@@ -187,6 +187,18 @@ describe("link builder routes", () => {
           query.where.workspaceId === "workspace-1" ? ticket : null,
         ),
       },
+      lbRunStep: {
+        findMany: vi.fn(async () => [
+          {
+            runId: "run-1",
+            hostId: "host-1",
+            artifactIds: ["shot-1"],
+            createdAt: ticket.createdAt,
+            stepIndex: 4,
+          },
+        ]),
+      },
+      artifact: { findMany: vi.fn(async () => [{ id: "shot-1" }]) },
       $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) =>
         fn({
           lbHost: { update: hostUpdate },
@@ -207,8 +219,11 @@ describe("link builder routes", () => {
       note: "solved",
     });
     expect(continued.response.status).toBe(200);
-    const continuedBody = (await continued.response.json()) as { json: { status: string } };
+    const continuedBody = (await continued.response.json()) as {
+      json: { status: string; screenshotArtifactId: string | null };
+    };
     expect(continuedBody.json.status).toBe("resolved");
+    expect(continuedBody.json.screenshotArtifactId).toBe("shot-1");
     expect(hostUpdate).toHaveBeenCalledWith(
       expect.objectContaining({ data: { status: "registering", parkedFrom: null } }),
     );
@@ -242,6 +257,43 @@ describe("link builder routes", () => {
       ticketId: "ticket-1",
     });
     expect(foreign.response.status).toBe(404);
+  });
+
+  it("serves only artifacts referenced by the project's steps or placements", async () => {
+    const row = projectRow({ status: "active" });
+    const get = vi.fn(async () => new Uint8Array([137, 80, 78, 71]));
+    const prisma = {
+      lbProject: { findFirst: vi.fn(async () => row) },
+      lbRunStep: {
+        findFirst: vi.fn(async (query: { where: { artifactIds: { has: string } } }) =>
+          query.where.artifactIds.has === "shot-1" ? { id: "step-1" } : null,
+        ),
+      },
+      lbPlacement: { findFirst: vi.fn(async () => null) },
+      artifact: {
+        findFirst: vi.fn(async () => ({
+          id: "shot-1",
+          name: "step-4-parked.png",
+          mimeType: "image/png",
+          storageKey: "stored-1",
+        })),
+      },
+    } as unknown as PrismaClient;
+    const routerDeps = { ...deps(prisma), artifacts: { get } } as unknown as RouterDeps;
+    const shown = await call(routerDeps, actor, "linkBuilder/artifacts/get", {
+      projectId: "project-1",
+      artifactId: "shot-1",
+    });
+    expect(shown.response.status).toBe(200);
+    const body = (await shown.response.json()) as { json: { contentBase64: string } };
+    expect(Buffer.from(body.json.contentBase64, "base64")).toEqual(Buffer.from([137, 80, 78, 71]));
+
+    const unrelated = await call(routerDeps, actor, "linkBuilder/artifacts/get", {
+      projectId: "project-1",
+      artifactId: "chat-attachment",
+    });
+    expect(unrelated.response.status).toBe(404);
+    expect(get).toHaveBeenCalledTimes(1);
   });
 
   it("checks Captell balance with the fake solver and never returns the token", async () => {

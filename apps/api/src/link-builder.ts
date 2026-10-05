@@ -429,8 +429,54 @@ export async function listLbRunSteps(
       bytes: numberField(step.costs, "bytes"),
       ms: numberField(step.costs, "ms"),
     },
+    artifactIds: step.artifactIds,
     createdAt: step.createdAt.toISOString(),
   }));
+}
+
+/** Reads a step screenshot or verification snapshot that belongs to this project. */
+export async function getLbArtifact(
+  deps: RouterDeps,
+  actor: Actor,
+  input: { projectId: string; artifactId: string },
+) {
+  await requireProject(deps.prisma, actor, input.projectId);
+  const [step, placement] = await Promise.all([
+    deps.prisma.lbRunStep.findFirst({
+      where: {
+        workspaceId: actor.workspaceId,
+        run: { projectId: input.projectId },
+        artifactIds: { has: input.artifactId },
+      },
+      select: { id: true },
+    }),
+    deps.prisma.lbPlacement.findFirst({
+      where: {
+        workspaceId: actor.workspaceId,
+        projectId: input.projectId,
+        snapshotArtifactId: input.artifactId,
+      },
+      select: { id: true },
+    }),
+  ]);
+  if (!step && !placement) throw new ORPCError("NOT_FOUND");
+  const row = await deps.prisma.artifact.findFirst({
+    where: { id: input.artifactId, workspaceId: actor.workspaceId },
+  });
+  if (!row) throw new ORPCError("NOT_FOUND");
+  const bytes = await deps.artifacts.get(row.storageKey, {
+    operationId: `lb-artifact:${row.id}`,
+    traceId: `lb-artifact:${row.id}`,
+    workspaceId: actor.workspaceId,
+    userId: actor.userId,
+    signal: new AbortController().signal,
+  });
+  return {
+    id: row.id,
+    name: row.name,
+    mimeType: row.mimeType,
+    contentBase64: Buffer.from(bytes).toString("base64"),
+  };
 }
 
 export async function listLbThreads(deps: RouterDeps, actor: Actor, projectId: string) {
@@ -505,7 +551,48 @@ export async function listLbTickets(
     include: { host: { select: { registrableDomain: true } } },
     orderBy: { createdAt: "desc" },
   });
-  return rows.map((row) => ticketView(row));
+  const screenshots = await ticketScreenshots(deps.prisma, actor.workspaceId, rows);
+  return rows.map((row) => ticketView(row, screenshots.get(row.id) ?? null));
+}
+
+/** The last PNG a run stored for the ticket's host up to the moment the ticket was opened. */
+async function ticketScreenshots(
+  prisma: PrismaClient,
+  workspaceId: string,
+  tickets: Array<{ id: string; runId: string | null; hostId: string; createdAt: Date }>,
+): Promise<Map<string, string>> {
+  const runIds = [...new Set(tickets.flatMap((ticket) => (ticket.runId ? [ticket.runId] : [])))];
+  const result = new Map<string, string>();
+  if (runIds.length === 0) return result;
+  const steps = await prisma.lbRunStep.findMany({
+    where: { workspaceId, runId: { in: runIds }, NOT: { artifactIds: { isEmpty: true } } },
+    select: { runId: true, hostId: true, artifactIds: true, createdAt: true, stepIndex: true },
+    orderBy: { stepIndex: "desc" },
+  });
+  const pngs = new Set(
+    (
+      await prisma.artifact.findMany({
+        where: {
+          workspaceId,
+          id: { in: steps.flatMap((step) => step.artifactIds) },
+          mimeType: "image/png",
+        },
+        select: { id: true },
+      })
+    ).map((row) => row.id),
+  );
+  for (const ticket of tickets) {
+    const step = steps.find(
+      (candidate) =>
+        candidate.runId === ticket.runId &&
+        candidate.hostId === ticket.hostId &&
+        candidate.createdAt.getTime() <= ticket.createdAt.getTime() + 60_000 &&
+        candidate.artifactIds.some((id) => pngs.has(id)),
+    );
+    const id = step?.artifactIds.filter((artifactId) => pngs.has(artifactId)).at(-1);
+    if (id) result.set(ticket.id, id);
+  }
+  return result;
 }
 
 export async function continueLbTicket(
@@ -633,7 +720,8 @@ async function settleTicket(
     });
   });
   await publish(deps, input.projectId);
-  return ticketView(updated);
+  const screenshots = await ticketScreenshots(deps.prisma, actor.workspaceId, [updated]);
+  return ticketView(updated, screenshots.get(updated.id) ?? null);
 }
 
 async function ensureRunningToday(
@@ -893,18 +981,21 @@ function placementView(row: {
   };
 }
 
-function ticketView(row: {
-  id: string;
-  projectId: string;
-  hostId: string;
-  runId: string | null;
-  reason: string;
-  screenUrl: string | null;
-  note: string | null;
-  status: string;
-  createdAt: Date;
-  host: { registrableDomain: string };
-}) {
+function ticketView(
+  row: {
+    id: string;
+    projectId: string;
+    hostId: string;
+    runId: string | null;
+    reason: string;
+    screenUrl: string | null;
+    note: string | null;
+    status: string;
+    createdAt: Date;
+    host: { registrableDomain: string };
+  },
+  screenshotArtifactId: string | null,
+) {
   return {
     id: row.id,
     projectId: row.projectId,
@@ -913,6 +1004,7 @@ function ticketView(row: {
     runId: row.runId,
     reason: LbOperatorTicketReasonSchema.parse(row.reason),
     screenUrl: row.screenUrl,
+    screenshotArtifactId,
     note: row.note,
     status: LbOperatorTicketStatusSchema.parse(row.status),
     createdAt: row.createdAt.toISOString(),
