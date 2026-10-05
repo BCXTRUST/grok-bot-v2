@@ -214,6 +214,15 @@ export const LB_DEFAULT_SPAM_SENTENCES = [
 
 export const LB_RESPONSIBILITY_ACK_TEXT_VERSION = "2026-10-05";
 
+/** Shown under Start building. Acceptance is the click, not a checkbox. */
+export const LB_RESPONSIBILITY_ACK_SENTENCE =
+  "By starting, you confirm you're responsible for this content and its compliance in your markets.";
+
+/** Captell seat token shape. The value is write-only and never returned by the API. */
+export const LbCaptchaTokenSchema = z
+  .string()
+  .regex(/^ct_live_[A-Za-z0-9_-]{8,120}$/, "Expected a ct_live_ token");
+
 const ClockTime = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Expected HH:MM");
 
 function clockMinutes(value: string): number {
@@ -230,7 +239,7 @@ function isValidTimeZone(timeZone: string): boolean {
   }
 }
 
-const RegistrableDomain = z
+export const LbRegistrableDomainSchema = z
   .string()
   .min(3)
   .max(253)
@@ -408,7 +417,7 @@ export const LbProjectConfigSchema = z.object({
     .max(60)
     .regex(/^[a-z0-9]+(-[a-z0-9]+)*$/),
   brandName: z.string().trim().min(1).max(80),
-  allowedDomains: z.array(RegistrableDomain).min(1).max(20),
+  allowedDomains: z.array(LbRegistrableDomainSchema).min(1).max(20),
   persona: LbPersonaSchema,
   mailboxId: Id.optional(),
   captchaSecretId: Id.optional(),
@@ -424,8 +433,8 @@ export const LbProjectConfigSchema = z.object({
   countNofollow: z.boolean().default(true),
   targets: z.array(LbTargetSchema).max(100).default([]),
   facts: z.array(z.string().trim().min(1).max(500)).max(100).default([]),
-  denyHosts: z.array(RegistrableDomain).max(500).default([]),
-  preferHosts: z.array(RegistrableDomain).max(500).default([]),
+  denyHosts: z.array(LbRegistrableDomainSchema).max(500).default([]),
+  preferHosts: z.array(LbRegistrableDomainSchema).max(500).default([]),
   warmup: LbWarmupSchema.default({ minPostsBeforeLink: 2, minAccountAgeHours: 24 }),
   spamRetry: LbSpamRetrySchema.default({
     maxRetries: 1,

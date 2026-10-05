@@ -1,0 +1,345 @@
+import { eventIterator, oc } from "@orpc/contract";
+import * as z from "zod";
+import { Id, IsoDate } from "./ids.js";
+import {
+  LbCaptchaDoorSchema,
+  LbCaptchaOutcomeSchema,
+  LbCaptchaTokenSchema,
+  LbCaptchaTypeSchema,
+  LbContentSchema,
+  LbDisclosureModeSchema,
+  LbDraftStatusSchema,
+  LbHostPlatformSchema,
+  LbHostStatusSchema,
+  LbLinkRatioSchema,
+  LbLinkSlotSchema,
+  LbMarketPolicySchema,
+  LbMarketsSchema,
+  LbModelLaneSchema,
+  LbOperatorSettingsSchema,
+  LbOperatorTicketReasonSchema,
+  LbOperatorTicketStatusSchema,
+  LbParkableHostStatusSchema,
+  LbPersonaSchema,
+  LbPlacementStatusSchema,
+  LbProjectStatusSchema,
+  LbProxyPolicySchema,
+  LbQuotasSchema,
+  LbRegistrableDomainSchema,
+  LbResponsibilityAckSchema,
+  LbRunStatusSchema,
+  LbRunStepCostsSchema,
+  LbScheduleSchema,
+  LbSpamRetrySchema,
+  LbTargetSchema,
+  LbThreadStatusSchema,
+  LbTopicLaneSchema,
+  LbWarmupSchema,
+  LbWhyNotSchema,
+} from "./link-builder.js";
+
+const projectId = z.object({ projectId: Id });
+
+export const LbActivitySchema = z.enum([
+  "needs_operator",
+  "paused",
+  "overtime",
+  "running",
+  "out_of_window",
+  "stopped",
+  "draft",
+  "idle",
+]);
+
+export const LbProjectPatchSchema = z.object({
+  name: z.string().trim().min(1).max(80).optional(),
+  slug: z
+    .string()
+    .min(1)
+    .max(60)
+    .regex(/^[a-z0-9]+(-[a-z0-9]+)*$/)
+    .optional(),
+  brandName: z.string().trim().min(1).max(80).optional(),
+  allowedDomains: z.array(LbRegistrableDomainSchema).min(1).max(20).optional(),
+  persona: LbPersonaSchema.optional(),
+  /** Creates a local placeholder inbox when the project does not have one yet. */
+  provisionMailbox: z.boolean().optional(),
+  /** Write-only. Stored encrypted; never returned. */
+  captchaToken: LbCaptchaTokenSchema.optional(),
+  captchaLowBalanceCredits: z.number().int().min(0).optional(),
+  quotas: LbQuotasSchema.optional(),
+  schedule: LbScheduleSchema.optional(),
+  topicLanes: z.array(LbTopicLaneSchema).max(20).optional(),
+  markets: LbMarketsSchema.optional(),
+  marketPolicy: LbMarketPolicySchema.optional(),
+  disclosureMode: LbDisclosureModeSchema.optional(),
+  linkRatio: LbLinkRatioSchema.optional(),
+  proxyPolicy: LbProxyPolicySchema.optional(),
+  countNofollow: z.boolean().optional(),
+  targets: z.array(LbTargetSchema).max(100).optional(),
+  facts: z.array(z.string().trim().min(1).max(500)).max(100).optional(),
+  denyHosts: z.array(LbRegistrableDomainSchema).max(500).optional(),
+  preferHosts: z.array(LbRegistrableDomainSchema).max(500).optional(),
+  warmup: LbWarmupSchema.optional(),
+  spamRetry: LbSpamRetrySchema.optional(),
+  content: LbContentSchema.optional(),
+  operator: LbOperatorSettingsSchema.optional(),
+});
+export type LbProjectPatch = z.infer<typeof LbProjectPatchSchema>;
+
+export const LbProjectCreateInputSchema = z.object({
+  name: z.string().trim().min(1).max(80),
+  slug: z
+    .string()
+    .min(1)
+    .max(60)
+    .regex(/^[a-z0-9]+(-[a-z0-9]+)*$/)
+    .optional(),
+  brandName: z.string().trim().min(1).max(80),
+  allowedDomains: z.array(LbRegistrableDomainSchema).min(1).max(20),
+  markets: LbMarketsSchema.optional(),
+});
+
+const LbRunCountersSchema = z.object({
+  id: Id,
+  date: z.string(),
+  status: LbRunStatusSchema,
+  newToday: z.number().int(),
+  liveToday: z.number().int(),
+  liveWeek: z.number().int(),
+  uniqueHosts: z.number().int(),
+  lastAction: z.string().nullable(),
+  lastError: z.string().nullable(),
+});
+
+export const LbProjectDetailSchema = z.object({
+  id: Id,
+  name: z.string(),
+  slug: z.string(),
+  status: LbProjectStatusSchema,
+  brandName: z.string(),
+  allowedDomains: z.array(z.string()),
+  persona: LbPersonaSchema.nullable(),
+  mailboxId: Id.nullable(),
+  mailboxAddress: z.string().nullable(),
+  captchaConfigured: z.boolean(),
+  captchaLowBalanceCredits: z.number().int(),
+  quotas: LbQuotasSchema.nullable(),
+  schedule: LbScheduleSchema,
+  topicLanes: z.array(LbTopicLaneSchema),
+  markets: LbMarketsSchema,
+  marketPolicy: LbMarketPolicySchema,
+  disclosureMode: LbDisclosureModeSchema,
+  responsibilityAck: LbResponsibilityAckSchema.nullable(),
+  linkRatio: LbLinkRatioSchema,
+  proxyPolicy: LbProxyPolicySchema,
+  countNofollow: z.boolean(),
+  targets: z.array(LbTargetSchema),
+  facts: z.array(z.string()),
+  denyHosts: z.array(z.string()),
+  preferHosts: z.array(z.string()),
+  warmup: LbWarmupSchema,
+  content: LbContentSchema,
+  operator: LbOperatorSettingsSchema,
+  createdAt: IsoDate,
+  updatedAt: IsoDate,
+});
+export type LbProjectDetail = z.infer<typeof LbProjectDetailSchema>;
+
+export const LbProjectCardSchema = z.object({
+  id: Id,
+  name: z.string(),
+  slug: z.string(),
+  status: LbProjectStatusSchema,
+  brandName: z.string(),
+  activity: LbActivitySchema,
+  activityLabel: z.string(),
+  newToday: z.number().int(),
+  liveToday: z.number().int(),
+  liveWeek: z.number().int(),
+  newPerDay: z.number().int(),
+  livePerDay: z.number().int(),
+  liveWeekCap: z.number().int().nullable(),
+  runStatus: LbRunStatusSchema.nullable(),
+  lastEvent: z.string().nullable(),
+  operatorQueue: z.number().int(),
+});
+export type LbProjectCard = z.infer<typeof LbProjectCardSchema>;
+
+export const LbProjectStatusViewSchema = z.object({
+  projectId: Id,
+  projectStatus: LbProjectStatusSchema,
+  activity: LbActivitySchema,
+  activityLabel: z.string(),
+  run: LbRunCountersSchema.nullable(),
+  whyNot: LbWhyNotSchema.nullable(),
+  operatorQueue: z.number().int(),
+  scheduleActive: z.boolean(),
+  scheduleReason: z.string(),
+  newPerDay: z.number().int(),
+  livePerDay: z.number().int(),
+  liveWeekCap: z.number().int().nullable(),
+  lastEvent: z.string().nullable(),
+});
+export type LbProjectStatusView = z.infer<typeof LbProjectStatusViewSchema>;
+
+export const LbHostViewSchema = z.object({
+  id: Id,
+  registrableDomain: z.string(),
+  homepageUrl: z.string(),
+  platform: LbHostPlatformSchema,
+  country: z.string(),
+  language: z.string(),
+  status: LbHostStatusSchema,
+  parkedFrom: LbParkableHostStatusSchema.nullable(),
+  qualityScore: z.number(),
+  topicTags: z.array(z.string()),
+});
+export type LbHostView = z.infer<typeof LbHostViewSchema>;
+
+export const LbPlacementViewSchema = z.object({
+  id: Id,
+  hostId: Id,
+  domain: z.string(),
+  threadUrl: z.string(),
+  postUrl: z.string(),
+  targetUrl: z.string(),
+  anchorText: z.string(),
+  rel: z.array(z.string()),
+  status: LbPlacementStatusSchema,
+  counted: z.boolean(),
+  verifiedAt: IsoDate.nullable(),
+  snapshotArtifactId: Id.nullable(),
+});
+export type LbPlacementView = z.infer<typeof LbPlacementViewSchema>;
+
+export const LbRunViewSchema = LbRunCountersSchema.extend({
+  whyNot: LbWhyNotSchema.nullable(),
+  startedAt: IsoDate.nullable(),
+  finishedAt: IsoDate.nullable(),
+});
+export type LbRunView = z.infer<typeof LbRunViewSchema>;
+
+export const LbRunStepViewSchema = z.object({
+  id: Id,
+  stepIndex: z.number().int(),
+  kind: z.string(),
+  hostId: Id.nullable(),
+  lastAction: z.string().nullable(),
+  error: z.string().nullable(),
+  costs: LbRunStepCostsSchema,
+  createdAt: IsoDate,
+});
+export type LbRunStepView = z.infer<typeof LbRunStepViewSchema>;
+
+export const LbThreadViewSchema = z.object({
+  id: Id,
+  hostId: Id,
+  domain: z.string(),
+  url: z.string(),
+  title: z.string(),
+  status: LbThreadStatusSchema,
+  relevance: z.number(),
+});
+export type LbThreadView = z.infer<typeof LbThreadViewSchema>;
+
+export const LbDraftViewSchema = z.object({
+  id: Id,
+  threadCandidateId: Id,
+  body: z.string(),
+  status: LbDraftStatusSchema,
+  linkSlot: LbLinkSlotSchema,
+  modelLane: LbModelLaneSchema,
+  targetUrl: z.string().nullable(),
+  anchorText: z.string().nullable(),
+});
+export type LbDraftView = z.infer<typeof LbDraftViewSchema>;
+
+export const LbCaptchaEventViewSchema = z.object({
+  id: Id,
+  hostId: Id.nullable(),
+  domain: z.string().nullable(),
+  type: LbCaptchaTypeSchema,
+  door: LbCaptchaDoorSchema,
+  outcome: LbCaptchaOutcomeSchema,
+  buttonTextObserved: z.string().nullable(),
+  attempt: z.number().int(),
+  creditsCharged: z.number().int(),
+  createdAt: IsoDate,
+});
+export type LbCaptchaEventView = z.infer<typeof LbCaptchaEventViewSchema>;
+
+export const LbOperatorTicketViewSchema = z.object({
+  id: Id,
+  projectId: Id,
+  hostId: Id,
+  domain: z.string(),
+  runId: Id.nullable(),
+  reason: LbOperatorTicketReasonSchema,
+  screenUrl: z.string().nullable(),
+  note: z.string().nullable(),
+  status: LbOperatorTicketStatusSchema,
+  createdAt: IsoDate,
+});
+export type LbOperatorTicketView = z.infer<typeof LbOperatorTicketViewSchema>;
+
+export const LbProjectEventSchema = z.object({
+  projectId: Id,
+  cursor: z.string(),
+});
+
+const ticketAction = z.object({
+  projectId: Id,
+  ticketId: Id,
+  note: z.string().trim().max(500).optional(),
+});
+
+export const linkBuilderContract = {
+  projects: {
+    list: oc.output(z.array(LbProjectCardSchema)),
+    get: oc.input(projectId).output(LbProjectDetailSchema),
+    create: oc.input(LbProjectCreateInputSchema).output(LbProjectDetailSchema),
+    update: oc.input(LbProjectPatchSchema.extend({ projectId: Id })).output(LbProjectDetailSchema),
+    archive: oc.input(projectId).output(z.object({ ok: z.literal(true) })),
+    start: oc.input(projectId).output(LbProjectDetailSchema),
+    pause: oc.input(projectId).output(LbProjectDetailSchema),
+    stop: oc.input(projectId).output(LbProjectDetailSchema),
+    status: oc.input(projectId).output(LbProjectStatusViewSchema),
+    seedDemo: oc.output(LbProjectDetailSchema),
+  },
+  hosts: {
+    list: oc.input(projectId).output(z.array(LbHostViewSchema)),
+  },
+  placements: {
+    list: oc.input(projectId).output(z.array(LbPlacementViewSchema)),
+    verify: oc.input(z.object({ projectId: Id, placementId: Id })).output(LbPlacementViewSchema),
+  },
+  runs: {
+    list: oc.input(projectId).output(z.array(LbRunViewSchema)),
+    steps: oc.input(z.object({ projectId: Id, runId: Id })).output(z.array(LbRunStepViewSchema)),
+  },
+  threads: {
+    list: oc.input(projectId).output(z.array(LbThreadViewSchema)),
+  },
+  drafts: {
+    list: oc.input(projectId).output(z.array(LbDraftViewSchema)),
+  },
+  captcha: {
+    events: oc.input(projectId).output(z.array(LbCaptchaEventViewSchema)),
+  },
+  operator: {
+    tickets: oc
+      .input(projectId.extend({ status: LbOperatorTicketStatusSchema.optional() }))
+      .output(z.array(LbOperatorTicketViewSchema)),
+    continue: oc.input(ticketAction).output(LbOperatorTicketViewSchema),
+    skip: oc.input(ticketAction).output(LbOperatorTicketViewSchema),
+  },
+  captell: {
+    checkBalance: oc
+      .input(z.object({ projectId: Id.optional(), token: LbCaptchaTokenSchema.optional() }))
+      .output(z.object({ credits: z.number().int(), helperVersion: z.string() })),
+  },
+  subscribe: oc
+    .input(projectId.extend({ cursor: z.string() }))
+    .output(eventIterator(LbProjectEventSchema)),
+};

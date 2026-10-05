@@ -4,6 +4,7 @@ export * from "./domain.js";
 export * from "./events.js";
 export * from "./ids.js";
 export * from "./link-builder.js";
+export * from "./link-builder-api.js";
 export * from "./mcp.js";
 export * from "./openai-compatible-ui.js";
 export * from "./rpc.js";
