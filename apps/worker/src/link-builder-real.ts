@@ -9,6 +9,7 @@ import {
   type CaptchaSolverCapabilities,
   CaptchaSolverError,
   type MailboxProvider,
+  type ProxyProvider,
   type RealtimeFanout,
   type SearchProvider,
   type TextModel,
@@ -22,6 +23,7 @@ import {
   LbMarketsSchema,
   LbOperatorSettingsSchema,
   LbPersonaSchema,
+  LbProxyPolicySchema,
   LbQuotasSchema,
   type LbRunStatus,
   LbRunStatusSchema,
@@ -46,6 +48,7 @@ import {
   transitionRun,
 } from "@rakazo/linkbuilder-core";
 import { discoverDueProjects } from "./link-builder-discovery.js";
+import { renewDueLeases } from "./link-builder-proxy.js";
 import {
   browserPersona,
   isUnique,
@@ -103,6 +106,11 @@ export interface LinkBuilderRealDeps {
   sleep?: (ms: number) => Promise<void>;
   textModel?: TextModel;
   search?: SearchProvider;
+  proxies?: ProxyProvider;
+  /** Passwords the proxy resolver has loaded. Shared with step redaction. */
+  revealedSecrets?: string[];
+  /** False when the Camoufox executable is not installed. The host then goes dead on a second edge block. */
+  camoufoxAvailable?: boolean;
   probeFetch?: typeof fetch;
   allowPrivateProbe?: boolean;
 }
@@ -142,11 +150,13 @@ export class LinkBuilderRealRunner {
   private readonly workerId: string;
   private readonly leaseMs: number;
   private readonly now: () => Date;
+  private readonly revealed: string[];
 
   constructor(private readonly deps: LinkBuilderRealDeps) {
     this.workerId = deps.workerId ?? `lb-real-${randomUUID()}`;
     this.leaseMs = deps.leaseMs ?? DEFAULT_LEASE_MS;
     this.now = deps.now ?? (() => new Date());
+    this.revealed = deps.revealedSecrets ?? [];
     this.services = {
       prisma: deps.prisma,
       secrets: deps.secrets,
@@ -158,6 +168,8 @@ export class LinkBuilderRealRunner {
       allowPrivateVerify: deps.allowPrivateVerify ?? false,
       verifyDelayMs: deps.verifyDelayMs ?? DEFAULT_VERIFY_DELAY_MS,
       reverifyAfterMs: deps.reverifyAfterMs ?? DEFAULT_REVERIFY_MS,
+      proxies: deps.proxies,
+      camoufoxAvailable: deps.camoufoxAvailable ?? false,
       pageHelperButtonSelector: deps.pageHelperButtonSelector ?? PAGE_HELPER_BUTTON_SELECTOR,
       pageHelperPollMs: deps.pageHelperPollMs ?? 250,
       nowMs: () => (deps.now ? deps.now().getTime() : Date.now()),
@@ -183,6 +195,27 @@ export class LinkBuilderRealRunner {
         console.error(
           "linkbuilder.discover",
           error instanceof Error ? error.message : "discovery failed",
+        );
+      });
+    }
+    if (this.deps.proxies) {
+      const now = this.now();
+      await renewDueLeases({
+        prisma: this.deps.prisma,
+        provider: this.deps.proxies,
+        secrets: this.deps.secrets,
+        now,
+        context: {
+          operationId: "lb-proxy-renew",
+          traceId: "lb-proxy-renew",
+          workspaceId: "renew",
+          userId: "renew",
+          signal: new AbortController().signal,
+        },
+      }).catch((error: unknown) => {
+        console.error(
+          "linkbuilder.proxy",
+          error instanceof Error ? error.message : "renewal failed",
         );
       });
     }
@@ -355,9 +388,9 @@ export class LinkBuilderRealRunner {
       account,
       placement,
       adapter,
-      secrets: [],
+      secrets: this.revealed,
       pool: () => this.pool.get(project.id),
-      openSession: (target) => this.openSession(ctx, target),
+      openSession: (target, extra) => this.openSession(ctx, target, extra),
       closeSession: () => this.closeSession(project.id),
       storeArtifact: (name, mimeType, bytes) => this.storeArtifact(ctx, name, mimeType, bytes),
     };
@@ -530,7 +563,7 @@ export class LinkBuilderRealRunner {
             workspaceId: ctx.project.workspaceId,
             runId: ctx.run.id,
             stepIndex: ctx.stepIndex,
-            kind,
+            kind: result.stepKind ?? kind,
             hostId: result.hostId,
             input: json({ hostStatus: ctx.host?.status ?? null }),
             outcome: json({
@@ -570,12 +603,14 @@ export class LinkBuilderRealRunner {
   private async openSession(
     ctx: StepContext,
     host: { id: string } & Parameters<typeof marketOf>[1],
+    extra?: Parameters<typeof browserPersona>[2],
   ) {
     const key = marketKey(marketOf(ctx.project, host));
     const existing = this.pool.get(ctx.project.id);
-    if (existing && existing.marketKey === key) return existing;
+    const engine = extra?.engine ?? "chromium";
+    if (existing && existing.marketKey === key && existing.engine === engine) return existing;
     if (existing) await this.closeSession(ctx.project.id);
-    const session = await this.deps.browsers.open(browserPersona(ctx, host), ctx.adapter);
+    const session = await this.deps.browsers.open(browserPersona(ctx, host, extra), ctx.adapter);
     const entry: PoolEntry = {
       session,
       marketKey: key,
@@ -587,6 +622,7 @@ export class LinkBuilderRealRunner {
       captchaAttempts: 0,
       registrationRetried: false,
       profileSet: false,
+      engine,
     };
     this.pool.set(ctx.project.id, entry);
     return entry;
@@ -682,6 +718,7 @@ function projectConfig(row: {
   disclosureMode: string;
   linkRatio: unknown;
   topicLanes: unknown;
+  proxyPolicy: string;
 }): ProjectConfig | null {
   if (row.status !== "active") return null;
   const persona = LbPersonaSchema.safeParse(row.persona);
@@ -717,6 +754,7 @@ function projectConfig(row: {
     mailboxAddress: row.mailboxAddress,
     captchaLowBalanceCredits: row.captchaLowBalanceCredits,
     operatorTtlHours: operator.success ? operator.data.parkedHostTtlHours : 48,
+    proxyPolicy: LbProxyPolicySchema.safeParse(row.proxyPolicy).data ?? "static_isp_per_persona",
   };
 }
 

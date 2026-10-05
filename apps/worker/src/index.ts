@@ -4,7 +4,10 @@ import { startLinkBuilderFakeRunner } from "./link-builder-fake.js";
 import { isLinkBuilderRealEnabled, startLinkBuilderRealRunner } from "./link-builder-real.js";
 import {
   browserFactoryFromEnv,
+  camoufoxAvailable,
   captchaSolverForProject,
+  proxyProviderFromEnv,
+  proxyResolverFor,
   searchProviderFromEnv,
 } from "./link-builder-real-wiring.js";
 
@@ -139,13 +142,33 @@ async function main() {
   });
   await jobHost.start(jobHandlers);
   const linkBuilder = startLinkBuilderFakeRunner({ prisma, realtime });
+  const linkBuilderProxySecrets: string[] = [];
+  const linkBuilderProxies = await proxyProviderFromEnv({
+    env: process.env,
+    prisma,
+    secrets,
+  });
   const linkBuilderReal = isLinkBuilderRealEnabled()
     ? startLinkBuilderRealRunner({
         prisma,
         secrets,
         artifacts,
         realtime,
-        browsers: browserFactoryFromEnv({ env: process.env, dataDir, sandbox, prisma }),
+        browsers: browserFactoryFromEnv({
+          env: process.env,
+          dataDir,
+          sandbox,
+          prisma,
+          proxyResolver: proxyResolverFor({
+            prisma,
+            secrets,
+            provider: linkBuilderProxies,
+            revealed: linkBuilderProxySecrets,
+          }),
+        }),
+        proxies: linkBuilderProxies,
+        revealedSecrets: linkBuilderProxySecrets,
+        camoufoxAvailable: camoufoxAvailable(),
         resolveCaptcha: (project, redact) =>
           captchaSolverForProject({
             prisma,

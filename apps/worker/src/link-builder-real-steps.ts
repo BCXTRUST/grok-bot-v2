@@ -7,6 +7,8 @@ import {
   type CaptchaSolver,
   CaptchaSolverError,
   type MailboxProvider,
+  type ProxyEndpoint,
+  type ProxyProvider,
   type TextModel,
 } from "@rakazo/adapter-kit";
 import { type EncryptedSecretStore, loadSiteLoginForFill, upsertSiteLogin } from "@rakazo/adapters";
@@ -27,6 +29,7 @@ import type {
   LbParkableHostStatus,
   LbPersona,
   LbPlacementStatus,
+  LbProxyPolicy,
   LbRunStatus,
   LbSchedule,
   LbTarget,
@@ -34,17 +37,27 @@ import type {
   LbWarmup,
 } from "@rakazo/contracts";
 import { Prisma, type PrismaClient } from "@rakazo/db";
+import { BrowserEngineUnavailable } from "@rakazo/linkbuilder-browser";
 import {
+  acceptLanguageFor,
+  assertSessionCoherence,
+  CoherenceRefused,
+  canRegisterHost,
   closingRunStatus,
+  decideEdgeBlock,
   extractVerificationLink,
   generateForumPassword,
   generateForumUsername,
+  HOST_IDLE_GAP,
   type HostEvent,
   insertReference,
+  isHardEdgeBlock,
   isWarmupMet,
   marketForHost,
   PAGE_HELPER_EXTENSION_ID,
   PAGE_HELPER_VERSION,
+  pacedDelayMs,
+  proxyStickyKey,
   type RealStepKind,
   type RunCounters,
   recordCountedLive,
@@ -74,6 +87,7 @@ import {
   verifyPlacement,
 } from "@rakazo/linkbuilder-drivers";
 import { bumpModelRefusal, composeReply } from "./link-builder-draft.js";
+import { ensureProxyLease } from "./link-builder-proxy.js";
 
 /** Bot id recorded on forum logins the link builder stores; logins are workspace-shared. */
 export const LINK_BUILDER_LOGIN_BOT = "link-builder";
@@ -92,6 +106,10 @@ export interface RealWorkerServices {
   allowPrivateVerify: boolean;
   verifyDelayMs: number;
   reverifyAfterMs: number;
+  proxies?: ProxyProvider;
+  /** When false, a second Chromium edge block marks the host dead instead of launching Camoufox. */
+  camoufoxAvailable?: boolean;
+  random?: () => number;
   pageHelperButtonSelector: string;
   pageHelperPollMs: number;
   /** Clock for the Page Helper TTL. Production injects `Date.now`. */
@@ -114,6 +132,7 @@ export interface PoolEntry {
   /** One correction of a fixable registration error (taken username, banned email, missing password). */
   registrationRetried: boolean;
   profileSet: boolean;
+  engine: "chromium" | "camoufox";
   /** Kept for the open session so a mapped form survives the next step. */
   driver?: BoardDriver;
 }
@@ -142,6 +161,7 @@ export interface ProjectConfig {
   mailboxAddress: string | null;
   captchaLowBalanceCredits: number;
   operatorTtlHours: number;
+  proxyPolicy: LbProxyPolicy;
 }
 
 export type HostRow = Prisma.LbHostGetPayload<object>;
@@ -167,7 +187,10 @@ export interface StepContext {
   /** Values redacted from every outcome, error and log line of this step. */
   secrets: string[];
   pool(): PoolEntry | undefined;
-  openSession(host: HostRow): Promise<PoolEntry>;
+  openSession(
+    host: HostRow,
+    extra?: { proxy?: ProxyEndpoint; acceptLanguage?: string; engine?: "chromium" | "camoufox" },
+  ): Promise<PoolEntry>;
   closeSession(): Promise<void>;
   storeArtifact(name: string, mimeType: string, bytes: Uint8Array): Promise<string>;
 }
@@ -190,6 +213,8 @@ export type StepResult =
       artifactIds?: string[];
       credits?: number;
       tokens?: number;
+      /** Persisted step kind when it is not the planned handler name. */
+      stepKind?: string;
       run?: RunPatch;
       apply?: (tx: Tx) => Promise<void>;
       afterCommit?: () => Promise<void> | void;
@@ -285,12 +310,22 @@ async function screenshot(ctx: StepContext, entry: PoolEntry, label: string): Pr
   }
 }
 
-function personaFor(ctx: StepContext, market: LbMarket): BrowserPersona {
+function personaFor(
+  ctx: StepContext,
+  market: LbMarket,
+  host: HostRow,
+  extra: { proxy?: ProxyEndpoint; acceptLanguage?: string; engine?: "chromium" | "camoufox" } = {},
+): BrowserPersona {
+  const locale = host.locale || market.locale;
+  const timezoneId = host.timezoneId || market.timezoneId;
   return {
     projectId: ctx.project.id,
     profileKey: ctx.project.id,
-    locale: market.locale,
-    timezoneId: market.timezoneId,
+    locale,
+    timezoneId,
+    acceptLanguage: extra.acceptLanguage ?? acceptLanguageFor(locale),
+    ...(extra.proxy ? { proxy: extra.proxy } : {}),
+    ...(extra.engine ? { engine: extra.engine } : {}),
   };
 }
 
@@ -304,8 +339,12 @@ export function marketOf(project: ProjectConfig, host: HostRow): LbMarket {
   return market;
 }
 
-export function browserPersona(ctx: StepContext, host: HostRow): BrowserPersona {
-  return personaFor(ctx, marketOf(ctx.project, host));
+export function browserPersona(
+  ctx: StepContext,
+  host: HostRow,
+  extra?: { proxy?: ProxyEndpoint; acceptLanguage?: string; engine?: "chromium" | "camoufox" },
+): BrowserPersona {
+  return personaFor(ctx, marketOf(ctx.project, host), host, extra);
 }
 
 function park(
@@ -372,14 +411,49 @@ async function selectHost(ctx: StepContext): Promise<StepResult> {
     if (row.status === "ready") return !row.placements.some((p) => p.status !== "pending");
     return true;
   });
-  candidates.sort(
+  const eligible = [];
+  for (const row of candidates) {
+    if (row.status === "qualified" && !(await registrationOpen(ctx, row.id))) continue;
+    eligible.push(row);
+  }
+  eligible.sort(
     (a, b) =>
       hostOrder(a.status) - hostOrder(b.status) ||
       Number(prefer.has(b.registrableDomain)) - Number(prefer.has(a.registrableDomain)) ||
       b.qualityScore - a.qualityScore,
   );
-  const picked = candidates[0];
-  if (!picked) return { kind: "wait", reason: "no_workable_host" };
+  const picked = eligible[0];
+  if (!picked) {
+    const capped = rows.filter((row) => row.status === "qualified");
+    for (const host of capped) {
+      if (await registrationOpen(ctx, host.id)) continue;
+      const refused = await ctx.services.prisma.lbRunStep.findMany({
+        where: { hostId: host.id, kind: "register" },
+        select: { createdAt: true, outcome: true },
+      });
+      const told = refused.some(
+        (step) =>
+          sameDayRefusal(step.outcome) &&
+          canRegisterHost({
+            priorRegistrationAts: [step.createdAt],
+            now: ctx.now,
+            timeZone: ctx.project.schedule.timezone,
+          }) === false,
+      );
+      if (told) return { kind: "wait", reason: "registration_cap" };
+      return {
+        kind: "step",
+        stepKind: "register",
+        lastAction: "Registration cap",
+        hostId: host.id,
+        outcome: { refused: "registration_cap" },
+      };
+    }
+    return { kind: "wait", reason: "no_workable_host" };
+  }
+  if (ctx.services.sleep && ctx.host && ctx.host.id !== picked.id) {
+    await ctx.services.sleep(pacedDelayMs(HOST_IDLE_GAP, ctx.services.random ?? Math.random));
+  }
   if (picked.id === ctx.host?.id) return { kind: "wait", reason: "same_host" };
   const visited = await prisma.lbRunStep.count({ where: { runId: ctx.run.id, hostId: picked.id } });
   const entry = ctx.pool();
@@ -411,10 +485,151 @@ async function selectHost(ctx: StepContext): Promise<StepResult> {
   };
 }
 
+function sameDayRefusal(outcome: unknown): boolean {
+  return (
+    typeof outcome === "object" &&
+    outcome !== null &&
+    (outcome as { refused?: unknown }).refused === "registration_cap"
+  );
+}
+
+function countsAsRegistration(outcome: unknown): boolean {
+  if (!outcome || typeof outcome !== "object") return false;
+  if (sameDayRefusal(outcome)) return false;
+  const record = outcome as { username?: unknown; registration?: unknown };
+  return record.username !== undefined || record.registration !== undefined;
+}
+
+async function registrationOpen(ctx: StepContext, hostId: string): Promise<boolean> {
+  const steps = await ctx.services.prisma.lbRunStep.findMany({
+    where: { hostId, kind: "register" },
+    select: { createdAt: true, outcome: true },
+  });
+  return canRegisterHost({
+    priorRegistrationAts: steps
+      .filter((step) => countsAsRegistration(step.outcome))
+      .map((step) => step.createdAt),
+    now: ctx.now,
+    timeZone: ctx.project.schedule.timezone,
+  });
+}
+
+async function readEdgeBlock(session: BrowserSession): Promise<boolean> {
+  const body = await session.pageText().catch(() => "");
+  const title = await session.text("title").catch(() => null);
+  const meta = (await session.navigationMeta?.()) ?? { status: null, headers: {} };
+  return isHardEdgeBlock({ status: meta.status, body, title, headers: meta.headers });
+}
+
+function edgeDead(host: HostRow): Extract<StepResult, { kind: "step" }> {
+  return {
+    kind: "step",
+    stepKind: "edge_block",
+    lastAction: "Edge block",
+    hostId: host.id,
+    outcome: { reason: "edge_block" },
+    apply: (tx) => moveHost(tx, host, "failed", { statusReason: "edge_block" }),
+  };
+}
+
 async function openSession(ctx: StepContext): Promise<StepResult> {
   const host = requireHost(ctx);
-  const entry = await ctx.openSession(host);
+  const market = marketOf(ctx.project, host);
+  const locale = host.locale || market.locale;
+  const timezoneId = host.timezoneId || market.timezoneId;
+  const acceptLanguage = acceptLanguageFor(locale);
+  let proxy: ProxyEndpoint | undefined;
+  if (ctx.project.proxyPolicy !== "none" && ctx.services.proxies) {
+    proxy = await ensureProxyLease(
+      {
+        prisma: ctx.services.prisma,
+        provider: ctx.services.proxies,
+        secrets: ctx.services.secrets,
+        now: ctx.now,
+        context: ctx.adapter,
+      },
+      {
+        projectId: ctx.project.id,
+        workspaceId: ctx.project.workspaceId,
+        country: host.country,
+        stickyKey: proxyStickyKey(ctx.project.id, host.country),
+      },
+    );
+  }
+  try {
+    assertSessionCoherence(host.country, {
+      proxyCountry: proxy?.country ?? host.country,
+      locale,
+      timezoneId,
+      acceptLanguage,
+      geolocation: false,
+    });
+  } catch (error) {
+    if (error instanceof CoherenceRefused) {
+      return {
+        kind: "step",
+        stepKind: "coherence_refused",
+        lastAction: "Coherence refused",
+        hostId: host.id,
+        outcome: { reason: "coherence_refused", issues: [...error.issues] },
+        apply: (tx) => moveHost(tx, host, "parked", { statusReason: "coherence_refused" }),
+      };
+    }
+    throw error;
+  }
+  const engine = host.engineHint === "camoufox" ? "camoufox" : "chromium";
+  let entry: PoolEntry;
+  try {
+    entry = await ctx.openSession(host, { proxy, acceptLanguage, engine });
+  } catch (error) {
+    if (error instanceof BrowserEngineUnavailable) return edgeDead(host);
+    throw error;
+  }
   await entry.session.goto(host.homepageUrl);
+  if (await readEdgeBlock(entry.session)) {
+    const prior = await ctx.services.prisma.lbRunStep.count({
+      where: { hostId: host.id, kind: "edge_block" },
+    });
+    const decision = decideEdgeBlock({
+      engineHint: host.engineHint,
+      priorChromiumBlocks: prior,
+      blockedNow: true,
+      camoufoxAvailable: ctx.services.camoufoxAvailable ?? false,
+    });
+    if (decision.action === "record") {
+      await ctx.closeSession();
+      return {
+        kind: "step",
+        stepKind: "edge_block",
+        lastAction: "Edge block",
+        hostId: host.id,
+        outcome: { edgeBlock: true, attempt: prior + 1 },
+      };
+    }
+    if (decision.action === "dead") {
+      await ctx.closeSession();
+      return edgeDead(host);
+    }
+    if (decision.action === "retry_camoufox") {
+      await ctx.closeSession();
+      await ctx.services.prisma.lbHost.update({
+        where: { id: host.id },
+        data: { engineHint: "camoufox" },
+      });
+      host.engineHint = "camoufox";
+      try {
+        entry = await ctx.openSession(host, { proxy, acceptLanguage, engine: "camoufox" });
+      } catch (error) {
+        if (error instanceof BrowserEngineUnavailable) return edgeDead(host);
+        throw error;
+      }
+      await entry.session.goto(host.homepageUrl);
+      if (await readEdgeBlock(entry.session)) {
+        await ctx.closeSession();
+        return edgeDead(host);
+      }
+    }
+  }
   Object.assign(entry, {
     hostId: host.id,
     helperConnected: false,
@@ -457,6 +672,17 @@ async function readHelperVersion(session: BrowserSession): Promise<{
 async function helperConnected(ctx: StepContext): Promise<StepResult> {
   const host = requireHost(ctx);
   const entry = requireSession(ctx, host);
+  if (entry.engine === "camoufox") {
+    // Camoufox is Firefox. The Page Helper is a Chromium extension, so captcha uses the API door.
+    entry.helperConnected = true;
+    entry.helperVersion = null;
+    return {
+      kind: "step",
+      lastAction: "Camoufox uses the API captcha door",
+      hostId: host.id,
+      outcome: { engine: "camoufox", door: "https_api" },
+    };
+  }
   const observed = await readHelperVersion(entry.session);
   if (observed.version !== PAGE_HELPER_VERSION) {
     const seen = observed.version ?? "missing";
@@ -655,6 +881,15 @@ function registrationOutcome(
 
 async function register(ctx: StepContext): Promise<StepResult> {
   const host = requireHost(ctx);
+  if (host.status === "qualified" && !(await registrationOpen(ctx, host.id))) {
+    return {
+      kind: "step",
+      stepKind: "register",
+      lastAction: "Registration cap",
+      hostId: host.id,
+      outcome: { refused: "registration_cap" },
+    };
+  }
   const entry = requireSession(ctx, host);
   const driver = requireDriver(host, entry);
   if (host.status === "registering") {
