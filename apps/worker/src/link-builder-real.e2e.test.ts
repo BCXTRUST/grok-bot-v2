@@ -461,6 +461,7 @@ describe.skipIf(!gate.available)(
         browsers: h.factory,
         captcha: new FakeCaptchaSolver({ outcomes: ["WRONG1", "WRONG2"] }),
         mailbox: h.emulator,
+        textModel: await recordedDraftModel("Jonas Brandt"),
         allowPrivateVerify: true,
         verifyDelayMs: 0,
         workerId: "e2e-worker-b",
