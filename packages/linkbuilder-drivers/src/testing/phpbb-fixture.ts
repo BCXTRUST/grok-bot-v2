@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
-import { noisePng } from "./png.js";
+import { noisePng, TINY_PNG } from "./png.js";
 
 /*
  * Offline phpBB 3.x board for tests: renders the stock prosilver structure from HTML fixtures,
@@ -24,6 +24,12 @@ export interface PhpbbFixtureOptions {
   boardName?: string;
   /** The answer behind every captcha image. */
   captchaAnswer?: string;
+  /** `tiny` serves a PNG under 100 bytes so the crop path must re-crop or park. */
+  captchaImage?: "noise" | "tiny";
+  /** Which challenge the register form shows. Image letters is the default. */
+  challenge?: "image" | "widget" | "question";
+  /** Knowledge question shown when `challenge` is `question`. */
+  question?: string;
   /** How posted links are rendered. */
   rel?: FixtureRel;
   activation?: "email" | "none" | "admin";
@@ -158,6 +164,9 @@ const COOKIE_BANNER = `<div id="cookie-consent">This board uses cookies. <button
 export async function startPhpbbFixture(options: PhpbbFixtureOptions): Promise<PhpbbFixture> {
   const boardName = options.boardName ?? "Vereinsforum Fixture";
   const captchaAnswer = options.captchaAnswer ?? "K7XQ2";
+  const captchaImage = options.captchaImage ?? "noise";
+  const challenge = options.challenge ?? "image";
+  const question = options.question ?? "Wie heißt die Hauptstadt von Deutschland?";
   const rel = options.rel ?? "ugc";
   const activation = options.activation ?? "email";
   const requests: RecordedRequest[] = [];
@@ -228,12 +237,24 @@ export async function startPhpbbFixture(options: PhpbbFixtureOptions): Promise<P
     return id;
   };
 
+  const captchaBlock = (confirmId: string) => {
+    if (challenge === "widget") {
+      return `<div class="panel"><h3>Security check</h3><div class="g-recaptcha" data-sitekey="fixture-site-key"><textarea name="g-recaptcha-response"></textarea></div></div>`;
+    }
+    if (challenge === "question") {
+      return `<div class="panel"><h3>Confirmation of registration</h3><dl><dt><label for="qa_answer">${escapeHtml(question)}</label></dt><dd><input type="text" name="qa_answer" id="qa_answer" class="inputbox" /></dd></dl></div>`;
+    }
+    const size = captchaImage === "tiny" ? 'width="8" height="8"' : 'width="160" height="48"';
+    return `<div class="panel captcha-panel"><h3>Confirmation of registration</h3><p>To prevent automated registrations the board requires you to enter a confirmation code.</p><dl><dt><label for="confirm_code">Confirmation code:</label></dt><dd><img src="./ucp.php?mode=confirm&amp;confirm_id=${confirmId}&amp;type=1" alt="Confirmation code" ${size} /></dd><dd><input type="text" name="confirm_code" id="confirm_code" size="8" maxlength="8" class="inputbox narrow" autocomplete="off" /><input type="hidden" name="confirm_id" value="${confirmId}" /></dd></dl></div>`;
+  };
+
   const registerForm = (
     response: ServerResponse,
     request: IncomingMessage,
     values: { username?: string; email?: string; error?: string },
-  ) =>
-    page(
+  ) => {
+    const confirmId = newCaptcha();
+    return page(
       response,
       request,
       "Register",
@@ -241,10 +262,12 @@ export async function startPhpbbFixture(options: PhpbbFixtureOptions): Promise<P
         boardName,
         username: values.username ?? "",
         email: values.email ?? "",
-        confirmId: newCaptcha(),
+        confirmId,
         error: values.error ? `<p class="error">${escapeHtml(values.error)}</p>` : "",
+        captchaBlock: captchaBlock(confirmId),
       }),
     );
+  };
 
   const renderPosts = (topicId: number) =>
     topics
@@ -319,7 +342,7 @@ export async function startPhpbbFixture(options: PhpbbFixtureOptions): Promise<P
         captchaServed += 1;
         const seed = Number.parseInt((url.searchParams.get("confirm_id") ?? "1").slice(0, 8), 16);
         response.writeHead(200, { "content-type": "image/png", "cache-control": "no-store" });
-        return response.end(noisePng(160, 48, seed));
+        return response.end(captchaImage === "tiny" ? TINY_PNG : noisePng(160, 48, seed));
       }
       if (path === "/ucp.php" && mode === "register") {
         if (request.method !== "POST") {
@@ -331,15 +354,24 @@ export async function startPhpbbFixture(options: PhpbbFixtureOptions): Promise<P
         const username = (form.get("username") ?? "").trim();
         const email = (form.get("email") ?? "").trim();
         const password = form.get("new_password") ?? "";
-        const expected = captchas.get(form.get("confirm_id") ?? "");
-        captchas.delete(form.get("confirm_id") ?? "");
         const retry = (error: string) =>
           registerForm(response, request, { username, email, error });
-        if (
-          !expected ||
-          (form.get("confirm_code") ?? "").trim().toUpperCase() !== expected.toUpperCase()
-        ) {
-          return retry("The confirmation code you entered was incorrect.");
+        if (challenge === "widget") {
+          if (!form.get("g-recaptcha-response")) {
+            return retry("You did not pass the security check.");
+          }
+        } else if (challenge === "question") {
+          const answer = (form.get("qa_answer") ?? "").trim().toLowerCase();
+          if (answer !== "berlin") return retry("The solution you provided was incorrect.");
+        } else {
+          const expected = captchas.get(form.get("confirm_id") ?? "");
+          captchas.delete(form.get("confirm_id") ?? "");
+          if (
+            !expected ||
+            (form.get("confirm_code") ?? "").trim().toUpperCase() !== expected.toUpperCase()
+          ) {
+            return retry("The confirmation code you entered was incorrect.");
+          }
         }
         if (username.length < 3) return retry("The username you entered is too short.");
         if (users.has(username.toLowerCase()))

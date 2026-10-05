@@ -29,6 +29,12 @@ function chunk(type: string, data: Uint8Array): Buffer {
  * Deterministic noisy RGB image so the cropped captcha never compresses below the solver's
  * minimum size. The pixels carry no letters; the fixture's solver knows the answer.
  */
+/** A 1×1 PNG, under the solver's 100-byte minimum, for the re-crop rejection path. */
+export const TINY_PNG = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+  "base64",
+);
+
 export function noisePng(width: number, height: number, seed: number): Buffer {
   let state = seed >>> 0 || 1;
   const next = () => {

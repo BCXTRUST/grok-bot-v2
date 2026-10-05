@@ -21,6 +21,16 @@ export const HELPER_LABELS = {
   unsupportedType: "Unsupported type",
 } as const;
 
+/** Page Helper build the worker accepts. The live canary must see this version on the popup. */
+export const PAGE_HELPER_VERSION = "2026.10.4.16";
+/** Chrome Web Store id of Page Helper 2026.10.4.16. */
+export const PAGE_HELPER_EXTENSION_ID = "kaddlbmbmgfolcpajhnfpcbekblekifn";
+/**
+ * Button the fixture helper injects. Confirm this against helper 2026.10.4.16 in the live canary;
+ * the real extension may use a different control. Real mode can override it per runner.
+ */
+export const PAGE_HELPER_BUTTON_SELECTOR = "[data-page-helper]";
+
 /** Counted solve attempts per captcha; failed attempts are not charged by the solver. */
 export const HELPER_MAX_TRIES = 4;
 /** A placed token is only valid for about two minutes. */

@@ -1,5 +1,6 @@
 // Fixture helper: replays the documented button labels against fake widgets on test pages.
 (() => {
+  document.documentElement.dataset.pageHelperVersion = "2026.10.4.16";
   const LABELS = {
     place: "Place the check",
     placing: "Placing…",

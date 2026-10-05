@@ -149,8 +149,89 @@ export class PlaywrightBrowserSession implements BrowserSession {
     return locator.getAttribute(name);
   }
 
-  async elementScreenshotPng(selector: string): Promise<Uint8Array> {
-    return new Uint8Array(await this.first(selector).screenshot({ type: "png" }));
+  async elementScreenshotPng(
+    selector: string,
+    options?: { paddingPx?: number },
+  ): Promise<Uint8Array> {
+    const padding = options?.paddingPx ?? 0;
+    const locator = this.first(selector);
+    if (padding <= 0) return new Uint8Array(await locator.screenshot({ type: "png" }));
+    const box = await locator.boundingBox();
+    if (!box) throw new Error(`Could not crop ${selector}`);
+    const viewport = this.page.viewportSize() ?? { width: 1280, height: 720 };
+    const x = Math.max(0, Math.floor(box.x - padding));
+    const y = Math.max(0, Math.floor(box.y - padding));
+    const right = Math.min(viewport.width, Math.ceil(box.x + box.width + padding));
+    const bottom = Math.min(viewport.height, Math.ceil(box.y + box.height + padding));
+    return new Uint8Array(
+      await this.page.screenshot({
+        type: "png",
+        clip: { x, y, width: Math.max(1, right - x), height: Math.max(1, bottom - y) },
+      }),
+    );
+  }
+
+  async injectToken(fieldName: string, token: string): Promise<void> {
+    if (!/^[A-Za-z0-9_-]{1,80}$/.test(fieldName)) throw new Error("Unexpected captcha field");
+    try {
+      await this.page.evaluate(
+        ({ name, value }) => {
+          const root = globalThis as unknown as {
+            document: {
+              querySelectorAll: (selector: string) => Iterable<{ value?: string }>;
+              querySelector: (
+                selector: string,
+              ) => { getAttribute: (attribute: string) => string | null } | null;
+            };
+          };
+          for (const field of root.document.querySelectorAll(`[name="${name}"]`)) {
+            field.value = value;
+          }
+          const callback = root.document
+            .querySelector("[data-callback]")
+            ?.getAttribute("data-callback");
+          if (callback && /^[A-Za-z_$][\w$]*$/.test(callback)) {
+            const fn = (globalThis as Record<string, unknown>)[callback];
+            if (typeof fn === "function") (fn as (token: string) => void)(value);
+          }
+        },
+        { name: fieldName, value: token },
+      );
+    } catch {
+      throw new Error(`Could not place the captcha token in ${fieldName}`);
+    }
+  }
+
+  async extensionVersions(): Promise<Array<{ id: string; version: string }>> {
+    let workers = this.context.serviceWorkers();
+    if (workers.length === 0) {
+      try {
+        await this.context.waitForEvent("serviceworker", { timeout: 5_000 });
+      } catch {
+        return [];
+      }
+      workers = this.context.serviceWorkers();
+    }
+    const found: Array<{ id: string; version: string }> = [];
+    for (const worker of workers) {
+      const id = /^chrome-extension:\/\/([a-p]{32})\//.exec(worker.url())?.[1];
+      if (!id) continue;
+      let version = "";
+      try {
+        version = await worker.evaluate(() => {
+          const runtime = (
+            globalThis as {
+              chrome?: { runtime?: { getManifest?: () => { version?: string } } };
+            }
+          ).chrome?.runtime;
+          return runtime?.getManifest?.().version ?? "";
+        });
+      } catch {
+        version = "";
+      }
+      found.push({ id, version });
+    }
+    return found;
   }
 
   async pageText(): Promise<string> {

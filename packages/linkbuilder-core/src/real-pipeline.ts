@@ -9,6 +9,7 @@ import { isRunTerminal } from "./run-state.js";
 export const REAL_STEP_KINDS = [
   "select_host",
   "open_session",
+  "helper_connected",
   "cookie_wall",
   "register",
   "captcha",
@@ -32,6 +33,8 @@ export const BROWSER_STEPS: ReadonlySet<RealStepKind> = new Set([
 export interface RealSessionFacts {
   /** Host the open persona session is pointed at; null when no session is open. */
   hostId: string | null;
+  /** The Page Helper version was read and matches the pinned build. */
+  helperConnected: boolean;
   cookieChecked: boolean;
   /** The register form is filled and waits for its captcha and submit. */
   registerFormReady: boolean;
@@ -85,6 +88,8 @@ export function planRealStep(input: RealPlanInput): RealPlan {
           ? "email_verify"
           : "post";
   if (BROWSER_STEPS.has(next) && input.session.hostId !== host.id) return { kind: "open_session" };
+  if (BROWSER_STEPS.has(next) && !input.session.helperConnected)
+    return { kind: "helper_connected" };
   return { kind: next };
 }
 

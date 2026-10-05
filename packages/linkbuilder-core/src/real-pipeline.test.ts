@@ -2,8 +2,18 @@ import { describe, expect, it } from "vitest";
 import { hostState } from "./host-state.js";
 import { isWarmupMet, planRealStep, type RealPlanInput } from "./real-pipeline.js";
 
-const noSession = { hostId: null, cookieChecked: false, registerFormReady: false };
-const onHost = { hostId: "h1", cookieChecked: false, registerFormReady: false };
+const noSession = {
+  hostId: null,
+  helperConnected: false,
+  cookieChecked: false,
+  registerFormReady: false,
+};
+const onHost = {
+  hostId: "h1",
+  helperConnected: true,
+  cookieChecked: false,
+  registerFormReady: false,
+};
 
 function input(overrides: Partial<RealPlanInput>): RealPlanInput {
   return {
@@ -47,9 +57,22 @@ describe("planRealStep", () => {
     expect(planRealStep(input({}))).toEqual({ kind: "open_session" });
     expect(
       planRealStep(
-        input({ session: { hostId: "other", cookieChecked: true, registerFormReady: true } }),
+        input({
+          session: {
+            hostId: "other",
+            helperConnected: true,
+            cookieChecked: true,
+            registerFormReady: true,
+          },
+        }),
       ),
     ).toEqual({ kind: "open_session" });
+  });
+
+  it("checks the Page Helper before the first browser action on a host", () => {
+    expect(planRealStep(input({ session: { ...onHost, helperConnected: false } }))).toEqual({
+      kind: "helper_connected",
+    });
   });
 
   it("walks the registration funnel in order", () => {

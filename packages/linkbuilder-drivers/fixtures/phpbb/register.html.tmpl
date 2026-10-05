@@ -6,13 +6,7 @@
 <dl><dt><label for="new_password">Password:</label></dt><dd><input type="password" name="new_password" id="new_password" class="inputbox autowidth" autocomplete="off" /></dd></dl>
 <dl><dt><label for="password_confirm">Confirm password:</label></dt><dd><input type="password" name="password_confirm" id="password_confirm" class="inputbox autowidth" autocomplete="off" /></dd></dl>
 </div>
-<div class="panel captcha-panel"><h3>Confirmation of registration</h3>
-<p>To prevent automated registrations the board requires you to enter a confirmation code.</p>
-<dl><dt><label for="confirm_code">Confirmation code:</label></dt>
-<dd><img src="./ucp.php?mode=confirm&amp;confirm_id={{confirmId}}&amp;type=1" alt="Confirmation code" width="160" height="48" /></dd>
-<dd><input type="text" name="confirm_code" id="confirm_code" size="8" maxlength="8" class="inputbox narrow" autocomplete="off" />
-<input type="hidden" name="confirm_id" value="{{confirmId}}" /></dd></dl>
-</div>
+{{{captchaBlock}}}
 <input type="hidden" name="agreed" value="true" />
 <input type="submit" name="submit" id="submit" value="Submit" class="button1 default-submit-action" />
 </form>
