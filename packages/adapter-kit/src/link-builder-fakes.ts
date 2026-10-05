@@ -16,6 +16,7 @@ import {
   CaptchaSolverError,
   type CaptchaType,
   type CountryCode,
+  type FormFieldInfo,
   type InboundMail,
   InboundMailSchema,
   LINK_BUILDER_CONTRACT_VERSION,
@@ -84,6 +85,8 @@ export interface FakePage {
   /** Full page text; defaults to the joined text of all elements. */
   text?: string;
   elements: Record<string, FakeElement>;
+  /** Explicit form controls. Returned by `formFields` when the selector matches. */
+  formFields?: FormFieldInfo[];
   /** Runs before each `waitFor`, letting a script advance asynchronous page state. */
   onTick?: (page: FakePageController) => void;
 }
@@ -113,7 +116,7 @@ function clonePage(page: FakePage): FakePage {
       attributes: element.attributes ? { ...element.attributes } : undefined,
     };
   }
-  return { ...page, elements };
+  return { ...page, elements, formFields: page.formFields?.map((field) => ({ ...field })) };
 }
 
 export class FakeBrowserSession implements BrowserSession {
@@ -189,6 +192,12 @@ export class FakeBrowserSession implements BrowserSession {
     if (!element) throw new Error(`Could not place the captcha token in ${fieldName}`);
     element.value = token;
     this.actions.push({ kind: "fill", selector, value: FAKE_SECRET_MASK });
+  }
+
+  async formFields(selector: string): Promise<FormFieldInfo[]> {
+    this.assertOpen();
+    if (!(selector in this.page().elements) && !this.page().formFields) return [];
+    return (this.page().formFields ?? []).map((field) => ({ ...field }));
   }
 
   async pageText(): Promise<string> {

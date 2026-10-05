@@ -112,7 +112,25 @@ export interface BrowserSession {
    * when one exists. Implementations must not include the token in errors or action logs.
    */
   injectToken?(fieldName: string, token: string): Promise<void>;
+  /**
+   * Controls inside the first matching form, with labels and autocomplete, for the generic
+   * driver. Mapping uses this DOM description only; it never screenshots the page.
+   */
+  formFields?(selector: string): Promise<FormFieldInfo[]>;
   close(): Promise<void>;
+}
+
+/** One control inside a form, as read from the DOM. `selector` addresses that control. */
+export interface FormFieldInfo {
+  selector: string;
+  tag: string;
+  type: string | null;
+  name: string | null;
+  id: string | null;
+  autocomplete: string | null;
+  label: string;
+  role: string | null;
+  required: boolean;
 }
 
 export interface BrowserSessionProvider {
