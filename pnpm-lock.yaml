@@ -307,13 +307,22 @@ importers:
       '@rakazo/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@rakazo/linkbuilder-browser':
+        specifier: workspace:*
+        version: link:../../packages/linkbuilder-browser
       '@rakazo/linkbuilder-core':
         specifier: workspace:*
         version: link:../../packages/linkbuilder-core
+      '@rakazo/linkbuilder-drivers':
+        specifier: workspace:*
+        version: link:../../packages/linkbuilder-drivers
       '@rakazo/memory':
         specifier: workspace:*
         version: link:../../packages/memory
     devDependencies:
+      '@rakazo/api':
+        specifier: workspace:*
+        version: link:../api
       typescript:
         specifier: ^5.9.2
         version: 5.9.3
