@@ -145,6 +145,7 @@ export const LbOperatorTicketReasonSchema = z.enum([
   "missing_password",
   "admin_approval",
   "unknown_page_state",
+  "unmapped_form",
 ]);
 export type LbOperatorTicketReason = z.infer<typeof LbOperatorTicketReasonSchema>;
 

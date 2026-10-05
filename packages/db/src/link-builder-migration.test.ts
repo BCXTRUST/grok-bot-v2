@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -46,12 +46,21 @@ const migration = readFileSync(
 const schema = readFileSync(path.resolve(here, "../prisma/schema.prisma"), "utf8");
 
 function checkValues(table: string, column: string): string[] {
+  const root = path.resolve(here, "../prisma/migrations");
+  const files = readdirSync(root)
+    .map((dir) => path.join(root, dir, "migration.sql"))
+    .filter((file) => existsSync(file))
+    .sort();
   const pattern = new RegExp(
     `ALTER TABLE "${table}" ADD CONSTRAINT "${table}_${column}_check" CHECK \\("${column}" IN \\(([^)]*)\\)\\);`,
+    "g",
   );
-  const match = migration.match(pattern);
-  if (!match?.[1]) throw new Error(`No CHECK for ${table}.${column}`);
-  return match[1].split(",").map((value) => value.trim().replace(/^'|'$/g, ""));
+  let found: string | undefined;
+  for (const file of files) {
+    for (const match of readFileSync(file, "utf8").matchAll(pattern)) found = match[1];
+  }
+  if (!found) throw new Error(`No CHECK for ${table}.${column}`);
+  return found.split(",").map((value) => value.trim().replace(/^'|'$/g, ""));
 }
 
 function columnDefault(table: string, column: string): unknown {
