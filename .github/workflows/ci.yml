@@ -75,7 +75,10 @@ jobs:
       - run: pnpm db:generate
         env:
           DATABASE_URL: postgres://rakazo:rakazo@127.0.0.1:5433/rakazo
+      - run: pnpm --filter @rakazo/linkbuilder-browser exec playwright install --with-deps chromium
       - run: pnpm test
+        env:
+          LB_E2E_REQUIRE_BROWSER: "1"
 
   test-integration:
     name: Postgres journeys

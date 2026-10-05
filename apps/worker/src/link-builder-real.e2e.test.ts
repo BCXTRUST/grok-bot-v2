@@ -167,6 +167,10 @@ const adapterContext: AdapterContext = {
   signal: new AbortController().signal,
 };
 
+it.runIf(gate.required)("has Chromium when the browser end to end test is required", () => {
+  expect(gate.reason).toBeUndefined();
+});
+
 describe.skipIf(!gate.available)(
   `link builder real driver end to end${gate.reason ? ` (${gate.reason})` : ""}`,
   () => {
