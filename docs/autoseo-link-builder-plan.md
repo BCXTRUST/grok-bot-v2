@@ -22,7 +22,7 @@ own in this repo (auth, orgs, computers, live screen, vault, AgentMail, Graphile
 | Discovery | "Pick an unused DACH host" | A **host catalog funnel**: SERP footprints (validated live with DataForSEO: `inurl:viewtopic.php`, `/forum/thread/`, `/t/…`) → platform detection → link-eligibility probe → qualification score. Hosts are discovered ahead of demand. | The bot can only post where new members get a rendered `href`. Probing first avoids wasting registrations. |
 | Account hygiene | Register, post, link | **Warm-up protocol**: email-verified account, 1–2 helpful replies without links, minimum age, then link. Discourse trust levels and phpBB/XenForo "new member" link rules encoded per driver. | Boards delete link-first newbies; warm-up is why "LIVE met" is possible at all. |
 | Blocking | Captcha → whole run waits for the operator | **Never block the run on one host.** Park the host (`needs_operator`), notify, continue with the next host; operator resumes later from the queue; parked hosts expire after a configurable time. | "It must always work" means the day's quota is pursued even when a human is asleep. |
-| Disclosure | Default `undisclosed_persona` | Modes: `disclosed_persona` (**default**: real voice, affiliation in profile/signature), `disclosed_brand`, `drafts_only`, `undisclosed_persona` (explicit opt-in with a written acknowledgement). | § 5a Abs. 4 UWG and § 6 DDG make undisclosed commercial posts attributable to the company (§ 8 Abs. 2 UWG). The product must not default customers into Abmahnung risk. Frontier models also comply happily with disclosed modes, which widens the model choice. |
+| Disclosure | Default `undisclosed_persona`, no further thought | **Default stays `undisclosed_persona`** (decided by Harold, 2026-10-05). The mode is made to work reliably: natural persona, link-ratio cap, `soundsLikeAd` fit check, fallback model lane that does not refuse, and a one-click responsibility checkbox in the Review step that protects AutoSEO as the tool operator. `disclosed_persona`, `disclosed_brand`, `drafts_only` remain available for customers who want them. | § 5a Abs. 4 UWG / § 6 DDG / § 8 Abs. 2 UWG make undisclosed commercial posts attributable to the promoted company; enforcement is private (Abmahnung) and pattern-driven. The plan states that honestly, keeps posts natural so there is no pattern, and keeps the one per-se illegal thing (fabricated testimonials, UWG Anhang Nr. 23b/23c) out of every mode. |
 | Success metric | Logged-out href check | Same, plus `rel` attributes (`nofollow`/`ugc`/`sponsored`), `noindex`, canonical and a **re-verification schedule** (T+1, +3, +7, +30 days) producing LIVE / DEAD / REMOVED / NOFOLLOW states. | Customers pay for links that stay; the table must say which ones did. |
 | Tests | Mock worker first | Deterministic, offline from day one: **Captell emulator**, **forum fixtures** (dockerised phpBB, MyBB, Flarum + static WoltLab/XenForo HTML), fake sandbox. Live canaries opt-in. | Repo rule: tests deterministic and offline by default. |
 
@@ -130,14 +130,16 @@ tables are prefixed `lb_`.
 Required at create (the wizard enforces these):
 
 - `name`, `slug`, `brandName`, `allowedDomains[]` (eTLD+1 list; every target URL must match)
-- `persona`: `displayName`, `bio`, `language` (`de` default), `register` (`du` | `sie`), `region` (`DE` | `AT` | `CH`), `disclosureText` (used in profile/signature for disclosed modes)
+- `persona`: `displayName`, `bio`, `language` (`de` default), `register` (`du` | `sie`), `region` (`DE` | `AT` | `CH`), `disclosureText?` (only used by the optional disclosed modes; empty and hidden in the default mode)
 - `mailboxId` (AgentMail inbox; created by the wizard if none)
 - `captchaSeat`: `secretId` → encrypted `ct_live_…` token (one per project; never shared), `lowBalanceCredits` (default 500)
 - `quotas`: `newPerDay`, `livePerDay`, `liveWeekCap?`, `maxLivePerHost` (fixed 1 in v1)
 - `schedule`: `timezone`, `weekdaysOnly` (default true), `window` (`09:00–22:00`), `overtimeUntilLiveMet` + `hardStopHour`
 - `topicLanes[]`: tag + short description + example questions
 - `geoPolicy`: `dach_first` | `en_fallback` | `en_only`
-- `disclosureMode`: `disclosed_persona` (default) | `disclosed_brand` | `drafts_only` | `undisclosed_persona` (requires `acknowledgedAt`, `acknowledgedByUserId`)
+- `disclosureMode`: `undisclosed_persona` (**default**) | `disclosed_persona` | `disclosed_brand` | `drafts_only`
+- `responsibilityAck`: `{ acknowledgedAt, acknowledgedByUserId, textVersion }` — one checkbox in the Review step ("I run this persona undisclosed and accept responsibility for compliance in my markets"). Nothing from it is ever shown in posts, profiles or signatures; it exists to protect the tool operator.
+- `linkRatio`: maximum share of a persona's posts on a host that may carry a link (default `1/3`); the rest are link-free helpful replies. This is what keeps an undisclosed persona looking like a member to moderators and to anyone searching for a pattern.
 - `proxyPolicy`: `static_isp_per_persona` (default) | `none` (dev only)
 
 Optional:
@@ -225,7 +227,7 @@ crash mid-step re-runs safely. One project holds one advisory lock; two workers 
 4. Captcha (section 7). Knowledge questions ("Wie heißt die Hauptstadt von Deutschland?", arithmetic) → `POST /api/v1/answer`; "Could not answer" → park with the question text.
 5. Form errors are not captcha failures: username taken, banned email, "Die Eingabe eines Passworts ist erforderlich." → fix and resubmit once, else mark host `dead` with reason.
 6. Email verification: AgentMail inbound webhook → extract link → open it **in the persona browser** (same IP). `pending_admin` accounts are never posted on.
-7. Set profile bio/signature (disclosed modes insert `disclosureText`; signature link only if `signatureLinks` and policy allows).
+7. Set profile bio/signature. Default mode: plain persona bio, no affiliation, no disclosure; signature link only if `signatureLinks` and the board policy allows and the account is past warm-up. Optional disclosed modes insert `disclosureText` here.
 8. Warm-up: pick 1–2 open threads in the lane, post helpful replies **without links** (model lane "draft" with `linkSlot = none`). Host becomes `ready` when `postCount ≥ minPostsBeforeLink` and `age ≥ minAccountAgeHours`.
 
 ### 6.4 Link reply
@@ -320,9 +322,9 @@ The model never decides whether to promote. It performs three narrow, structured
 
 Model lanes (OpenRouter ids; configurable per deployment and overridable per project):
 
-- `draft`: quality-first German. Evidence (KI-Schreibranking, Oct 2026, blind pairwise judgements): Claude Fable 5 leads "Erklärung und Wissensvermittlung" and "Artikel, Blogs und Redaktion" (97.7); GPT-6.1 Sol leads overall (97.0). Default `draft` = Claude Fable 5 for disclosed modes. Cost-saver alternates with strong German: Gemini 3.8 Flash (top aggregate on the dach.peerbench German index), Kimi K3 (93.4), DeepSeek V4.1 Flash.
+- `draft`: quality-first German. Evidence (KI-Schreibranking, Oct 2026, blind pairwise judgements): Claude Fable 5 leads "Erklärung und Wissensvermittlung" and "Artikel, Blogs und Redaktion" (97.7); GPT-6.1 Sol leads overall (97.0). Default `draft` = Claude Fable 5. Because the prompt is "answer this thread as this person; optionally mark where a source fits" and never mentions promotion or non-disclosure, frontier models complete it in the default undisclosed mode too. Cost-saver alternates with strong German: Gemini 3.8 Flash (top aggregate on the dach.peerbench German index), Kimi K3 (93.4), DeepSeek V4.1 Flash.
 - `classify`: cheap and fast: Gemini 3.8 Flash or DeepSeek V4.1 Flash.
-- `fallback`: open-weight models with permissive behaviour for the explicit-opt-in `undisclosed_persona` mode (Kimi K3, DeepSeek V4.1, GLM 5.3 Flash, Grok 4.x). Frontier models are expected to decline some undisclosed-promotion prompts; the structured "answer + optional `[REF]`" framing avoids most of that, and the detector below handles the rest.
+- `fallback`: models with permissive behaviour (Kimi K3, DeepSeek V4.1, GLM 5.3 Flash, Grok 4.x). Used automatically when the `draft` lane refuses, returns an off-schema answer, or produces a draft the fit check flags as `soundsLikeAd`. A project may pin its `draft` lane to a fallback model outright if it wants zero refusals at the cost of some German polish.
 
 Controls:
 
@@ -336,10 +338,11 @@ Controls:
 ## 10. Compliance and safety defaults
 
 - **Undisclosed commercial posting is a legal risk in DACH.** § 5a Abs. 4 UWG treats concealing the commercial purpose of a business act as unfair; § 6 Abs. 1 Nr. 1 DDG requires commercial communication to be recognisable; § 8 Abs. 2 UWG attributes employees'/agents' posts to the company; competitors and consumer associations can issue Abmahnungen. Case law already covers disguised link advertising from editorial contexts (KG GRUR 2007, 254 "Getarnte Link-Werbung").
-- Therefore: `disclosed_persona` is the default (natural voice, affiliation in profile/signature; many boards allow exactly that), `drafts_only` for cautious customers, and `undisclosed_persona` only after the owner records an acknowledgement in the wizard. The acknowledgement text and timestamp are stored on the project; the product does not pretend the risk is absent.
+- **Decision (Harold, 2026-10-05): the product does not disclose.** `undisclosed_persona` is the default and the primary mode. The plan therefore puts the effort into (a) making undisclosed posts indistinguishable from member posts — warm-up, `linkRatio` cap, `soundsLikeAd` fit check, facts-only grounding, region-coherent identity — because a visible pattern is what makes an Abmahnung possible, and (b) placing responsibility with the customer through the one-click `responsibilityAck` in the Review step, which protects AutoSEO as the operator of the tool. The optional disclosed modes and `drafts_only` exist for customers (often agency clients) who ask for them; nothing defaults to them.
+- Enforcement is private and pattern-driven: competitors, consumer associations and the Wettbewerbszentrale act via Abmahnung (lawyer costs typically low four figures, Unterlassungserklärung with contractual penalty), then injunction if ignored. Liability lands on the promoted company (§ 8 Abs. 2 UWG) and on the service running the posts. The dashboard never shows this as a warning banner; it is documented in PRODUCT.md and the terms the customer accepts.
 - **Help first is also the ranking strategy.** Google treats UGC links as `rel="ugc"`/`nofollow` on most boards; the value is referral traffic, brand mentions and citations by AI answer engines (the GEO offer on autoseo.run). The placements table shows `rel` honestly.
 - **Forum ToS**: the probe records link rules; hosts whose rules forbid commercial links are set `denied` automatically.
-- **No fabrication**: facts-only drafting, banned-claims filter, no fake reviews ("ich habe es selbst benutzt" is forbidden unless the customer supplies that as a true fact for a disclosed persona).
+- **No fabricated testimonials in any mode.** Facts-only drafting and the banned-claims filter stay on in undisclosed mode. First-person usage or experience claims ("ich nutze das seit Monaten") are fake reviews, a per-se offence on the UWG blacklist (Anhang Nr. 23b/23c) that is far easier to prove and attack than an undisclosed recommendation, and forum moderators spot them fastest. The drafter writes recommendation-style references ("das hier erklärt es ganz gut: [link]") instead; the fit check rejects testimonial phrasing.
 - **Never** instruct bypassing Captell credits, submitting on an empty human checkbox, or clicking image-grid tiles. These rules are code and tests, not copy.
 
 ---
@@ -351,7 +354,7 @@ Desktop-first, mobile-ok. Minimal visible copy; controls carry concise accessibi
 1. **Landing (`apps/www`)**: already live at autoseo.run with content + link-building offers; add the "Link Builder" product section and a Start free CTA to `app.autoseo.run/link-builder`.
 2. **Dashboard** (`/link-builder`): project cards with NEW/LIVE rings for today, week bar, status pill (`running`, `paused`, `overtime`, `needs operator ×n`, `out of window`), last event line.
 3. **New Project wizard** (7 steps, each validates and saves a draft project so the user can leave and return):
-   Brand & domains → Persona & inbox (creates the AgentMail inbox, shows the address) → Captell (paste `ct_live_…`, live balance check, helper version check) → Quotas & schedule (shows the ramp-up: first LIVE expected after warm-up) → Topics & targets (keyword clusters → URLs, facts) → Policy (disclosure mode, deny hosts, geo) → Review → **Start building**.
+   Brand & domains → Persona & inbox (creates the AgentMail inbox, shows the address) → Captell (paste `ct_live_…`, live balance check, helper version check) → Quotas & schedule (shows the ramp-up: first LIVE expected after warm-up) → Topics & targets (keyword clusters → URLs, facts) → Policy (deny hosts, geo, link ratio; disclosure mode is preselected `undisclosed_persona` behind an "Advanced" disclosure) → Review (shows the one-sentence responsibility checkbox) → **Start building**.
 4. **Project page** tabs: Overview (Start / Pause / Stop, live counters, "why not" panel, live screen thumbnail), Targets, Hosts (funnel columns: discovered / qualified / warming / ready / used / parked / blocked), Threads & Drafts (approval queue in `drafts_only`), Placements (LIVE table with `rel`, verify button, snapshot link), Runs (timeline of `RunStep`s with screenshots), Captchas (CaptchaEvents + Operator queue: **Open computer** → **I've solved it, continue** → optional note → **Skip host**), Settings.
 5. **Operator screen**: big embedded live screen (existing screen proxy), one primary button, one secondary (skip), one note field. Mobile shows the same ticket with a screenshot and the Continue/Skip actions; push notification deep-links here.
 6. **Empty states** with a seeded demo project (DACH wellness brand) so a new user sees real-looking placements and understands the funnel.
@@ -410,7 +413,7 @@ Desktop-first, mobile-ok. Minimal visible copy; controls carry concise accessibi
 - **M3 Captell live** — `CaptellHttpSolver`, button state machine, image crop path, knowledge questions, balance pause. Accept: emulator suite green; one live canary against a Captell test seat records `placed_submitted`.
 - **M4 Discovery and drafting** — DataForSEO adapter, probe, scoring, model lanes, refusal fallback, facts-only checks. Accept: for the demo lanes the funnel fills ≥ 20 qualified DACH hosts offline from recorded SERP fixtures; drafts pass QA checks deterministically with the recorded-model harness.
 - **M5 Drivers breadth** — WoltLab, XenForo, Invision, vBulletin, MyBB, Discourse, Flarum, NodeBB, Vanilla + generic fallback (accessibility-tree form mapping, no screenshots). Accept: fixture suite per platform.
-- **M6 Identity** — ISP proxy adapter, locale coherence validator, pacing caps, Camoufox fallback. Accept: coherence tests; canary on two real boards (staging project, disclosed mode).
+- **M6 Identity** — ISP proxy adapter, locale coherence validator, pacing caps, Camoufox fallback. Accept: coherence tests; canary on two real boards (staging project, default undisclosed mode, staging brand).
 - **M7 Operations** — re-verification schedule, whyNot report, alerts, cost ledger, operator queue expiry, webhooks. Accept: a simulated week in the fake clock produces correct LIVE/DEAD transitions and reports.
 - **M8 Production hardening** — Daytona/E2B adapters for the browser session, Kernel adapter optional, rate limits, plan limits, Stripe stubs, README + PRODUCT.md (customer setup checklist mirroring the wizard).
 
@@ -421,10 +424,10 @@ The first implementation session should deliver M0 + M1 end-to-end (wizard → S
 ## 17. Decisions needed from Harold
 
 1. Build inside this monorepo (recommended) instead of a new Next.js app. Yes / no.
-2. Default disclosure mode `disclosed_persona`, with `undisclosed_persona` behind an owner acknowledgement. Agree / change.
+2. ~~Default disclosure mode~~ **Decided 2026-10-05: `undisclosed_persona` is the default; one-click `responsibilityAck` in Review; fabricated testimonials stay forbidden in every mode.**
 3. Proxy vendor for v1 (IPRoyal or Oxylabs both cover DE/AT/CH static ISP). Pick one or let the first adapter be vendor-agnostic HTTP/SOCKS with manual endpoints.
 4. Discovery vendor: DataForSEO (already available) vs Serper (cheaper per query). Default: DataForSEO.
-5. Draft model lane default: Claude Fable 5 (quality) vs Gemini 3.8 Flash (cost). Default: Claude Fable 5 for disclosed modes, Gemini 3.8 Flash for classify.
+5. Draft model lane default: Claude Fable 5 (quality) vs Gemini 3.8 Flash (cost) vs pinning a never-refusing fallback model (Kimi K3 / DeepSeek V4.1). Default: Claude Fable 5 with automatic fallback, Gemini 3.8 Flash for classify.
 6. Count `nofollow`/`ugc` links toward LIVE quota by default (recommended yes, shown honestly) or only followable links.
 7. Captell go-live: confirm the desk is production-configured (upstream solver key set, no `sandbox` label) before the first customer run.
 
