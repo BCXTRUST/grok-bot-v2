@@ -67,6 +67,19 @@ export function proxyStickyKey(projectId: string, country: string): string {
 }
 
 /**
+ * Next sticky key after the exit IP is blacklisted. The country stays; only the generation
+ * changes, so the provider derives a new session and the account row is kept.
+ */
+export function nextProxyStickyKey(stickyKey: string): string {
+  const match = /^(.*):(\d+)$/.exec(stickyKey);
+  const country = match?.[1]?.split(":").at(-1);
+  if (match && /^[A-Z]{2}$/.test(country ?? "")) {
+    return `${match[1]}:${Number(match[2]) + 1}`;
+  }
+  return `${stickyKey}:2`;
+}
+
+/**
  * Markets to work today, primary first. `primary_first` adds later markets only while the
  * workable host supply of the markets already chosen is below `need`.
  */

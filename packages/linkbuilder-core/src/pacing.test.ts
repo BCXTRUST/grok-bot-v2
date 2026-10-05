@@ -2,7 +2,10 @@ import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import {
   assertPacing,
+  canRegisterHost,
+  HOST_IDLE_GAP,
   HUMAN_PACING,
+  MAX_REGISTRATIONS_PER_HOST_PER_DAY,
   PACING_LIMITS,
   pacedDelayMs,
   rateLimitWaitMs,
@@ -41,6 +44,32 @@ describe("pacing", () => {
         },
       ),
     );
+  });
+
+  it("caps registrations at one per host per local day and idles between hosts", () => {
+    expect(MAX_REGISTRATIONS_PER_HOST_PER_DAY).toBe(1);
+    expect(HUMAN_PACING.maxActionsPerMinute).toBeLessThanOrEqual(PACING_LIMITS.maxActionsPerMinute);
+    expect(HOST_IDLE_GAP.minMs).toBeGreaterThan(0);
+    expect(HOST_IDLE_GAP.maxMs).toBeGreaterThanOrEqual(HOST_IDLE_GAP.minMs);
+    expect(pacedDelayMs(HOST_IDLE_GAP, () => 0)).toBe(HOST_IDLE_GAP.minMs);
+    expect(pacedDelayMs(HOST_IDLE_GAP, () => 0.999_999)).toBe(HOST_IDLE_GAP.maxMs);
+    const morning = new Date("2026-10-05T10:00:00.000Z");
+    const evening = new Date("2026-10-05T21:00:00.000Z");
+    const nextMorning = new Date("2026-10-06T10:00:00.000Z");
+    expect(
+      canRegisterHost({ priorRegistrationAts: [morning], now: evening, timeZone: "UTC" }),
+    ).toBe(false);
+    expect(
+      canRegisterHost({ priorRegistrationAts: [morning], now: nextMorning, timeZone: "UTC" }),
+    ).toBe(true);
+    // 22:30 UTC is the next calendar day in Berlin (CEST).
+    expect(
+      canRegisterHost({
+        priorRegistrationAts: [morning],
+        now: new Date("2026-10-05T22:30:00.000Z"),
+        timeZone: "Europe/Berlin",
+      }),
+    ).toBe(true);
   });
 
   it("holds the rolling per-minute action cap", () => {
