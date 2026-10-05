@@ -10,7 +10,12 @@ import {
   View,
 } from "react-native";
 import { rpc } from "../lib/api";
-import { type MobileLbTicket, ticketActionBody } from "../lib/link-builder";
+import {
+  artifactImageUri,
+  type MobileLbArtifact,
+  type MobileLbTicket,
+  ticketActionBody,
+} from "../lib/link-builder";
 
 export default function LinkBuilderTicket() {
   const params = useLocalSearchParams<{
@@ -46,6 +51,23 @@ export default function LinkBuilderTicket() {
   }, [load]);
 
   const ticket = tickets.find((item) => item.id === params.ticketId) ?? tickets[0] ?? null;
+  const shotId = ticket && !ticket.screenUrl ? ticket.screenshotArtifactId : null;
+  const [shotUri, setShotUri] = useState<string | null>(null);
+
+  useEffect(() => {
+    setShotUri(null);
+    if (!shotId) return;
+    let live = true;
+    rpc<MobileLbArtifact>("linkBuilder/artifacts/get", { projectId, artifactId: shotId })
+      .then((artifact) => {
+        if (live) setShotUri(artifactImageUri(artifact));
+      })
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [projectId, shotId]);
+  const screenUri = ticket?.screenUrl ?? shotUri;
 
   async function settle(kind: "continue" | "skip") {
     if (!ticket) return;
@@ -76,9 +98,9 @@ export default function LinkBuilderTicket() {
         <>
           <Text style={styles.domain}>{ticket.domain}</Text>
           <View style={styles.screenBox} accessibilityLabel="Live screen">
-            {ticket.screenUrl ? (
+            {screenUri ? (
               <Image
-                source={{ uri: ticket.screenUrl }}
+                source={{ uri: screenUri }}
                 style={styles.shot}
                 accessibilityLabel="Screenshot"
               />

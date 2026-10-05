@@ -26,6 +26,17 @@ export interface MobileLbTicket {
   status: string;
   note: string | null;
   screenUrl: string | null;
+  screenshotArtifactId: string | null;
+}
+
+export interface MobileLbArtifact {
+  mimeType: string;
+  contentBase64: string;
+}
+
+export function artifactImageUri(artifact: MobileLbArtifact): string | null {
+  if (!/^image\/(png|jpeg|webp|gif)$/.test(artifact.mimeType)) return null;
+  return `data:${artifact.mimeType};base64,${artifact.contentBase64}`;
 }
 
 export function projectStatusLine(
