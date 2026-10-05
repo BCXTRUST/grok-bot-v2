@@ -445,19 +445,21 @@ If no answer is given, the defaults in each line apply (monorepo yes; vendor-agn
 
 ### 18.2 Model per milestone
 
+Cursor bills two pools: Cursor Models (Grok 4.x, Composer; the large included allowance) and Other Models (every Claude, Gemini, GPT model, billed at API price). Auto is not pool-safe: it bills at the price of whatever model it routes to, and third-party routes draw Other Models. Decision 2026-10-05 (Other Models pool nearly exhausted for the cycle): M0–M2 ran as originally pinned; from M3 on every builder is pinned to Grok 4.7, the included lane. Opus and Fable are no longer pinned by default.
+
 | Milestone | Pinned model | Reason |
 | --- | --- | --- |
-| M0 contracts, schema, core state machines | Claude Opus 5.5 (or Fable 5.1) | Everything downstream depends on it; long-horizon agentic coding is where these models lead (Terminal-Bench 4.0 57.9% vs 38.0%, FrontierSWE v2 56.3% vs 29.5%, Sept 2026 vendor tables). |
-| M1 wizard, dashboard, mobile, seed | Grok 4.7 (or Auto) | Well specified, repetitive, visually verifiable; ~5x cheaper per token. |
-| M2 browser adapter in sandbox | Claude Opus 5.5 (or Fable 5.1) | Real side effects, persistent profiles, extension loading; expensive to debug live. |
-| M3 Captell | Claude Opus 5.5 (or Fable 5.1) | State machine with credit and token-TTL consequences. |
-| M4 discovery + drafting lanes | Grok 4.7 (or Auto) | Adapters and prompts behind contracts with offline fixtures. |
-| M5 nine forum drivers | Grok 4.7 (or Auto) | Repetitive per-platform work against HTML fixtures with a shared interface. |
-| M6 identity / proxy / pacing | Claude Opus 5.5 (or Fable 5.1) | Security-sensitive (secrets, sandbox boundary, proxy credentials). |
-| M7 operations, alerts, reports | Grok 4.7 (or Auto) | CRUD-heavy, fully testable with a fake clock. |
-| M8 hardening, provider adapters, docs | Claude Opus 5.5 (or Fable 5.1) | Security review, rate limits, plan limits. |
+| M0 contracts, schema, core state machines | Claude Opus 5.5 (done) | Everything downstream depends on it; long-horizon agentic coding is where these models lead (Terminal-Bench 4.0 57.9% vs 38.0%, FrontierSWE v2 56.3% vs 29.5%, Sept 2026 vendor tables). |
+| M1 wizard, dashboard, mobile, seed | Grok 4.7 (done) | Well specified, repetitive, visually verifiable; included pool. |
+| M2 browser adapter in sandbox | Claude Opus 5.5 (running; let it finish) | Real side effects, persistent profiles, extension loading; expensive to debug live. |
+| M3 Captell | Grok 4.7 | State machine already fixed in core (M0) and emulator-tested; the adapter is HTTP plumbing behind the contract. |
+| M4 discovery + drafting lanes | Grok 4.7 | Adapters and prompts behind contracts with offline fixtures. |
+| M5 nine forum drivers | Grok 4.7 | Repetitive per-platform work against HTML fixtures with a shared interface. |
+| M6 identity / proxy / pacing | Grok 4.7 | Security-sensitive, so the coordinator reviews secrets, sandbox boundary and proxy credentials line by line. |
+| M7 operations, alerts, reports | Grok 4.7 | CRUD-heavy, fully testable with a fake clock. |
+| M8 hardening, provider adapters, docs | Grok 4.7 | Coordinator-led security review on the diff. |
 
-Auto is acceptable where listed; it chooses by task and capacity and does not know which milestones are expensive to get wrong, so the pinned rows stay pinned.
+Reserve: the remaining Other Models budget is spent only on one later fix pass, and only if a review finds an included-model miss on Captell, the sandbox browser, or proxy behavior. No other use. Auto is not used for builders because it can route to Other Models.
 
 ### 18.3 Kickoff prompt template (paste per milestone)
 
