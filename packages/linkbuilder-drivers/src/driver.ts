@@ -58,7 +58,17 @@ export interface BoardDriver {
   /** Fills the form without submitting it; password fields are filled as secrets. */
   fillRegistration(session: BrowserSession, account: BoardAccount): Promise<void>;
   detectCaptcha(session: BrowserSession): Promise<CaptchaChallenge>;
+  /** The register form's submit control, clicked by the Page Helper loop after a token lands. */
+  readonly registerSubmitSelector: string;
   submitRegistration(session: BrowserSession): Promise<RegistrationResult>;
+  /**
+   * Classifies the page after a registration submit without submitting anything, so a resumed
+   * step can pick up where an operator left off.
+   */
+  readRegistrationResult(
+    session: BrowserSession,
+    options?: { waitMs?: number },
+  ): Promise<RegistrationResult>;
   /** Reads the page reached through the activation link. */
   activationResult(session: BrowserSession): Promise<ActivationResult>;
   isLoggedIn(session: BrowserSession): Promise<boolean>;

@@ -130,11 +130,22 @@ export class PhpbbDriver implements BoardDriver {
     return detectWidget(session);
   }
 
+  readonly registerSubmitSelector = PHPBB_SELECTORS.registerSubmit;
+
   async submitRegistration(session: BrowserSession): Promise<RegistrationResult> {
     await session.click(PHPBB_SELECTORS.registerSubmit);
-    await session.waitFor(`${PHPBB_SELECTORS.messagePanel}, ${PHPBB_SELECTORS.errors}`, {
-      timeoutMs: 15_000,
-    });
+    return this.readRegistrationResult(session, { waitMs: 15_000 });
+  }
+
+  async readRegistrationResult(
+    session: BrowserSession,
+    options: { waitMs?: number } = {},
+  ): Promise<RegistrationResult> {
+    if (options.waitMs) {
+      await session.waitFor(`${PHPBB_SELECTORS.messagePanel}, ${PHPBB_SELECTORS.errors}`, {
+        timeoutMs: options.waitMs,
+      });
+    }
     const messages = await this.pageMessages(session);
     const text = messages.join("\n");
     if (CAPTCHA_REJECTED.test(text)) return { kind: "captcha_rejected" };
