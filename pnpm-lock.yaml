@@ -649,6 +649,34 @@ importers:
         specifier: ^4.1.10
         version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.3)(jsdom@30.0.1(@noble/hashes@2.3.0))(vite@8.2.1(@types/node@24.13.3)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.12)(yaml@2.9.0))
 
+  packages/linkbuilder-browser:
+    dependencies:
+      '@rakazo/adapter-kit':
+        specifier: workspace:*
+        version: link:../adapter-kit
+      '@rakazo/linkbuilder-core':
+        specifier: workspace:*
+        version: link:../linkbuilder-core
+      patchright:
+        specifier: ^1.63.0
+        version: 1.63.0
+      playwright:
+        specifier: ^1.55.0
+        version: 1.62.1
+      zod:
+        specifier: ^4.1.5
+        version: 4.4.3
+    devDependencies:
+      '@rakazo/adapters':
+        specifier: workspace:*
+        version: link:../adapters
+      typescript:
+        specifier: ^5.9.2
+        version: 5.9.3
+      vitest:
+        specifier: ^4.1.10
+        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.3)(jsdom@30.0.1(@noble/hashes@2.3.0))(vite@8.2.1(@types/node@24.13.3)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.12)(yaml@2.9.0))
+
   packages/linkbuilder-core:
     dependencies:
       '@rakazo/contracts':
@@ -7180,6 +7208,16 @@ packages:
 
   partial-json@0.1.7:
     resolution: {integrity: sha512-Njv/59hHaokb/hRUjce3Hdv12wd60MtM9Z5Olmn+nehe0QDAsRtRbJPvJ0Z91TusF0SuZRIvnM+S4l6EIP8leA==}
+
+  patchright-core@1.63.0:
+    resolution: {integrity: sha512-nuRJVTMVKoOFzY8vmwFqJZR3F0trUCKiPzDSgCOPq/yHHTefm9czILV23dXJsi5mvS7sCy7U1CqG7edA/21DtQ==}
+    engines: {node: '>=20'}
+    hasBin: true
+
+  patchright@1.63.0:
+    resolution: {integrity: sha512-WVXhmNhAJ5I+CmcHEu/I3KMKhOlQaKS1XJsk+5nRIypKJ3Dq9IaQP29p4vB3I1FWCTarUXVRj02Na30wGcuztQ==}
+    engines: {node: '>=20'}
+    hasBin: true
 
   path-browserify@1.0.1:
     resolution: {integrity: sha512-b7uo2UCUOYZcnF/3ID0lulOJi/bafxa1xPe7ZPsammBSpjSWQkjNxlt635YGS2MiR9GjvuXCtz2emr3jbsz98g==}
@@ -17069,6 +17107,12 @@ snapshots:
   parseurl@1.3.3: {}
 
   partial-json@0.1.7: {}
+
+  patchright-core@1.63.0: {}
+
+  patchright@1.63.0:
+    dependencies:
+      patchright-core: 1.63.0
 
   path-browserify@1.0.1: {}
 
