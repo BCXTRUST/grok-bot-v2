@@ -1,4 +1,5 @@
 import type {
+  LbDraftView,
   LbHostView,
   LbOperatorTicketView,
   LbPlacementView,
@@ -171,6 +172,7 @@ export function ProjectView({
   onStop,
   onVerify,
   onOpenTicket,
+  onDecideDraft,
   loadArtifact,
   busy,
 }: {
@@ -181,7 +183,7 @@ export function ProjectView({
   runs: LbRunView[];
   steps: LbRunStepView[];
   threads: LbThreadView[];
-  drafts: Array<{ id: string; body: string; status: string }>;
+  drafts: LbDraftView[];
   captchas: { id: string; outcome: string; domain: string | null }[];
   tickets: LbOperatorTicketView[];
   tab: string;
@@ -191,6 +193,7 @@ export function ProjectView({
   onStop: () => void;
   onVerify: (placementId: string) => void;
   onOpenTicket: (ticketId: string) => void;
+  onDecideDraft?: (draftId: string, decision: "approved" | "discarded") => void;
   loadArtifact?: ArtifactLoader;
   busy: boolean;
 }) {
@@ -236,7 +239,14 @@ export function ProjectView({
       ) : null}
       {tab === "Targets" ? <TargetList project={project} /> : null}
       {tab === "Hosts" ? <HostBoard hosts={hosts} /> : null}
-      {tab === "Threads" ? <ThreadList threads={threads} drafts={drafts} /> : null}
+      {tab === "Threads" ? (
+        <ThreadList
+          threads={threads}
+          drafts={drafts}
+          draftsOnly={project.disclosureMode === "drafts_only"}
+          onDecide={onDecideDraft}
+        />
+      ) : null}
       {tab === "Placements" ? <PlacementTable rows={placements} onVerify={onVerify} /> : null}
       {tab === "Runs" ? (
         <RunTimeline runs={runs} steps={steps} loadArtifact={loadArtifact} />
@@ -403,7 +413,20 @@ function HostBoard({ hosts }: { hosts: LbHostView[] }) {
             <div className="flex flex-col gap-2">
               {rows.map((host) => (
                 <BuiCard key={host.id} className="px-3 py-2 text-[13px] text-[#ECECEE]">
-                  {host.registrableDomain}
+                  <div>{host.registrableDomain}</div>
+                  <div className="text-[12px] text-[#A6A6AD]">
+                    {host.platform}
+                    {host.captchaType ? ` · ${host.captchaType}` : ""}
+                    {` · ${host.hrefForNewMembers}`}
+                  </div>
+                  <div className="text-[12px] text-[#85858A]">
+                    {[host.country, host.language, host.locale, host.timezoneId]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </div>
+                  {host.statusReason ? (
+                    <div className="text-[12px] text-[#85858A]">{host.statusReason}</div>
+                  ) : null}
                 </BuiCard>
               ))}
             </div>
@@ -417,23 +440,45 @@ function HostBoard({ hosts }: { hosts: LbHostView[] }) {
 function ThreadList({
   threads,
   drafts,
+  draftsOnly,
+  onDecide,
 }: {
   threads: LbThreadView[];
-  drafts: Array<{ id: string; body: string; status: string }>;
+  drafts: LbDraftView[];
+  draftsOnly: boolean;
+  onDecide?: (draftId: string, decision: "approved" | "discarded") => void;
 }) {
   return (
-    <div className="flex flex-col gap-3">
+    <section className="flex flex-col gap-3" aria-label="Threads and drafts">
       {threads.map((thread) => (
         <div key={thread.id} className="text-[14px] text-[#ECECEE]">
-          {thread.title}
+          <div>{thread.title}</div>
+          <div className="text-[12px] text-[#85858A]">{thread.relevance.toFixed(2)}</div>
         </div>
       ))}
       {drafts.map((draft) => (
-        <BuiCard key={draft.id} className="p-3 text-[13px] text-[#C9C9CE]">
-          {draft.body}
+        <BuiCard key={draft.id} className="flex flex-col gap-2 p-3 text-[13px] text-[#C9C9CE]">
+          <p>{draft.body}</p>
+          {draft.qualityChecks.issues.length > 0 ? (
+            <ul aria-label="Fit check">
+              {draft.qualityChecks.issues.map((issue) => (
+                <li key={issue}>{issue}</li>
+              ))}
+            </ul>
+          ) : null}
+          {draftsOnly && draft.status === "drafted" && onDecide ? (
+            <div className="flex gap-2">
+              <BuiButton label="Approve draft" onClick={() => onDecide(draft.id, "approved")}>
+                Approve
+              </BuiButton>
+              <BuiButton label="Discard draft" onClick={() => onDecide(draft.id, "discarded")}>
+                Discard
+              </BuiButton>
+            </div>
+          ) : null}
         </BuiCard>
       ))}
-    </div>
+    </section>
   );
 }
 

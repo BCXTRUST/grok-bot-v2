@@ -13,10 +13,12 @@ import {
   LbCaptchaTypeSchema,
   LbContentSchema,
   LbDisclosureModeSchema,
+  LbDraftQualityChecksSchema,
   LbDraftStatusSchema,
   LbHostPlatformSchema,
   type LbHostStatus,
   LbHostStatusSchema,
+  LbHrefForNewMembersSchema,
   LbLinkRatioSchema,
   LbLinkSlotSchema,
   LbMarketPolicySchema,
@@ -36,6 +38,7 @@ import {
   type LbProjectStatus,
   LbProxyPolicySchema,
   LbQuotasSchema,
+  LbRelDefaultSchema,
   LbResponsibilityAckSchema,
   type LbRunStatus,
   LbRunStatusSchema,
@@ -347,10 +350,19 @@ export async function listLbHosts(deps: RouterDeps, actor: Actor, projectId: str
     platform: LbHostPlatformSchema.parse(host.platform),
     country: host.country,
     language: host.language,
+    locale: host.locale,
+    timezoneId: host.timezoneId,
     status: LbHostStatusSchema.parse(host.status),
     parkedFrom: host.parkedFrom ? LbParkableHostStatusSchema.parse(host.parkedFrom) : null,
     qualityScore: host.qualityScore,
     topicTags: host.topicTags,
+    captchaType: host.captchaType ? LbCaptchaTypeSchema.parse(host.captchaType) : null,
+    hrefForNewMembers: LbHrefForNewMembersSchema.parse(host.hrefForNewMembers),
+    relDefault: LbRelDefaultSchema.parse(host.relDefault),
+    signatureLinks: host.signatureLinks,
+    minPostsForLinks: host.minPostsForLinks,
+    registerUrl: host.registerUrl,
+    statusReason: host.statusReason,
   }));
 }
 
@@ -492,8 +504,12 @@ export async function listLbThreads(deps: RouterDeps, actor: Actor, projectId: s
     domain: row.host.registrableDomain,
     url: row.url,
     title: row.title,
+    excerpt: row.excerpt,
     status: LbThreadStatusSchema.parse(row.status),
     relevance: row.relevance,
+    openQuestion: row.openQuestion,
+    laneId: row.laneId,
+    rejectReason: row.rejectReason,
   }));
 }
 
@@ -503,16 +519,70 @@ export async function listLbDrafts(deps: RouterDeps, actor: Actor, projectId: st
     where: { workspaceId: actor.workspaceId, projectId },
     orderBy: { updatedAt: "desc" },
   });
-  return rows.map((row) => ({
+  return rows.map((row) => draftView(row));
+}
+
+function draftView(row: {
+  id: string;
+  threadCandidateId: string;
+  body: string;
+  status: string;
+  linkSlot: string;
+  modelLane: string;
+  modelId: string;
+  targetUrl: string | null;
+  anchorText: string | null;
+  confidence: number | null;
+  qualityChecks: unknown;
+}) {
+  const quality = LbDraftQualityChecksSchema.safeParse(row.qualityChecks);
+  return {
     id: row.id,
     threadCandidateId: row.threadCandidateId,
     body: row.body,
     status: LbDraftStatusSchema.parse(row.status),
     linkSlot: LbLinkSlotSchema.parse(row.linkSlot),
     modelLane: LbModelLaneSchema.parse(row.modelLane),
+    modelId: row.modelId,
     targetUrl: row.targetUrl,
     anchorText: row.anchorText,
-  }));
+    confidence: row.confidence,
+    qualityChecks: quality.success
+      ? quality.data
+      : {
+          factsOnly: true,
+          noBannedClaims: true,
+          registerMatches: true,
+          lengthOk: true,
+          singleLink: true,
+          notTestimonial: true,
+          issues: [],
+        },
+  };
+}
+
+export async function decideLbDraft(
+  deps: RouterDeps,
+  actor: Actor,
+  input: { projectId: string; draftId: string },
+  status: "approved" | "discarded",
+) {
+  const project = await requireProject(deps.prisma, actor, input.projectId);
+  if (project.disclosureMode !== "drafts_only" && status === "approved") {
+    throw new ORPCError("BAD_REQUEST", { message: "Draft approval is for drafts only mode" });
+  }
+  const row = await deps.prisma.lbDraft.findFirst({
+    where: { id: input.draftId, workspaceId: actor.workspaceId, projectId: input.projectId },
+  });
+  if (!row) throw new ORPCError("NOT_FOUND");
+  if (row.status !== "drafted")
+    throw new ORPCError("BAD_REQUEST", { message: "Draft is not open" });
+  const updated = await deps.prisma.lbDraft.update({
+    where: { id: row.id },
+    data: { status },
+  });
+  await publish(deps, input.projectId);
+  return draftView(updated);
 }
 
 export async function listLbCaptchaEvents(deps: RouterDeps, actor: Actor, projectId: string) {
