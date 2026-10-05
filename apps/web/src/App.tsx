@@ -9,6 +9,8 @@ import {
   sessionRetryDelayMs,
   showSessionUnavailable,
 } from "./lib/session-gate";
+import { LinkBuilderPage } from "./pages/link-builder/LinkBuilderPage";
+import { LinkBuilderPreview } from "./pages/link-builder/preview";
 import { McpOAuthCallbackPage } from "./pages/McpOAuthCallback";
 import { ShellPage } from "./pages/Shell";
 
@@ -23,6 +25,8 @@ const WelcomePage = lazy(() =>
 );
 
 export function App() {
+  const preview =
+    import.meta.env.DEV && window.location.pathname.startsWith("/link-builder/preview");
   const session = authClient.useSession();
   const gate = sessionGate(session);
   const [holdingUnreachable, setHoldingUnreachable] = useState(false);
@@ -34,6 +38,11 @@ export function App() {
     markOnce("rk:renderer:session-committed");
     markAfterPaint("rk:renderer:session-painted");
   }, [session.isPending]);
+
+  if (preview) {
+    const screen = new URLSearchParams(window.location.search).get("screen") ?? "dashboard";
+    return <LinkBuilderPreview screen={screen} />;
+  }
 
   if (showSessionUnavailable(gate, nextHolding)) {
     return <SessionUnavailable refetch={session.refetch} />;
@@ -74,6 +83,26 @@ export function App() {
             element={user ? <McpOAuthCallbackPage /> : <Navigate to="/sign-in" replace />}
           />
           <Route path="/app" element={user ? <ShellPage /> : <Navigate to="/sign-in" replace />} />
+          <Route
+            path="/link-builder"
+            element={user ? <LinkBuilderPage /> : <Navigate to="/sign-in" replace />}
+          />
+          <Route
+            path="/link-builder/new"
+            element={user ? <LinkBuilderPage /> : <Navigate to="/sign-in" replace />}
+          />
+          <Route
+            path="/link-builder/new/:projectId"
+            element={user ? <LinkBuilderPage /> : <Navigate to="/sign-in" replace />}
+          />
+          <Route
+            path="/link-builder/:projectId/operator/:ticketId"
+            element={user ? <LinkBuilderPage /> : <Navigate to="/sign-in" replace />}
+          />
+          <Route
+            path="/link-builder/:projectId"
+            element={user ? <LinkBuilderPage /> : <Navigate to="/sign-in" replace />}
+          />
           <Route
             path="/app/g/:groupId"
             element={user ? <ShellPage /> : <Navigate to="/sign-in" replace />}

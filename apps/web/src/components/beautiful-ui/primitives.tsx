@@ -132,15 +132,19 @@ export function BuiButton({
   onClick,
   disabled,
   tone = "neutral",
+  label,
 }: {
   children: React.ReactNode;
   onClick?: () => void;
   disabled?: boolean;
   tone?: "neutral" | "accent";
+  /** Accessible name when the visible label is not enough on its own. */
+  label?: string;
 }) {
   return (
     <button
       type="button"
+      aria-label={label}
       disabled={disabled}
       onClick={onClick}
       className="rounded-full px-4 py-2 text-[13.5px] font-medium transition-colors duration-150 disabled:opacity-60"

@@ -39,8 +39,8 @@ import {
   inferAttachmentMimeType,
   isActive,
   isRunTerminalEvent,
-  latestAnswerableAskMessageId,
   LINK_BUILDING_BOT_INSTRUCTIONS,
+  latestAnswerableAskMessageId,
   presetFromCron,
   speechFromBlocks,
 } from "@rakazo/core";
@@ -94,12 +94,12 @@ import { type ArtifactTarget, decodeArtifactBase64 } from "../lib/artifact-open"
 import { authClient } from "../lib/auth";
 import { takeInitialBootstrap } from "../lib/bootstrap";
 import { chartViewport } from "../lib/chart-viewport";
+import { latestComputerScreenshotId, screenFrameSrc } from "../lib/computer-screen";
 import { dictation } from "../lib/dictation";
 import { connectMcpOauth } from "../lib/mcp-connect";
+import { modelLabel } from "../lib/model-label";
 import { revokePendingAttachmentPreviews } from "../lib/pending-attachments";
 import { markAfterPaint, markOnce } from "../lib/performance";
-import { latestComputerScreenshotId, screenFrameSrc } from "../lib/computer-screen";
-import { modelLabel } from "../lib/model-label";
 import { rpc } from "../lib/rpc";
 import {
   activeThreadRuns,
@@ -1720,6 +1720,17 @@ export function ShellPage() {
         </div>
         <button
           type="button"
+          aria-label="Link Builder"
+          onClick={() => navigate("/link-builder")}
+          className="mx-3 mb-1 flex items-center gap-3 rounded-[11px] px-2.5 py-2 hover:bg-[#131315]"
+        >
+          <span className="grid h-[30px] w-[30px] place-items-center rounded-full bg-[#17171A] text-[#9A9AA0]">
+            LB
+          </span>
+          <span className="text-[14.5px] text-[#C9C9CE]">Link Builder</span>
+        </button>
+        <button
+          type="button"
           onClick={() => setPluginsOpen(true)}
           className="mx-3 mb-1 flex items-center gap-3 rounded-[11px] px-2.5 py-2 hover:bg-[#131315]"
         >
@@ -2480,7 +2491,10 @@ export function ShellPage() {
           <ModelSettingsOverlay
             onClose={() => {
               setModelsOpen(false);
-              void rpc.me().then(setBootstrapMe).catch(() => undefined);
+              void rpc
+                .me()
+                .then(setBootstrapMe)
+                .catch(() => undefined);
             }}
           />
         ) : null}
