@@ -267,6 +267,7 @@ export const LbCaptchaEventViewSchema = z.object({
   buttonTextObserved: z.string().nullable(),
   attempt: z.number().int(),
   creditsCharged: z.number().int(),
+  taskId: z.string().nullable(),
   createdAt: IsoDate,
 });
 export type LbCaptchaEventView = z.infer<typeof LbCaptchaEventViewSchema>;
