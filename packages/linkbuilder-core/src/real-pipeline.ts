@@ -15,6 +15,7 @@ export const REAL_STEP_KINDS = [
   "captcha",
   "email_verify",
   "warmup",
+  "warmup_post",
   "post",
   "verify",
   "close",
@@ -27,6 +28,7 @@ export const BROWSER_STEPS: ReadonlySet<RealStepKind> = new Set([
   "register",
   "captcha",
   "email_verify",
+  "warmup_post",
   "post",
 ]);
 
@@ -46,6 +48,8 @@ export interface RealPlanInput {
   host: (HostState & { id: string }) | null;
   session: RealSessionFacts;
   warmupMet: boolean;
+  /** Warming account still owes link-free replies. Absent means the age gate is the only wait. */
+  warmupPostsShort?: boolean;
   placement: { status: LbPlacementStatus; counted: boolean } | null;
 }
 
@@ -72,7 +76,11 @@ export function planRealStep(input: RealPlanInput): RealPlan {
     return { kind: "select_host" };
   }
   if (host.status === "warming") {
-    return input.warmupMet ? { kind: "warmup" } : { kind: "select_host" };
+    if (input.warmupMet) return { kind: "warmup" };
+    if (!input.warmupPostsShort) return { kind: "select_host" };
+    if (input.session.hostId !== host.id) return { kind: "open_session" };
+    if (!input.session.helperConnected) return { kind: "helper_connected" };
+    return { kind: "warmup_post" };
   }
 
   const next: RealStepKind =

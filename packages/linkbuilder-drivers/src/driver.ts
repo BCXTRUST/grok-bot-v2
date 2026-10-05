@@ -52,6 +52,8 @@ export interface BoardDriver {
   readonly platform: LbHostPlatform;
   /** Markup the reply editor accepts, used when inserting the reference link. */
   readonly bodyFormat: ReferenceFormat;
+  /** When false or omitted, a reply that contains emoji is rejected. */
+  readonly allowEmoji?: boolean;
   registerUrl(homepageUrl: string): string;
   /** Opens the registration form, accepting the board terms on the way. */
   openRegistration(session: BrowserSession, homepageUrl: string): Promise<RegistrationPage>;
