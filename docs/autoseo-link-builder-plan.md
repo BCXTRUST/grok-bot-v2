@@ -427,6 +427,33 @@ M0 deviations (as built):
 - `LbCaptchaOutcome` adds `sandbox` for the helper's sandbox label (section 15 emulator).
 - `insertReference` has built-in reference sentences for German and English only. Other languages need a `[REF]` marker from the drafter or a caller template.
 
+M2 deviations (as built):
+
+- Additive contracts only:
+  - adapter-kit adds `BrowserSessionFactory` (`mode: "local" | "sandbox"`), an optional `loadedExtensions` on `BrowserSession`, and an optional `MailboxProvider.listMessages`.
+  - The API adds `artifactIds` on `LbRunStepView`, `screenshotArtifactId` on `LbOperatorTicketView`, and the `linkBuilder.artifacts.get` route with `LbArtifactViewSchema`. That route only serves artifacts that the project's steps or placements reference.
+  - There is no schema change. The ticket screenshot is the last PNG of the newest step on the same run and host, recorded up to 60 s after the ticket.
+- The browser lives in the new `packages/linkbuilder-browser`.
+  - Patchright is the default, with Playwright as the fallback, and both use Playwright's bundled Chromium. The proxy is Playwright's `proxy` option; proxy leasing stays in M6.
+  - `local` mode requires `LINK_BUILDER_BROWSER=local`. It is refused under `NODE_ENV=production` unless `LINK_BUILDER_ALLOW_LOCAL_BROWSER=true` is also set.
+  - `sandbox` mode is the default. It starts one detached runner (`rakazo-lb-browser serve`) per persona profile through `SandboxProvider.execute`, then sends one `call` exec per operation, with JSON-RPC carried in an env var.
+  - The sandbox image must ship Node, `/usr/bin/chromium` and the runner bundle. This has not been verified against a live sandbox.
+- Drivers live in `packages/linkbuilder-drivers`.
+  - Only phpBB is implemented, against an offline Node fixture board. Its templates are `.html.tmpl` so Biome does not lint them as app HTML.
+  - `BoardDriver` adds `readRegistrationResult` and `registerSubmitSelector`, so an operator continue re-reads the page instead of submitting again.
+  - The Page Helper loop finds the button through `[data-page-helper]`, which is an assumption made by the fixture. M3 must confirm it against the real Captell helper.
+- The worker runs the real pipeline when `LINK_BUILDER_DRIVER=real`.
+  - It uses an interval loop rather than a Graphile task. Each tick takes a per-project advisory lock and a fenced lease, and writes one step per `runId + stepIndex`.
+  - Open sessions and per-host page facts are held in memory per project and market. After a worker restart, `open_session` resets them.
+  - Three consecutive step errors on the same host mark that host `failed`.
+- M2 has no discovery: the e2e seeds hosts as `qualified`. Replies come from a fixed de/en template (`modelId: "template-m2"`) rather than the LLM, and no warm-up posts are made.
+- Logged-out verification uses plain `fetch` with the verifier user agent and no cookies, rather than got-scraping.
+- Real mode wires `FakeCaptchaSolver` and `AgentMailEmulator` until M3. Against a live board the email step therefore waits until a webhook reaches the emulator.
+- Forum logins are stored as workspace-shared SiteLogins with bot id `link-builder`. `normalizeSiteLoginHost` drops the port, so the worker picks a username with no stored login on that host.
+- `pending_admin` moves the host without creating a ticket. A Page Helper decision without a host event, such as `pause_project`, parks the host for the operator instead of pausing the whole project.
+- The M1 placeholder mailbox address is derived from the persona name, so two projects with the same persona name share an address. The e2e uses distinct personas; real inbox provisioning (M3) removes the collision.
+- The PGlite test database replays the real migrations and strips `CONCURRENTLY`, which PGlite does not support inside its single connection.
+
 ---
 
 ## 17. Decisions needed from Harold
