@@ -1,12 +1,15 @@
 import { createHash, randomUUID } from "node:crypto";
-import type {
-  AdapterContext,
-  ArtifactStore,
-  BrowserSession,
-  BrowserSessionFactory,
-  CaptchaSolver,
-  MailboxProvider,
-  RealtimeFanout,
+import {
+  type AdapterContext,
+  type AdapterDescriptor,
+  type ArtifactStore,
+  type BrowserSession,
+  type BrowserSessionFactory,
+  type CaptchaSolver,
+  type CaptchaSolverCapabilities,
+  CaptchaSolverError,
+  type MailboxProvider,
+  type RealtimeFanout,
 } from "@rakazo/adapter-kit";
 import type { EncryptedSecretStore } from "@rakazo/adapters";
 import {
@@ -30,6 +33,7 @@ import {
   isWithinWindow,
   linkBuilderTopic,
   marketKey,
+  PAGE_HELPER_BUTTON_SELECTOR,
   planRealStep,
   type RealPlan,
   redactSecrets,
@@ -42,6 +46,7 @@ import {
   moveHost,
   type PoolEntry,
   type ProjectConfig,
+  pauseForLowBalance,
   REAL_STEP_HANDLERS,
   type RealWorkerServices,
   type RunRow,
@@ -64,7 +69,16 @@ export interface LinkBuilderRealDeps {
   secrets: EncryptedSecretStore;
   artifacts: ArtifactStore;
   browsers: BrowserSessionFactory;
-  captcha: CaptchaSolver;
+  /** Used when `resolveCaptcha` is absent. Tests inject a fake or the emulator. */
+  captcha?: CaptchaSolver;
+  /**
+   * Production loads a per-project solver from the encrypted store.
+   * `null` means the project has no Captell token and real mode must refuse it.
+   */
+  resolveCaptcha?: (
+    project: { id: string; workspaceId: string },
+    redact: (secret: string) => void,
+  ) => Promise<CaptchaSolver | null>;
   mailbox: MailboxProvider;
   realtime?: RealtimeFanout;
   /** Tests point this at the offline fixture; production uses the global fetch. */
@@ -80,6 +94,28 @@ export interface LinkBuilderRealDeps {
   pageHelperPollMs?: number;
   sleep?: (ms: number) => Promise<void>;
 }
+
+const CAPTELL_SECRET_MISSING = "Real mode needs a Captell token for this project";
+
+const unconfiguredCaptcha: CaptchaSolver = {
+  describe(): AdapterDescriptor<CaptchaSolverCapabilities> {
+    return {
+      id: "unconfigured-captcha",
+      contractVersion: "1",
+      adapterVersion: "0",
+      capabilities: { supports: [] },
+    };
+  },
+  balance() {
+    return Promise.reject(new CaptchaSolverError("error", "Captcha solver is not configured"));
+  },
+  solve() {
+    return Promise.reject(new CaptchaSolverError("error", "Captcha solver is not configured"));
+  },
+  answerQuestion() {
+    return Promise.reject(new CaptchaSolverError("error", "Captcha solver is not configured"));
+  },
+};
 
 const DEFAULT_LEASE_MS = 5 * 60_000;
 const DEFAULT_VERIFY_DELAY_MS = 60_000;
@@ -104,14 +140,15 @@ export class LinkBuilderRealRunner {
       secrets: deps.secrets,
       artifacts: deps.artifacts,
       browsers: deps.browsers,
-      captcha: deps.captcha,
+      captcha: deps.captcha ?? unconfiguredCaptcha,
       mailbox: deps.mailbox,
       verifyFetch: deps.verifyFetch,
       allowPrivateVerify: deps.allowPrivateVerify ?? false,
       verifyDelayMs: deps.verifyDelayMs ?? DEFAULT_VERIFY_DELAY_MS,
       reverifyAfterMs: deps.reverifyAfterMs ?? DEFAULT_REVERIFY_MS,
-      pageHelperButtonSelector: deps.pageHelperButtonSelector ?? "[data-page-helper]",
+      pageHelperButtonSelector: deps.pageHelperButtonSelector ?? PAGE_HELPER_BUTTON_SELECTOR,
       pageHelperPollMs: deps.pageHelperPollMs ?? 250,
+      nowMs: () => (deps.now ? deps.now().getTime() : Date.now()),
       sleep: deps.sleep,
     };
   }
@@ -149,6 +186,29 @@ export class LinkBuilderRealRunner {
     if (fence === null) return "skipped";
     const ctx = await this.load(runId, now);
     if (!ctx) return "skipped";
+    const gate = await this.prepareCaptcha(ctx);
+    if (gate === "paused") return "waited";
+    if (gate === "missing") {
+      const prior = await this.deps.prisma.lbRunStep.findFirst({
+        where: { runId, error: CAPTELL_SECRET_MISSING },
+        select: { id: true },
+      });
+      if (prior) return "waited";
+      await this.commit(
+        ctx,
+        fence,
+        "captell_secret",
+        {
+          kind: "step",
+          lastAction: "Captell token is not configured",
+          hostId: ctx.host?.id ?? null,
+          outcome: { reason: "captell_secret_missing" },
+        },
+        CAPTELL_SECRET_MISSING,
+        new Date(),
+      );
+      return "failed";
+    }
     const plan = this.plan(ctx);
     if (plan.kind === "done" || plan.kind === "wait") return "waited";
     const startedAt = new Date();
@@ -277,6 +337,66 @@ export class LinkBuilderRealRunner {
     return ctx;
   }
 
+  /**
+   * Binds the project's solver and refuses to open the browser when the balance is low
+   * or the Captell token is missing. Returns `paused` or `missing` when the step must stop.
+   */
+  private async prepareCaptcha(ctx: StepContext): Promise<"ok" | "paused" | "missing"> {
+    if (this.deps.resolveCaptcha) {
+      const solver = await this.deps.resolveCaptcha(ctx.project, (secret) => {
+        ctx.secrets.push(secret);
+      });
+      if (!solver) return "missing";
+      ctx.services = { ...ctx.services, captcha: solver };
+    }
+    let credits: number;
+    try {
+      credits = (await ctx.services.captcha.balance(ctx.adapter)).credits;
+    } catch (error) {
+      if (error instanceof CaptchaSolverError && error.code === "credits") {
+        await pauseForLowBalance(ctx, 0);
+        return "paused";
+      }
+      if (error instanceof CaptchaSolverError && error.code === "sandbox") {
+        await this.pauseForSandbox(ctx);
+        return "paused";
+      }
+      throw error;
+    }
+    if (credits < ctx.project.captchaLowBalanceCredits) {
+      await pauseForLowBalance(ctx, credits);
+      return "paused";
+    }
+    return "ok";
+  }
+
+  private async pauseForSandbox(ctx: StepContext): Promise<void> {
+    await this.deps.prisma.$transaction(async (tx) => {
+      const updated = await tx.lbProject.updateMany({
+        where: { id: ctx.project.id, workspaceId: ctx.project.workspaceId, status: "active" },
+        data: { status: "paused" },
+      });
+      if (updated.count !== 1) return;
+      await tx.lbCaptchaEvent.create({
+        data: {
+          workspaceId: ctx.project.workspaceId,
+          projectId: ctx.project.id,
+          runId: ctx.run.id,
+          type: "unsupported",
+          door: "https_api",
+          outcome: "sandbox",
+          attempt: 1,
+          creditsCharged: 0,
+          createdAt: ctx.now,
+        },
+      });
+      await tx.lbRun.update({
+        where: { id: ctx.run.id },
+        data: { lastAction: "Paused, Captell returned a sandbox balance" },
+      });
+    });
+  }
+
   private plan(ctx: StepContext): RealPlan {
     const quotas = ctx.project.quotas;
     const liveMet = isLiveMet(ctx.run.counters, quotas);
@@ -296,6 +416,7 @@ export class LinkBuilderRealRunner {
         : null,
       session: {
         hostId: entry?.hostId ?? null,
+        helperConnected: entry?.helperConnected ?? false,
         cookieChecked: entry?.cookieChecked ?? false,
         registerFormReady: entry?.registerFormReady ?? false,
       },
@@ -424,6 +545,8 @@ export class LinkBuilderRealRunner {
       session,
       marketKey: key,
       hostId: null,
+      helperConnected: false,
+      helperVersion: null,
       cookieChecked: false,
       registerFormReady: false,
       captchaAttempts: 0,
@@ -515,6 +638,7 @@ function projectConfig(row: {
   preferHosts: string[];
   mailboxId: string | null;
   mailboxAddress: string | null;
+  captchaLowBalanceCredits: number;
   operator: unknown;
 }): ProjectConfig | null {
   if (row.status !== "active") return null;
@@ -543,6 +667,7 @@ function projectConfig(row: {
     preferHosts: row.preferHosts,
     mailboxId: row.mailboxId,
     mailboxAddress: row.mailboxAddress,
+    captchaLowBalanceCredits: row.captchaLowBalanceCredits,
     operatorTtlHours: operator.success ? operator.data.parkedHostTtlHours : 48,
   };
 }

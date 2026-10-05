@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { ORPCError } from "@orpc/server";
-import { FakeCaptchaSolver } from "@rakazo/adapter-kit";
+import { CaptchaSolverError } from "@rakazo/adapter-kit";
+import { CaptellHttpSolver } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import {
   LB_DEFAULT_LINK_RATIO,
@@ -51,6 +52,7 @@ import {
   isWithinWindow,
   linkBuilderTopic,
   localDateKey,
+  PAGE_HELPER_VERSION,
   projectActivity,
   type ScheduleState,
   transitionHost,
@@ -59,8 +61,6 @@ import {
   transitionRun,
 } from "@rakazo/linkbuilder-core";
 import type { RouterDeps } from "./router.js";
-
-const HELPER_VERSION = "2026.10.4.16";
 
 const DEFAULT_SCHEDULE = LbScheduleSchema.parse({ timezone: "Europe/Berlin" });
 
@@ -532,6 +532,7 @@ export async function listLbCaptchaEvents(deps: RouterDeps, actor: Actor, projec
     buttonTextObserved: row.buttonTextObserved,
     attempt: row.attempt,
     creditsCharged: row.creditsCharged,
+    taskId: row.taskId,
     createdAt: row.createdAt.toISOString(),
   }));
 }
@@ -634,15 +635,25 @@ export async function checkLbCaptchaBalance(
   }
   const parsed = LbCaptchaTokenSchema.safeParse(token);
   if (!parsed.success) throw new ORPCError("BAD_REQUEST", { message: "Expected a ct_live_ token" });
-  const solver = new FakeCaptchaSolver({ balance: fakeCredits(parsed.data) });
-  const balance = await solver.balance({
-    operationId: "lb-captcha-balance",
-    traceId: "lb-captcha-balance",
-    workspaceId: actor.workspaceId,
-    userId: actor.userId,
-    signal: new AbortController().signal,
+  const solver = new CaptellHttpSolver({
+    fetch: deps.captellFetch,
+    token: async () => parsed.data,
   });
-  return { credits: balance.credits, helperVersion: HELPER_VERSION };
+  try {
+    const balance = await solver.balance({
+      operationId: "lb-captcha-balance",
+      traceId: "lb-captcha-balance",
+      workspaceId: actor.workspaceId,
+      userId: actor.userId,
+      signal: new AbortController().signal,
+    });
+    return { credits: balance.credits, helperVersion: PAGE_HELPER_VERSION };
+  } catch (error) {
+    if (error instanceof CaptchaSolverError && error.code === "sandbox") {
+      throw new ORPCError("BAD_REQUEST", { message: "Captell returned a sandbox balance" });
+    }
+    throw new ORPCError("BAD_REQUEST", { message: "Captell balance check failed" });
+  }
 }
 
 export async function* followLbProject(
@@ -1102,12 +1113,6 @@ function transitionOrBad(from: LbProjectStatus, to: LbProjectStatus): LbProjectS
       message: error instanceof Error ? error.message : "That change is not available",
     });
   }
-}
-
-function fakeCredits(token: string): number {
-  let hash = 0;
-  for (const char of token) hash = (Math.imul(hash, 33) + char.charCodeAt(0)) >>> 0;
-  return 800 + (hash % 4200);
 }
 
 export function slugifyProjectName(name: string): string {

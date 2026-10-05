@@ -327,6 +327,8 @@ export interface RouterDeps {
   remoteConnectors?: RemoteConnectorDependencies;
   artifacts: ArtifactStore;
   realtime?: RealtimeFanout;
+  /** Offline tests inject the Captell emulator. Production uses global fetch. */
+  captellFetch?: typeof fetch;
   dataDir: string;
   env: {
     defaultProvider: string;

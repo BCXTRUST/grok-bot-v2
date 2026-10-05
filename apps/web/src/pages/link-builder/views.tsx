@@ -582,7 +582,14 @@ function CaptchaPanel({
     <div className="flex flex-col gap-3">
       {captchas.map((event) => (
         <div key={event.id} className="text-[13px] text-[#C9C9CE]">
-          {event.domain} · {event.outcome}
+          <div>
+            {event.domain} · {event.outcome}
+          </div>
+          {event.outcome === "sandbox" ? (
+            <div className="text-[12px] text-[#E8B931]">
+              Sandbox answer. The Captell desk is not production-configured.
+            </div>
+          ) : null}
         </div>
       ))}
       {tickets.map((ticket) => (

@@ -1,8 +1,8 @@
-import { FakeCaptchaSolver, type JobPublisher, type JobWorkerHost } from "@rakazo/adapter-kit";
+import type { JobPublisher, JobWorkerHost } from "@rakazo/adapter-kit";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
 import { startLinkBuilderFakeRunner } from "./link-builder-fake.js";
 import { isLinkBuilderRealEnabled, startLinkBuilderRealRunner } from "./link-builder-real.js";
-import { browserFactoryFromEnv } from "./link-builder-real-wiring.js";
+import { browserFactoryFromEnv, captchaSolverForProject } from "./link-builder-real-wiring.js";
 
 loadRootEnv();
 
@@ -140,8 +140,15 @@ async function main() {
         artifacts,
         realtime,
         browsers: browserFactoryFromEnv({ env: process.env, dataDir, sandbox, prisma }),
-        // Captell and the live AgentMail inbox arrive in M3; until then real mode uses the fakes.
-        captcha: new FakeCaptchaSolver(),
+        resolveCaptcha: (project, redact) =>
+          captchaSolverForProject({
+            prisma,
+            secrets,
+            projectId: project.id,
+            workspaceId: project.workspaceId,
+            redact,
+          }),
+        // Live inbox provisioning stays on the emulator until the inbound webhook is wired.
         mailbox: new AgentMailEmulator(),
         workerId: `worker-${process.pid}`,
       })
