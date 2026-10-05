@@ -9,6 +9,7 @@ import type {
   LbRunView,
   LbThreadView,
 } from "@rakazo/contracts";
+import { useEffect, useState } from "react";
 import {
   BuiButton,
   BuiCard,
@@ -170,6 +171,7 @@ export function ProjectView({
   onStop,
   onVerify,
   onOpenTicket,
+  loadArtifact,
   busy,
 }: {
   project: LbProjectDetail;
@@ -189,6 +191,7 @@ export function ProjectView({
   onStop: () => void;
   onVerify: (placementId: string) => void;
   onOpenTicket: (ticketId: string) => void;
+  loadArtifact?: ArtifactLoader;
   busy: boolean;
 }) {
   const tabs = [
@@ -235,7 +238,9 @@ export function ProjectView({
       {tab === "Hosts" ? <HostBoard hosts={hosts} /> : null}
       {tab === "Threads" ? <ThreadList threads={threads} drafts={drafts} /> : null}
       {tab === "Placements" ? <PlacementTable rows={placements} onVerify={onVerify} /> : null}
-      {tab === "Runs" ? <RunTimeline runs={runs} steps={steps} /> : null}
+      {tab === "Runs" ? (
+        <RunTimeline runs={runs} steps={steps} loadArtifact={loadArtifact} />
+      ) : null}
       {tab === "Captchas" ? (
         <CaptchaPanel captchas={captchas} tickets={tickets} onOpenTicket={onOpenTicket} />
       ) : null}
@@ -252,6 +257,7 @@ export function OperatorView({
   onNote,
   onContinue,
   onSkip,
+  loadArtifact,
 }: {
   ticket: LbOperatorTicketView;
   note: string;
@@ -260,22 +266,28 @@ export function OperatorView({
   onNote: (note: string) => void;
   onContinue: () => void;
   onSkip: () => void;
+  loadArtifact?: ArtifactLoader;
 }) {
   const embed = ticket.screenUrl?.startsWith("/novnc/") || ticket.screenUrl?.startsWith("https://");
+  const shot = !embed && loadArtifact ? ticket.screenshotArtifactId : null;
   return (
     <main className="mx-auto flex w-full max-w-3xl flex-col gap-4 px-4 py-8">
       <h1 className="text-[22px] font-medium text-[#ECECEE]">{ticket.domain}</h1>
-      <div
-        role="img"
-        className="grid min-h-[320px] place-items-center overflow-hidden rounded-[16px] border border-[#2A2A31] bg-[#101012]"
-        aria-label="Live screen"
-      >
-        {embed && ticket.screenUrl ? (
-          <iframe title="Live screen" src={ticket.screenUrl} className="h-[420px] w-full" />
-        ) : (
-          <span className="text-[13px] text-[#85858A]">Live screen</span>
-        )}
-      </div>
+      {shot && loadArtifact ? (
+        <ArtifactShot artifactId={shot} load={loadArtifact} label="Screenshot" />
+      ) : (
+        <div
+          role="img"
+          className="grid min-h-[320px] place-items-center overflow-hidden rounded-[16px] border border-[#2A2A31] bg-[#101012]"
+          aria-label="Live screen"
+        >
+          {embed && ticket.screenUrl ? (
+            <iframe title="Live screen" src={ticket.screenUrl} className="h-[420px] w-full" />
+          ) : (
+            <span className="text-[13px] text-[#85858A]">Live screen</span>
+          )}
+        </div>
+      )}
       <label className="text-[13px] text-[#A6A6AD]">
         Note
         <textarea
@@ -470,7 +482,51 @@ function PlacementTable({
   );
 }
 
-function RunTimeline({ runs, steps }: { runs: LbRunView[]; steps: LbRunStepView[] }) {
+/** Resolves an artifact id to an image URL, or null when the artifact is not an image. */
+export type ArtifactLoader = (artifactId: string) => Promise<string | null>;
+
+export function ArtifactShot({
+  artifactId,
+  load,
+  label,
+}: {
+  artifactId: string;
+  load: ArtifactLoader;
+  label: string;
+}) {
+  const [src, setSrc] = useState<string | null | undefined>(undefined);
+  useEffect(() => {
+    let live = true;
+    setSrc(undefined);
+    load(artifactId)
+      .then((next) => {
+        if (live) setSrc(next);
+      })
+      .catch(() => {
+        if (live) setSrc(null);
+      });
+    return () => {
+      live = false;
+    };
+  }, [artifactId, load]);
+  if (src === undefined) return <LoadingState label={label} />;
+  if (src === null) return null;
+  return <img src={src} alt={label} className="w-full rounded-[12px] border border-[#2A2A31]" />;
+}
+
+function RunTimeline({
+  runs,
+  steps,
+  loadArtifact,
+}: {
+  runs: LbRunView[];
+  steps: LbRunStepView[];
+  loadArtifact?: ArtifactLoader;
+}) {
+  const withShots = steps.filter((step) => step.artifactIds.length > 0);
+  const [picked, setPicked] = useState<string | null>(null);
+  const shown =
+    withShots.find((step) => step.id === picked) ?? withShots[withShots.length - 1] ?? null;
   return (
     <div className="flex flex-col gap-3">
       {runs.map((run) => (
@@ -479,12 +535,36 @@ function RunTimeline({ runs, steps }: { runs: LbRunView[]; steps: LbRunStepView[
         </div>
       ))}
       <ol className="flex flex-col gap-2" aria-label="Run steps">
-        {steps.map((step) => (
-          <li key={step.id} className="text-[14px] text-[#ECECEE]">
-            {step.stepIndex + 1}. {step.lastAction ?? step.kind}
-          </li>
-        ))}
+        {steps.map((step) => {
+          const text = `${step.stepIndex + 1}. ${step.lastAction ?? step.kind}`;
+          return (
+            <li key={step.id} className="text-[14px] text-[#ECECEE]">
+              {loadArtifact && step.artifactIds.length > 0 ? (
+                <button
+                  type="button"
+                  aria-pressed={shown?.id === step.id}
+                  className={`text-left ${shown?.id === step.id ? "text-[#ECECEE]" : "text-[#A6A6AD]"}`}
+                  onClick={() => setPicked(step.id)}
+                >
+                  {text}
+                </button>
+              ) : (
+                text
+              )}
+              {step.error ? (
+                <span className="ml-2 text-[13px] text-[#E5484D]">{step.error}</span>
+              ) : null}
+            </li>
+          );
+        })}
       </ol>
+      {loadArtifact && shown ? (
+        <ArtifactShot
+          artifactId={shown.artifactIds[0]!}
+          load={loadArtifact}
+          label={`Step ${shown.stepIndex + 1} screenshot`}
+        />
+      ) : null}
     </div>
   );
 }

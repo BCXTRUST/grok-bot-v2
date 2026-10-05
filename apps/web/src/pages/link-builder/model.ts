@@ -210,6 +210,14 @@ export function canStart(draft: WizardDraft): boolean {
   return wizardStepIssues(6, draft).length === 0;
 }
 
+export function artifactImageSrc(artifact: {
+  mimeType: string;
+  contentBase64: string;
+}): string | null {
+  if (!/^image\/(png|jpeg|webp|gif)$/.test(artifact.mimeType)) return null;
+  return `data:${artifact.mimeType};base64,${artifact.contentBase64}`;
+}
+
 export function warmupNote(hours = 24): string {
   const days = Math.max(1, Math.ceil(hours / 24));
   return `First LIVE after warm-up, about ${days} ${days === 1 ? "day" : "days"}.`;
