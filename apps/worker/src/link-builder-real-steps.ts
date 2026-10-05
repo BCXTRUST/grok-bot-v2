@@ -7,16 +7,21 @@ import {
   type CaptchaSolver,
   CaptchaSolverError,
   type MailboxProvider,
+  type TextModel,
 } from "@rakazo/adapter-kit";
 import { type EncryptedSecretStore, loadSiteLoginForFill, upsertSiteLogin } from "@rakazo/adapters";
 import type {
   LbCaptchaDoor,
   LbCaptchaOutcome,
   LbCaptchaType,
+  LbContent,
+  LbDisclosureMode,
   LbHostPlatform,
   LbHostStatus,
   LbHumanCheckboxState,
   LbLanguage,
+  LbLinkRatio,
+  LbLinkSlot,
   LbMarket,
   LbOperatorTicketReason,
   LbParkableHostStatus,
@@ -25,6 +30,7 @@ import type {
   LbRunStatus,
   LbSchedule,
   LbTarget,
+  LbTopicLane,
   LbWarmup,
 } from "@rakazo/contracts";
 import { Prisma, type PrismaClient } from "@rakazo/db";
@@ -50,8 +56,6 @@ import {
   transitionPlacement,
   transitionProject,
   transitionRun,
-  validateAnchor,
-  validateTargetUrl,
   WORKABLE_HOST_ORDER,
 } from "@rakazo/linkbuilder-core";
 import {
@@ -66,13 +70,12 @@ import {
   solveImageCaptcha,
   verifyPlacement,
 } from "@rakazo/linkbuilder-drivers";
+import { bumpModelRefusal, composeReply } from "./link-builder-draft.js";
 
 /** Bot id recorded on forum logins the link builder stores; logins are workspace-shared. */
 export const LINK_BUILDER_LOGIN_BOT = "link-builder";
 /** Image captcha attempts on one form before the host is parked for the operator. */
 export const MAX_CAPTCHA_ATTEMPTS = 2;
-const DRAFT_MODEL_ID = "template-m2";
-
 export type Tx = Prisma.TransactionClient;
 
 export interface RealWorkerServices {
@@ -91,6 +94,8 @@ export interface RealWorkerServices {
   /** Clock for the Page Helper TTL. Production injects `Date.now`. */
   nowMs?: () => number;
   sleep?: (ms: number) => Promise<void>;
+  /** Recorded harness in tests, OpenRouter when a deployment key is configured. */
+  textModel?: TextModel;
 }
 
 /** Facts about the open persona browser; they live with the worker, never in the database. */
@@ -117,6 +122,11 @@ export interface ProjectConfig {
   schedule: LbSchedule;
   warmup: LbWarmup;
   targets: LbTarget[];
+  facts: string[];
+  content: LbContent;
+  disclosureMode: LbDisclosureMode;
+  linkRatio: LbLinkRatio;
+  topicLanes: LbTopicLane[];
   countNofollow: boolean;
   denyHosts: string[];
   preferHosts: string[];
@@ -171,6 +181,7 @@ export type StepResult =
       outcome?: Record<string, unknown>;
       artifactIds?: string[];
       credits?: number;
+      tokens?: number;
       run?: RunPatch;
       apply?: (tx: Tx) => Promise<void>;
       afterCommit?: () => Promise<void> | void;
@@ -201,7 +212,8 @@ export const REAL_STEP_HANDLERS: Record<RealStepKind, StepHandler> = {
   captcha,
   email_verify: emailVerify,
   warmup,
-  post,
+  warmup_post: (ctx) => publish(ctx, true),
+  post: (ctx) => publish(ctx, false),
   verify,
   close,
 };
@@ -327,8 +339,10 @@ async function selectHost(ctx: StepContext): Promise<StepResult> {
     if (row.status === "qualified") return ctx.run.counters.newToday < ctx.project.quotas.newPerDay;
     if (row.status === "warming") {
       const account = row.accounts[0];
+      if (!account) return false;
+      const postsShort = account.postCount < ctx.project.warmup.minPostsBeforeLink;
       return (
-        account !== undefined &&
+        postsShort ||
         isWarmupMet({
           postCount: account.postCount,
           accountCreatedAt: account.createdAt,
@@ -1233,16 +1247,7 @@ export function templateReply(input: {
   });
 }
 
-function pickTarget(project: ProjectConfig): string {
-  const ordered = [...project.targets].sort((a, b) => b.priority - a.priority);
-  for (const target of ordered) {
-    const check = validateTargetUrl(target.url, project.allowedDomains);
-    if (check.ok) return check.url;
-  }
-  throw new StepFailure("No target URL on an allowed domain");
-}
-
-async function post(ctx: StepContext): Promise<StepResult> {
+async function publish(ctx: StepContext, warmup: boolean): Promise<StepResult> {
   const host = requireHost(ctx);
   const entry = requireSession(ctx, host);
   const driver = requireDriver(host);
@@ -1278,15 +1283,204 @@ async function post(ctx: StepContext): Promise<StepResult> {
   const threads = (await driver.listThreads(entry.session, host.homepageUrl)).filter(
     (thread) => !skip.has(thread.url),
   );
-  const thread = threads[0];
-  if (!thread) {
+  if (!ctx.services.textModel) throw new StepFailure("Draft model is not configured");
+  const model = ctx.services.textModel;
+  let chosen: {
+    thread: (typeof threads)[number];
+    body: string;
+    linkSlot: LbLinkSlot;
+    targetUrl: string | null;
+    anchorText: string | null;
+    modelLane: string;
+    modelId: string;
+    confidence: number | null;
+    qualityChecks: Prisma.InputJsonValue;
+    tokens: number;
+    relevance: number;
+    openQuestion: boolean;
+    queueOnly: boolean;
+    refusal: boolean;
+  } | null = null;
+  let rule = driver.probeLinkRule("");
+  const rejections: Array<{ url: string; title: string; reason: string; relevance: number }> = [];
+  for (const thread of threads) {
+    const approved = warmup
+      ? null
+      : await prisma.lbDraft.findFirst({
+          where: {
+            projectId: ctx.project.id,
+            status: "approved",
+            threadCandidate: { hostId: host.id, url: thread.url },
+          },
+        });
+    if (!(await driver.openReply(entry.session, thread))) {
+      rejections.push({
+        url: thread.url,
+        title: thread.title,
+        reason: "replies_closed",
+        relevance: 0,
+      });
+      continue;
+    }
+    const pageText = await entry.session.pageText().catch(() => "");
+    rule = driver.probeLinkRule(pageText);
+    if (approved) {
+      chosen = {
+        thread,
+        body: approved.body,
+        linkSlot: approved.linkSlot as LbLinkSlot,
+        targetUrl: approved.targetUrl,
+        anchorText: approved.anchorText,
+        modelLane: approved.modelLane,
+        modelId: approved.modelId,
+        confidence: approved.confidence,
+        qualityChecks: approved.qualityChecks as Prisma.InputJsonValue,
+        tokens: 0,
+        relevance: 1,
+        openQuestion: true,
+        queueOnly: false,
+        refusal: false,
+      };
+      break;
+    }
+    const composed = await composeReply({
+      model,
+      adapter: ctx.adapter,
+      project: ctx.project,
+      thread: {
+        title: thread.title,
+        excerpt: "",
+        pageText,
+        citeSource: !warmup,
+        signatureLinks: host.signatureLinks,
+        allowEmoji: driver.allowEmoji === true,
+        bodyFormat: driver.bodyFormat,
+        hostCountry: host.country,
+        hostLanguage: host.language,
+        postsOnHost: account.postCount,
+        linkPostsOnHost: account.linkPostCount,
+        now: ctx.now,
+      },
+    });
+    const relevance = composed.draft.relevance?.relevance ?? 0;
+    const openQuestion = composed.draft.relevance?.openQuestion ?? false;
+    if (composed.draft.action === "refused") {
+      rejections.push({
+        url: thread.url,
+        title: thread.title,
+        reason: "model_refusal",
+        relevance,
+      });
+      chosen = {
+        thread,
+        body: composed.draft.body,
+        linkSlot: "none",
+        targetUrl: null,
+        anchorText: null,
+        modelLane: composed.draft.modelLane,
+        modelId: composed.draft.modelId,
+        confidence: composed.draft.confidence,
+        qualityChecks: composed.draft.qualityChecks as unknown as Prisma.InputJsonValue,
+        tokens: composed.draft.tokens,
+        relevance,
+        openQuestion,
+        queueOnly: false,
+        refusal: true,
+      };
+      break;
+    }
+    if (!composed.selection.selected) {
+      rejections.push({
+        url: thread.url,
+        title: thread.title,
+        reason: composed.selection.rejectReason ?? "rejected",
+        relevance,
+      });
+      continue;
+    }
+    const queueOnly =
+      composed.draft.action === "queue" ||
+      (composed.draft.action === "post" && ctx.project.disclosureMode === "drafts_only");
+    if (composed.draft.action === "discard") {
+      rejections.push({ url: thread.url, title: thread.title, reason: "discarded", relevance });
+      chosen = {
+        thread,
+        body: composed.draft.body,
+        linkSlot: composed.draft.linkSlot,
+        targetUrl: composed.draft.targetUrl,
+        anchorText: composed.draft.anchorText,
+        modelLane: composed.draft.modelLane,
+        modelId: composed.draft.modelId,
+        confidence: composed.draft.confidence,
+        qualityChecks: composed.draft.qualityChecks as unknown as Prisma.InputJsonValue,
+        tokens: composed.draft.tokens,
+        relevance,
+        openQuestion,
+        queueOnly: false,
+        refusal: false,
+      };
+      chosen = { ...chosen, queueOnly: false };
+      // Keep the discarded draft and stop. A later thread can be tried next tick.
+      break;
+    }
+    chosen = {
+      thread,
+      body: composed.draft.body,
+      linkSlot: warmup ? "none" : composed.draft.linkSlot,
+      targetUrl: warmup ? null : composed.draft.targetUrl,
+      anchorText: warmup ? null : composed.draft.anchorText,
+      modelLane: composed.draft.modelLane,
+      modelId: composed.draft.modelId,
+      confidence: composed.draft.confidence,
+      qualityChecks: composed.draft.qualityChecks as unknown as Prisma.InputJsonValue,
+      tokens: composed.draft.tokens,
+      relevance,
+      openQuestion,
+      queueOnly,
+      refusal: false,
+    };
+    break;
+  }
+  const upsertRejected = async (tx: Tx) => {
+    for (const rejection of rejections) {
+      if (chosen && rejection.url === chosen.thread.url && !chosen.refusal) continue;
+      await tx.lbThreadCandidate.upsert({
+        where: { hostId_url: { hostId: host.id, url: rejection.url } },
+        create: {
+          workspaceId: ctx.project.workspaceId,
+          projectId: ctx.project.id,
+          hostId: host.id,
+          url: rejection.url,
+          title: rejection.title,
+          relevance: rejection.relevance,
+          openQuestion: false,
+          status: "rejected",
+          rejectReason: rejection.reason,
+        },
+        update: {
+          status: "rejected",
+          rejectReason: rejection.reason,
+          relevance: rejection.relevance,
+        },
+      });
+    }
+  };
+  if (!chosen) {
     return {
       kind: "step",
-      lastAction: "No open thread on this board",
+      lastAction:
+        threads.length === 0 ? "No open thread on this board" : "No thread passed selection",
       hostId: host.id,
-      apply: (tx) => moveHost(tx, host, "failed", { statusReason: "no_open_thread" }),
+      outcome: { rejected: rejections.map((rejection) => rejection.reason) },
+      apply: async (tx) => {
+        await upsertRejected(tx);
+        if (threads.length === 0)
+          await moveHost(tx, host, "failed", { statusReason: "no_open_thread" });
+      },
     };
   }
+  const thread = chosen.thread;
+  const body = chosen.body;
   const base = {
     workspaceId: ctx.project.workspaceId,
     projectId: ctx.project.id,
@@ -1300,36 +1494,98 @@ async function post(ctx: StepContext): Promise<StepResult> {
         ...base,
         title: thread.title,
         replyCount: thread.replyCount ?? 0,
-        openQuestion: thread.title.trim().endsWith("?"),
-        relevance: 0.5,
+        openQuestion: chosen.openQuestion,
+        relevance: chosen.relevance,
+        laneId: ctx.project.topicLanes[0]?.id,
         status,
         rejectReason,
       },
-      update: { status, rejectReason },
+      update: {
+        status,
+        rejectReason,
+        relevance: chosen.relevance,
+        openQuestion: chosen.openQuestion,
+      },
     });
-  if (!(await driver.openReply(entry.session, thread))) {
+  if (chosen.refusal) {
     return {
       kind: "step",
-      lastAction: "Thread is closed for replies",
+      lastAction: "Model refused the draft",
       hostId: host.id,
-      outcome: { thread: thread.url },
+      outcome: { thread: thread.url, modelRefusal: true, modelId: chosen.modelId },
+      tokens: chosen.tokens,
       apply: async (tx) => {
-        await upsertThread(tx, "rejected", "replies_closed");
+        const run = await tx.lbRun.findUnique({
+          where: { id: ctx.run.id },
+          select: { whyNot: true },
+        });
+        await tx.lbRun.update({
+          where: { id: ctx.run.id },
+          data: { whyNot: bumpModelRefusal(run?.whyNot) },
+        });
+        await upsertThread(tx, "rejected", "model_refusal");
+        await upsertRejected(tx);
       },
     };
   }
-  const rule = driver.probeLinkRule(await entry.session.pageText());
-  const targetUrl = pickTarget(ctx.project);
-  const anchor = validateAnchor(ctx.project.brandName);
-  if (!anchor.ok) throw new StepFailure(`Brand name is not a valid anchor (${anchor.reason})`);
-  const language = ctx.project.persona.language ?? marketOf(ctx.project, host).language;
-  const body = templateReply({
-    brandName: anchor.text,
-    language,
-    targetUrl,
-    register: ctx.project.persona.register,
-    format: driver.bodyFormat,
-  });
+  const discarded = rejections.some(
+    (rejection) => rejection.url === thread.url && rejection.reason === "discarded",
+  );
+  if (discarded) {
+    return {
+      kind: "step",
+      lastAction: "Draft discarded",
+      hostId: host.id,
+      outcome: { thread: thread.url, issues: chosen.qualityChecks },
+      apply: async (tx) => {
+        const candidate = await upsertThread(tx, "rejected", "discarded");
+        await tx.lbDraft.create({
+          data: {
+            workspaceId: ctx.project.workspaceId,
+            projectId: ctx.project.id,
+            threadCandidateId: candidate.id,
+            modelLane: chosen.modelLane,
+            modelId: chosen.modelId,
+            body: chosen.body,
+            linkSlot: chosen.linkSlot,
+            targetUrl: chosen.targetUrl,
+            anchorText: chosen.anchorText,
+            confidence: chosen.confidence,
+            status: "discarded",
+            qualityChecks: chosen.qualityChecks,
+          },
+        });
+      },
+    };
+  }
+  if (chosen.queueOnly) {
+    return {
+      kind: "step",
+      lastAction: "Draft waiting for approval",
+      hostId: host.id,
+      outcome: { thread: thread.url, modelId: chosen.modelId },
+      tokens: chosen.tokens,
+      apply: async (tx) => {
+        const candidate = await upsertThread(tx, "candidate");
+        await tx.lbDraft.create({
+          data: {
+            workspaceId: ctx.project.workspaceId,
+            projectId: ctx.project.id,
+            threadCandidateId: candidate.id,
+            modelLane: chosen.modelLane,
+            modelId: chosen.modelId,
+            body: chosen.body,
+            linkSlot: chosen.linkSlot,
+            targetUrl: chosen.targetUrl,
+            anchorText: chosen.anchorText,
+            confidence: chosen.confidence,
+            status: "drafted",
+            qualityChecks: chosen.qualityChecks,
+          },
+        });
+      },
+    };
+  }
   await driver.fillReply(entry.session, body);
   const reply = await driver.submitReply(entry.session);
   const artifactIds = await screenshot(ctx, entry, reply.kind === "posted" ? "posted" : "reply");
@@ -1373,50 +1629,46 @@ async function post(ctx: StepContext): Promise<StepResult> {
     apply: async (tx) => {
       await tx.lbHost.update({ where: { id: host.id }, data: ruleData });
       const candidate = await upsertThread(tx, "posted");
+      const linked = chosen.linkSlot !== "none" && chosen.targetUrl && chosen.anchorText;
       const draft = await tx.lbDraft.create({
         data: {
           workspaceId: ctx.project.workspaceId,
           projectId: ctx.project.id,
           threadCandidateId: candidate.id,
-          modelLane: "draft",
-          modelId: DRAFT_MODEL_ID,
+          modelLane: chosen.modelLane,
+          modelId: chosen.modelId,
           body,
-          linkSlot: "inline",
-          targetUrl,
-          anchorText: anchor.text,
+          linkSlot: chosen.linkSlot,
+          targetUrl: chosen.targetUrl,
+          anchorText: chosen.anchorText,
+          confidence: chosen.confidence,
           status: "posted",
-          qualityChecks: {
-            factsOnly: true,
-            noBannedClaims: true,
-            registerMatches: true,
-            lengthOk: true,
-            singleLink: true,
-            notTestimonial: true,
-            issues: [],
+          qualityChecks: chosen.qualityChecks,
+        },
+      });
+      if (linked && chosen.targetUrl && chosen.anchorText) {
+        await tx.lbPlacement.create({
+          data: {
+            workspaceId: ctx.project.workspaceId,
+            projectId: ctx.project.id,
+            hostId: host.id,
+            hostAccountId: account.id,
+            draftId: draft.id,
+            threadUrl: thread.url,
+            postUrl: reply.permalink,
+            targetUrl: chosen.targetUrl,
+            anchorText: chosen.anchorText,
+            status: "pending",
+            counted: false,
+            nextVerifyAt: new Date(postedAt.getTime() + ctx.services.verifyDelayMs),
           },
-        },
-      });
-      await tx.lbPlacement.create({
-        data: {
-          workspaceId: ctx.project.workspaceId,
-          projectId: ctx.project.id,
-          hostId: host.id,
-          hostAccountId: account.id,
-          draftId: draft.id,
-          threadUrl: thread.url,
-          postUrl: reply.permalink,
-          targetUrl,
-          anchorText: anchor.text,
-          status: "pending",
-          counted: false,
-          nextVerifyAt: new Date(postedAt.getTime() + ctx.services.verifyDelayMs),
-        },
-      });
+        });
+      }
       await tx.lbHostAccount.update({
         where: { id: account.id },
         data: {
           postCount: { increment: 1 },
-          linkPostCount: { increment: 1 },
+          ...(linked ? { linkPostCount: { increment: 1 } } : {}),
           firstPostAt: account.firstPostAt ?? postedAt,
           lastPostAt: postedAt,
         },

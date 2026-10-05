@@ -3,8 +3,14 @@ import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type AdapterContext, FakeCaptchaSolver } from "@rakazo/adapter-kit";
-import { AgentMailEmulator, EncryptedSecretStore, LocalArtifactStore } from "@rakazo/adapters";
+import { type AdapterContext, FakeCaptchaSolver, type TextModel } from "@rakazo/adapter-kit";
+import {
+  AgentMailEmulator,
+  EncryptedSecretStore,
+  LocalArtifactStore,
+  RecordedTextModel,
+  textModelFixtureKey,
+} from "@rakazo/adapters";
 import {
   continueLbTicket,
   createLbProject,
@@ -18,7 +24,7 @@ import { type Actor, LbProjectPatchSchema } from "@rakazo/contracts";
 import { createPgliteDb, type TestDatabase } from "@rakazo/db/pglite";
 import { LocalBrowserSessionFactory } from "@rakazo/linkbuilder-browser";
 import { browserTestGate, FIXTURE_PAGE_HELPER_DIR } from "@rakazo/linkbuilder-browser/testing";
-import { TEST_PACING } from "@rakazo/linkbuilder-core";
+import { draftPrompt, fitPrompt, relevancePrompt, TEST_PACING } from "@rakazo/linkbuilder-core";
 import { PHPBB_SELECTORS, VERIFY_USER_AGENT } from "@rakazo/linkbuilder-drivers";
 import {
   type FixtureMail,
@@ -116,6 +122,7 @@ async function wizardProject(h: Harness, fixture: PhpbbFixture, name: string, pe
     },
     topicLanes: [{ id: "lane-members", tag: "members", description: "Member lists for clubs" }],
     targets: [{ url: "https://vereinsplaner.example/mitglieder", priority: 80 }],
+    linkRatio: { links: 1, posts: 1 },
     warmup: { minPostsBeforeLink: 0, minAccountAgeHours: 0 },
     captchaToken: FAKE_CAPTELL_TOKEN,
     provisionMailbox: true,
@@ -138,6 +145,72 @@ async function wizardProject(h: Harness, fixture: PhpbbFixture, name: string, pe
     },
   });
   return { project: updated, host, mailboxId: row.mailboxId! };
+}
+
+const RECORDED_REPLY = {
+  body: "Eine gemeinsame Liste, die der ganze Vorstand bearbeiten kann, erspart das Hin und Her im Verein. [REF]",
+  linkSlot: "inline" as const,
+  targetUrlIndex: 0,
+  anchorText: "Mitgliederliste",
+  confidence: 0.86,
+};
+
+/** Writes hash-keyed fixtures for the thread the phpBB board actually shows. */
+async function recordedDraftModel(displayName: string): Promise<TextModel> {
+  const root = await mkdtemp(join(tmpdir(), "lb-e2e-model-"));
+  const title = "Which software do you use for club membership lists?";
+  const facts: string[] = [];
+  const targets = [{ url: "https://vereinsplaner.example/mitglieder", description: "" }];
+  const relevance = relevancePrompt({
+    laneTag: "members",
+    laneDescription: "Member lists for clubs",
+    title,
+    excerpt: "",
+    replies: [],
+  });
+  const draft = draftPrompt({
+    displayName,
+    bio: "",
+    register: "du",
+    language: "de",
+    country: "DE",
+    toneNotes: "",
+    facts,
+    targets,
+    title,
+    excerpt: "",
+    citeSource: true,
+  });
+  const fit = fitPrompt({ title, excerpt: "", body: RECORDED_REPLY.body, facts });
+  await mkdir(join(root, "classify"), { recursive: true });
+  await mkdir(join(root, "draft"), { recursive: true });
+  await writeFile(
+    join(
+      root,
+      "classify",
+      `${textModelFixtureKey("classify", relevance.system, relevance.user)}.json`,
+    ),
+    JSON.stringify({
+      modelId: "recorded-classify",
+      value: {
+        relevance: 0.91,
+        openQuestion: true,
+        reasons: ["The thread asks how clubs keep member lists."],
+      },
+    }),
+  );
+  await writeFile(
+    join(root, "draft", `${textModelFixtureKey("draft", draft.system, draft.user)}.json`),
+    JSON.stringify({ modelId: "recorded-draft", value: RECORDED_REPLY }),
+  );
+  await writeFile(
+    join(root, "classify", `${textModelFixtureKey("classify", fit.system, fit.user)}.json`),
+    JSON.stringify({
+      modelId: "recorded-classify",
+      value: { fitsThread: true, soundsLikeAd: false, factsOnly: true, issues: [] },
+    }),
+  );
+  return new RecordedTextModel(root);
 }
 
 function deliverTo(h: Harness) {
@@ -212,6 +285,7 @@ describe.skipIf(!gate.available)(
         browsers: h.factory,
         captcha,
         mailbox: h.emulator,
+        textModel: await recordedDraftModel("Mira Sol"),
         allowPrivateVerify: true,
         verifyDelayMs: 0,
         pageHelperPollMs: 50,
@@ -235,6 +309,9 @@ describe.skipIf(!gate.available)(
       expect(placement.verifyMethod).toBe("logged_out_fetch");
       expect(placement.postUrl).toBe(`${fixture.origin}/viewtopic.php?p=2#p2`);
       expect(placement.targetUrl).toBe("https://vereinsplaner.example/mitglieder");
+      const drafts = await prisma.lbDraft.findMany({ where: { projectId: project.id } });
+      expect(drafts[0]?.modelId).toBe("recorded-draft");
+      expect(drafts[0]?.body).toContain("vereinsplaner.example/mitglieder");
 
       const finalHost = await prisma.lbHost.findUniqueOrThrow({ where: { id: host.id } });
       expect(finalHost.status).toBe("used");
