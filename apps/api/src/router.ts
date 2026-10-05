@@ -8,6 +8,7 @@ import {
   computerControlExpireJobKey,
   type JobPublisher,
   type MemoryStore,
+  type RealtimeFanout,
   routineJobKey,
   routineWakeupJob,
   runContinueJob,
@@ -66,7 +67,6 @@ import {
   verifyMcpInstall,
 } from "@rakazo/adapters";
 import type { Auth } from "@rakazo/auth";
-import { assignAgentMailInbox, listAgentMailInboxes } from "./agentmail.js";
 import {
   type Actor,
   appContract,
@@ -101,12 +101,38 @@ import {
   type ThreadEvents,
   touchGroupUpdatedAt,
 } from "@rakazo/db";
+import { assignAgentMailInbox, listAgentMailInboxes } from "./agentmail.js";
 import { createOwnedArtifact, getOwnedArtifact, getWorkspaceArtifact } from "./artifacts.js";
 import {
   executionBlocksUserTakeover,
   resolveBusyBotName,
   toComputerStatus,
 } from "./computer-status.js";
+import {
+  archiveLbProject,
+  checkLbCaptchaBalance,
+  continueLbTicket,
+  createLbProject,
+  followLbProject,
+  getLbProject,
+  listLbCaptchaEvents,
+  listLbDrafts,
+  listLbHosts,
+  listLbPlacements,
+  listLbProjects,
+  listLbRunSteps,
+  listLbRuns,
+  listLbThreads,
+  listLbTickets,
+  pauseLbProject,
+  seedLbDemo,
+  skipLbTicket,
+  startLbProject,
+  statusLbProject,
+  stopLbProject,
+  updateLbProject,
+  verifyLbPlacement,
+} from "./link-builder.js";
 import { buildMcpUpdateMaterial } from "./mcp-material.js";
 import { chooseFocus, markAppConnected, startOnboarding } from "./onboarding.js";
 import { addScreenProxyCapability, shouldProxyComputerScreen } from "./screen-proxy.js";
@@ -299,6 +325,7 @@ export interface RouterDeps {
   connectors: ConnectorRegistry;
   remoteConnectors?: RemoteConnectorDependencies;
   artifacts: ArtifactStore;
+  realtime?: RealtimeFanout;
   dataDir: string;
   env: {
     defaultProvider: string;
@@ -2923,6 +2950,95 @@ export function createRouter(deps: RouterDeps) {
       prepare: authed.voice.prepare.handler(async ({ context, input }) =>
         prepareVoice(deps, context.actor, input),
       ),
+    },
+    linkBuilder: {
+      projects: {
+        list: authed.linkBuilder.projects.list.handler(async ({ context }) =>
+          listLbProjects(deps, context.actor),
+        ),
+        get: authed.linkBuilder.projects.get.handler(async ({ context, input }) =>
+          getLbProject(deps, context.actor, input.projectId),
+        ),
+        create: authed.linkBuilder.projects.create.handler(async ({ context, input }) =>
+          createLbProject(deps, context.actor, input),
+        ),
+        update: authed.linkBuilder.projects.update.handler(async ({ context, input }) =>
+          updateLbProject(deps, context.actor, input),
+        ),
+        archive: authed.linkBuilder.projects.archive.handler(async ({ context, input }) =>
+          archiveLbProject(deps, context.actor, input.projectId),
+        ),
+        start: authed.linkBuilder.projects.start.handler(async ({ context, input }) =>
+          startLbProject(deps, context.actor, input.projectId),
+        ),
+        pause: authed.linkBuilder.projects.pause.handler(async ({ context, input }) =>
+          pauseLbProject(deps, context.actor, input.projectId),
+        ),
+        stop: authed.linkBuilder.projects.stop.handler(async ({ context, input }) =>
+          stopLbProject(deps, context.actor, input.projectId),
+        ),
+        status: authed.linkBuilder.projects.status.handler(async ({ context, input }) =>
+          statusLbProject(deps, context.actor, input.projectId),
+        ),
+        seedDemo: authed.linkBuilder.projects.seedDemo.handler(async ({ context }) =>
+          seedLbDemo(deps, context.actor),
+        ),
+      },
+      hosts: {
+        list: authed.linkBuilder.hosts.list.handler(async ({ context, input }) =>
+          listLbHosts(deps, context.actor, input.projectId),
+        ),
+      },
+      placements: {
+        list: authed.linkBuilder.placements.list.handler(async ({ context, input }) =>
+          listLbPlacements(deps, context.actor, input.projectId),
+        ),
+        verify: authed.linkBuilder.placements.verify.handler(async ({ context, input }) =>
+          verifyLbPlacement(deps, context.actor, input),
+        ),
+      },
+      runs: {
+        list: authed.linkBuilder.runs.list.handler(async ({ context, input }) =>
+          listLbRuns(deps, context.actor, input.projectId),
+        ),
+        steps: authed.linkBuilder.runs.steps.handler(async ({ context, input }) =>
+          listLbRunSteps(deps, context.actor, input),
+        ),
+      },
+      threads: {
+        list: authed.linkBuilder.threads.list.handler(async ({ context, input }) =>
+          listLbThreads(deps, context.actor, input.projectId),
+        ),
+      },
+      drafts: {
+        list: authed.linkBuilder.drafts.list.handler(async ({ context, input }) =>
+          listLbDrafts(deps, context.actor, input.projectId),
+        ),
+      },
+      captcha: {
+        events: authed.linkBuilder.captcha.events.handler(async ({ context, input }) =>
+          listLbCaptchaEvents(deps, context.actor, input.projectId),
+        ),
+      },
+      operator: {
+        tickets: authed.linkBuilder.operator.tickets.handler(async ({ context, input }) =>
+          listLbTickets(deps, context.actor, input),
+        ),
+        continue: authed.linkBuilder.operator.continue.handler(async ({ context, input }) =>
+          continueLbTicket(deps, context.actor, input),
+        ),
+        skip: authed.linkBuilder.operator.skip.handler(async ({ context, input }) =>
+          skipLbTicket(deps, context.actor, input),
+        ),
+      },
+      captell: {
+        checkBalance: authed.linkBuilder.captell.checkBalance.handler(async ({ context, input }) =>
+          checkLbCaptchaBalance(deps, context.actor, input),
+        ),
+      },
+      subscribe: authed.linkBuilder.subscribe.handler(async function* ({ context, input }) {
+        yield* followLbProject(deps, context.actor, input, context.signal);
+      }),
     },
   });
 }
