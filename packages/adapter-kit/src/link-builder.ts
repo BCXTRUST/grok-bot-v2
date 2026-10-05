@@ -94,14 +94,24 @@ export interface BrowserSession {
   text(selector: string): Promise<string | null>;
   exists(selector: string): Promise<boolean>;
   attribute(selector: string, name: string): Promise<string | null>;
-  /** Tight PNG of the first match, used for image captchas instead of a full screenshot. */
-  elementScreenshotPng(selector: string): Promise<Uint8Array>;
+  /**
+   * Tight PNG of the first match, used for image captchas instead of a full screenshot.
+   * `paddingPx` expands the crop once when the tight image is too small or the wrong shape.
+   */
+  elementScreenshotPng(selector: string, options?: { paddingPx?: number }): Promise<Uint8Array>;
   pageText(): Promise<string>;
   /** Resolves true once the selector matches, false when the timeout elapses first. */
   waitFor(selector: string, options: { timeoutMs: number }): Promise<boolean>;
   screenshotPng(): Promise<Uint8Array>;
   /** Ids of the extensions the browser loaded, read from their service workers. */
   loadedExtensions?(): Promise<string[]>;
+  /** Id and manifest version of each loaded extension, when the browser can read them. */
+  extensionVersions?(): Promise<Array<{ id: string; version: string }>>;
+  /**
+   * Writes a captcha token into the named response field and invokes a page `data-callback`
+   * when one exists. Implementations must not include the token in errors or action logs.
+   */
+  injectToken?(fieldName: string, token: string): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -188,11 +198,12 @@ export class CaptchaSolverError extends Error {
   readonly code: CaptchaSolverErrorCode;
   readonly retryable: boolean;
 
-  constructor(code: CaptchaSolverErrorCode, message?: string) {
+  constructor(code: CaptchaSolverErrorCode, message?: string, options?: { retryable?: boolean }) {
     super(message ?? code);
     this.name = "CaptchaSolverError";
     this.code = code;
-    this.retryable = code === "not_read" || code === "no_token" || code === "error";
+    this.retryable =
+      options?.retryable ?? (code === "not_read" || code === "no_token" || code === "error");
   }
 }
 

@@ -75,6 +75,8 @@ export interface FakeElement {
   /** Value typed by `fill`. */
   value?: string;
   png?: Uint8Array;
+  /** Used when a crop asks for padding. Falls back to `png`. */
+  paddedPng?: Uint8Array;
   onClick?: (page: FakePageController) => void;
 }
 
@@ -171,9 +173,22 @@ export class FakeBrowserSession implements BrowserSession {
     return this.page().elements[selector]?.attributes?.[name] ?? null;
   }
 
-  async elementScreenshotPng(selector: string): Promise<Uint8Array> {
+  async elementScreenshotPng(
+    selector: string,
+    options?: { paddingPx?: number },
+  ): Promise<Uint8Array> {
     const element = this.require(selector);
+    if (options?.paddingPx && element.paddedPng) return element.paddedPng;
     return element.png ?? fakePngBytes(256, `${selector}:${element.text ?? ""}`);
+  }
+
+  async injectToken(fieldName: string, token: string): Promise<void> {
+    this.assertOpen();
+    const selector = `[name='${fieldName}']`;
+    const element = this.page().elements[selector];
+    if (!element) throw new Error(`Could not place the captcha token in ${fieldName}`);
+    element.value = token;
+    this.actions.push({ kind: "fill", selector, value: FAKE_SECRET_MASK });
   }
 
   async pageText(): Promise<string> {
