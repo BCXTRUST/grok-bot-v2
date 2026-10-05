@@ -7,10 +7,12 @@
     "dev": "tsx watch src/index.ts",
     "start": "tsx src/index.ts",
     "check": "tsc --noEmit -p tsconfig.json",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run --root ../.. apps/worker/src"
   },
   "dependencies": {
     "@rakazo/adapter-kit": "workspace:*",
+    "@rakazo/contracts": "workspace:*",
+    "@rakazo/linkbuilder-core": "workspace:*",
     "@rakazo/adapters": "workspace:*",
     "@rakazo/core": "workspace:*",
     "@rakazo/db": "workspace:*",
