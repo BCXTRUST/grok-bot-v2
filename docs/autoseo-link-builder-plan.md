@@ -454,6 +454,21 @@ M2 deviations (as built):
 - The M1 placeholder mailbox address is derived from the persona name, so two projects with the same persona name share an address. The e2e uses distinct personas; real inbox provisioning (M3) removes the collision.
 - The PGlite test database replays the real migrations and strips `CONCURRENTLY`, which PGlite does not support inside its single connection.
 
+M3 deviations (as built):
+
+- `CaptellHttpSolver` and `CaptellEmulator` live in `@rakazo/adapters`. The worker, drivers and UI talk only to `CaptchaSolver`. The emulator is an in-process `fetch`; tests inject it. The MCP endpoint is not called. Redirects are refused so the bearer token cannot leave the Captell base URL. The token is loaded per call from the encrypted store and is redacted from errors.
+- `CaptchaSolverError` takes an optional `{ retryable }`. The default mapping is unchanged. Captell marks `not_read` not retryable (the crop path does the one re-crop), `no_token` retryable, and a network or HTTP 5xx retryable only when the solver's own retry budget was not spent.
+- `BrowserSession.elementScreenshotPng` accepts `{ paddingPx }`. Optional `injectToken` and `extensionVersions` were added. The RPC session forwards them.
+- Image crops must be at least 100 bytes and between 40×16 and aspect 1.5–12. One 12px re-crop, then park. `not_read` gets one further padded re-crop, then park with that reason. The phpBB fixture covers both.
+- A new run step `helper_connected` runs after `open_session` and before any other browser step. The version is read from the extension manifest when a service worker is loaded, otherwise from `html[data-page-helper-version]`. The fixture helper's manifest is `2026.10.4.16`. A mismatch or a missing version parks the host. The worker does not open `captell.run/login`, `captell.run/extension/connect` or `hcaptcha.com`. The connect page check stays in the live canary (`docs/link-builder-captell-canary.md`).
+- The Page Helper button selector remains `[data-page-helper]` (`PAGE_HELPER_BUTTON_SELECTOR`). The live canary must confirm helper `2026.10.4.16` uses it. Real mode can override `pageHelperButtonSelector`.
+- Widget fallback, when the helper button is absent: `solve({ type, websiteURL, websiteKey })`, then inject into `g-recaptcha-response` / `cf-turnstile-response` / `h-captcha-response` and submit in the same step. Site keys also come from Invision `data-ipsCaptcha-key` and an iframe `k=` parameter. Human-checkbox selectors are still unset, so a page with no matching checkbox is `none`. The canary must confirm that on a real widget.
+- Knowledge fields (`#qa_answer` and the same shape) call `answerQuestion`. `couldNotAnswer` parks the host with the question text on the ticket.
+- `lb_captcha_events.taskId` is a nullable column (`20261005180000_lb_captcha_task_id`). Events store type, door, outcome, credits and task id. Never the token, the answer or the image. A balance pause uses type `unsupported` and outcome `credits` because the type enum has no balance value, and it is written only in the transaction that moves the project from `active` to `paused`.
+- A solver `credits` error and a Page Helper `pause_project` pause the project. M2 parked the host instead. A `sandbox` label pauses on balance and parks the host on a solve. The Captchas tab shows "Sandbox answer. The Captell desk is not production-configured."
+- Real mode (`LINK_BUILDER_DRIVER=real`) builds `CaptellHttpSolver` when the project has an `lb_captcha` secret and otherwise records one run step, "Real mode needs a Captell token for this project", and does not open the browser. `LINK_BUILDER_DRIVER=fake` is unchanged. Tests may still inject `FakeCaptchaSolver` or the emulator.
+- Mailbox provisioning is not in M3. `apps/api/src/agentmail.ts` only lists and assigns existing bot inboxes. There is no signature-verified inbound route mapped to a link-builder project by inbox id, and no create-inbox `MailboxProvider`. Doing that halfway would leave a live webhook without a verified project mapping. Real mode keeps `AgentMailEmulator`, and the M1 `@inbox.example` address stays, until M7/M8.
+
 ---
 
 ## 17. Decisions needed from Harold
