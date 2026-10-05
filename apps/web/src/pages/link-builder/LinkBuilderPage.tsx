@@ -7,6 +7,7 @@ import type {
   LbProjectCard,
   LbProjectDetail,
   LbProjectStatusView,
+  LbProxyLeaseView,
   LbRunStepView,
   LbRunView,
   LbThreadView,
@@ -226,6 +227,7 @@ function ProjectRoute({ projectId }: { projectId: string }) {
   const [drafts, setDrafts] = useState<LbDraftView[]>([]);
   const [captchas, setCaptchas] = useState<LbCaptchaEventView[]>([]);
   const [tickets, setTickets] = useState<LbOperatorTicketView[]>([]);
+  const [leases, setLeases] = useState<LbProxyLeaseView[]>([]);
   const [busy, setBusy] = useState(false);
   const loadArtifact = useArtifactLoader(projectId);
 
@@ -240,6 +242,7 @@ function ProjectRoute({ projectId }: { projectId: string }) {
       nextDrafts,
       nextCaptchas,
       nextTickets,
+      nextLeases,
     ] = await Promise.all([
       rpc.linkBuilder.projects.get({ projectId }),
       rpc.linkBuilder.projects.status({ projectId }),
@@ -250,6 +253,7 @@ function ProjectRoute({ projectId }: { projectId: string }) {
       rpc.linkBuilder.drafts.list({ projectId }),
       rpc.linkBuilder.captcha.events({ projectId }),
       rpc.linkBuilder.operator.tickets({ projectId }),
+      rpc.linkBuilder.proxyLeases.list({ projectId }),
     ]);
     setProject(nextProject);
     setStatus(nextStatus);
@@ -260,6 +264,7 @@ function ProjectRoute({ projectId }: { projectId: string }) {
     setDrafts(nextDrafts);
     setCaptchas(nextCaptchas);
     setTickets(nextTickets);
+    setLeases(nextLeases);
     const latest = nextRuns[0];
     if (latest) setSteps(await rpc.linkBuilder.runs.steps({ projectId, runId: latest.id }));
   }, [projectId]);
@@ -323,6 +328,7 @@ function ProjectRoute({ projectId }: { projectId: string }) {
       threads={threads}
       drafts={drafts}
       captchas={captchas}
+      leases={leases}
       tickets={tickets}
       tab={tab}
       onTab={setTab}
