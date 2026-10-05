@@ -240,6 +240,110 @@ export function LinkBuilderPreview({ screen }: { screen: string }) {
       </div>
     );
   }
+  if (screen === "settings") {
+    return (
+      <div className="min-h-screen bg-[#050506]">
+        <ProjectView
+          project={
+            {
+              name: "Nordlicht",
+              disclosureMode: "undisclosed_persona",
+              markets: [
+                { country: "DE", language: "de", locale: "de-DE", timezoneId: "Europe/Berlin" },
+              ],
+              linkRatio: { links: 1, posts: 3 },
+              proxyPolicy: "static_isp_per_persona",
+              denyHosts: [],
+            } as unknown as LbProjectDetail
+          }
+          status={null}
+          hosts={[]}
+          placements={[]}
+          runs={[]}
+          steps={[]}
+          threads={[]}
+          drafts={[]}
+          leases={[
+            {
+              id: "lease-de",
+              country: "DE",
+              kind: "static_isp",
+              providerId: "iproyal",
+              expiresAt: "2026-10-12T12:00:00.000Z",
+              status: "active",
+            },
+            {
+              id: "lease-us",
+              country: "US",
+              kind: "residential",
+              providerId: "oxylabs",
+              expiresAt: "2026-10-06T12:00:00.000Z",
+              status: "active",
+            },
+          ]}
+          captchas={[]}
+          tickets={[]}
+          tab="Settings"
+          onTab={() => undefined}
+          onStart={() => undefined}
+          onPause={() => undefined}
+          onStop={() => undefined}
+          onVerify={() => undefined}
+          onOpenTicket={() => undefined}
+          busy={false}
+        />
+      </div>
+    );
+  }
+  if (screen === "runs") {
+    return (
+      <div className="min-h-screen bg-[#050506]">
+        <ProjectView
+          project={{ name: "Nordlicht" } as LbProjectDetail}
+          status={null}
+          hosts={[]}
+          placements={[]}
+          runs={[]}
+          steps={[
+            {
+              id: "step-1",
+              stepIndex: 0,
+              kind: "coherence_refused",
+              hostId: "host-1",
+              lastAction: "Coherence refused",
+              error: null,
+              costs: { credits: 0, tokens: 0, bytes: 0, ms: 0 },
+              artifactIds: [],
+              createdAt: "2026-10-05T12:00:00.000Z",
+            },
+            {
+              id: "step-2",
+              stepIndex: 1,
+              kind: "edge_block",
+              hostId: "host-2",
+              lastAction: "Edge block",
+              error: null,
+              costs: { credits: 0, tokens: 0, bytes: 0, ms: 0 },
+              artifactIds: [],
+              createdAt: "2026-10-05T12:05:00.000Z",
+            },
+          ]}
+          threads={[]}
+          drafts={[]}
+          captchas={[]}
+          tickets={[]}
+          tab="Runs"
+          onTab={() => undefined}
+          onStart={() => undefined}
+          onPause={() => undefined}
+          onStop={() => undefined}
+          onVerify={() => undefined}
+          onOpenTicket={() => undefined}
+          busy={false}
+        />
+      </div>
+    );
+  }
   if (screen === "operator") {
     return (
       <div className="min-h-screen bg-[#050506]">

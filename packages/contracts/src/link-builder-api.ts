@@ -25,6 +25,8 @@ import {
   LbPersonaSchema,
   LbPlacementStatusSchema,
   LbProjectStatusSchema,
+  LbProxyKindSchema,
+  LbProxyLeaseStatusSchema,
   LbProxyPolicySchema,
   LbQuotasSchema,
   LbRegistrableDomainSchema,
@@ -232,6 +234,16 @@ export const LbRunViewSchema = LbRunCountersSchema.extend({
 });
 export type LbRunView = z.infer<typeof LbRunViewSchema>;
 
+export const LbProxyLeaseViewSchema = z.object({
+  id: Id,
+  country: z.string(),
+  kind: LbProxyKindSchema,
+  providerId: z.string(),
+  expiresAt: IsoDate.nullable(),
+  status: LbProxyLeaseStatusSchema,
+});
+export type LbProxyLeaseView = z.infer<typeof LbProxyLeaseViewSchema>;
+
 export const LbRunStepViewSchema = z.object({
   id: Id,
   stepIndex: z.number().int(),
@@ -341,6 +353,9 @@ export const linkBuilderContract = {
   },
   hosts: {
     list: oc.input(projectId).output(z.array(LbHostViewSchema)),
+  },
+  proxyLeases: {
+    list: oc.input(projectId).output(z.array(LbProxyLeaseViewSchema)),
   },
   placements: {
     list: oc.input(projectId).output(z.array(LbPlacementViewSchema)),

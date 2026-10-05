@@ -3,7 +3,11 @@ export const REDACTED = "[redacted]";
 /** Minimum length for value redaction, so short words never blank out unrelated text. */
 const MIN_SECRET_LENGTH = 6;
 
-const SECRET_PATTERNS: readonly RegExp[] = [/ct_live_[A-Za-z0-9_-]{8,}/g];
+const SECRET_PATTERNS: readonly RegExp[] = [
+  /ct_live_[A-Za-z0-9_-]{8,}/g,
+  // Proxy userinfo (`user:pass@host`) including when it sits inside a URL.
+  /[^\s'"`<>:/]+:[^\s'"`<>@/]+@[^\s'"`<>/]+/g,
+];
 
 /**
  * Removes known secret values (forum passwords, proxy passwords, solver tokens) and token-shaped

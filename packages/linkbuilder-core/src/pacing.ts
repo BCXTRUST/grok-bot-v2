@@ -37,6 +37,36 @@ export const TEST_PACING: PacingPolicy = {
   maxActionsPerMinute: PACING_LIMITS.maxActionsPerMinute,
 };
 
+/** One registration attempt that actually submits, per host, per local day. */
+export const MAX_REGISTRATIONS_PER_HOST_PER_DAY = 1;
+
+/** Idle gap after leaving one host before the next host is opened. */
+export const HOST_IDLE_GAP: DelayRange = { minMs: 8_000, maxMs: 25_000 };
+
+/** Calendar day in `timeZone`, so a registration just before local midnight still counts. */
+export function sameLocalDay(a: Date, b: Date, timeZone: string): boolean {
+  const format = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  return format.format(a) === format.format(b);
+}
+
+/** False once this host already registered on the local day of `now`. */
+export function canRegisterHost(input: {
+  priorRegistrationAts: readonly Date[];
+  now: Date;
+  timeZone: string;
+}): boolean {
+  let used = 0;
+  for (const at of input.priorRegistrationAts) {
+    if (sameLocalDay(at, input.now, input.timeZone)) used += 1;
+  }
+  return used < MAX_REGISTRATIONS_PER_HOST_PER_DAY;
+}
+
 function assertRange(name: string, range: DelayRange, ceiling: number): void {
   const { minMs, maxMs } = range;
   if (!Number.isInteger(minMs) || !Number.isInteger(maxMs) || minMs < 0 || maxMs < minMs) {

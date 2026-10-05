@@ -6,6 +6,7 @@ import type {
   LbProjectCard,
   LbProjectDetail,
   LbProjectStatusView,
+  LbProxyLeaseView,
   LbRunStepView,
   LbRunView,
   LbThreadView,
@@ -163,6 +164,7 @@ export function ProjectView({
   steps,
   threads,
   drafts,
+  leases = [],
   captchas,
   tickets,
   tab,
@@ -184,6 +186,7 @@ export function ProjectView({
   steps: LbRunStepView[];
   threads: LbThreadView[];
   drafts: LbDraftView[];
+  leases?: LbProxyLeaseView[];
   captchas: { id: string; outcome: string; domain: string | null }[];
   tickets: LbOperatorTicketView[];
   tab: string;
@@ -254,7 +257,7 @@ export function ProjectView({
       {tab === "Captchas" ? (
         <CaptchaPanel captchas={captchas} tickets={tickets} onOpenTicket={onOpenTicket} />
       ) : null}
-      {tab === "Settings" ? <SettingsPanel project={project} /> : null}
+      {tab === "Settings" ? <SettingsPanel project={project} leases={leases} /> : null}
     </main>
   );
 }
@@ -596,6 +599,9 @@ function RunTimeline({
               ) : (
                 text
               )}
+              {step.kind === "coherence_refused" || step.kind === "edge_block" ? (
+                <span className="ml-2 text-[13px] text-[#E8B931]">{step.kind}</span>
+              ) : null}
               {step.error ? (
                 <span className="ml-2 text-[13px] text-[#E5484D]">{step.error}</span>
               ) : null}
@@ -656,7 +662,13 @@ function CaptchaPanel({
   );
 }
 
-function SettingsPanel({ project }: { project: LbProjectDetail }) {
+function SettingsPanel({
+  project,
+  leases,
+}: {
+  project: LbProjectDetail;
+  leases: LbProxyLeaseView[];
+}) {
   return (
     <BuiCard className="flex flex-col gap-2 p-4 text-[13px] text-[#C9C9CE]">
       <div>Disclosure {project.disclosureMode.replaceAll("_", " ")}</div>
@@ -664,7 +676,17 @@ function SettingsPanel({ project }: { project: LbProjectDetail }) {
       <div>
         Link ratio {project.linkRatio.links}/{project.linkRatio.posts}
       </div>
+      <div>Proxy {project.proxyPolicy.replaceAll("_", " ")}</div>
       <div>Deny {project.denyHosts.join(", ") || "none"}</div>
+      <ul aria-label="Proxy leases" className="flex flex-col gap-1">
+        {leases.length === 0 ? <li>No active lease</li> : null}
+        {leases.map((lease) => (
+          <li key={lease.id}>
+            {lease.country} · {lease.kind.replaceAll("_", " ")} ·{" "}
+            {lease.expiresAt ? lease.expiresAt.slice(0, 16) : "open"} · {lease.providerId}
+          </li>
+        ))}
+      </ul>
     </BuiCard>
   );
 }

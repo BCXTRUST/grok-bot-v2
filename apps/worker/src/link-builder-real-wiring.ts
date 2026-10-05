@@ -3,22 +3,31 @@ import type {
   AdapterContext,
   BrowserSessionFactory,
   CaptchaSolver,
+  ProxyEndpoint,
+  ProxyProvider,
   SandboxProvider,
   SearchProvider,
+  SecretRef,
 } from "@rakazo/adapter-kit";
 import {
   CaptellHttpSolver,
   DataForSeoSearchProvider,
   type EncryptedSecretStore,
+  EndpointTemplateProxyProvider,
+  iproyalPreset,
+  oxylabsPreset,
   RecordedSearchProvider,
   recordedSerpDir,
   toComputerRef,
 } from "@rakazo/adapters";
 import type { PrismaClient } from "@rakazo/db";
 import {
+  camoufoxExecutable,
   LocalBrowserSessionFactory,
+  type ProxyResolver,
   SandboxBrowserSessionFactory,
 } from "@rakazo/linkbuilder-browser";
+import { sealProxyUsername } from "./link-builder-proxy.js";
 
 function dirs(value: string | undefined): string[] {
   return (value ?? "")
@@ -63,18 +72,21 @@ export function browserFactoryFromEnv(input: {
   dataDir: string;
   sandbox: SandboxProvider;
   prisma: PrismaClient;
+  proxyResolver?: ProxyResolver;
 }): BrowserSessionFactory {
   const { env, prisma } = input;
   if (env.LINK_BUILDER_BROWSER === "local") {
     return new LocalBrowserSessionFactory({
       profileRoot: join(input.dataDir, ".browser-profiles"),
       helperDirs: dirs(env.LINK_BUILDER_HELPER_DIR),
+      proxyResolver: input.proxyResolver,
       env,
     });
   }
   return new SandboxBrowserSessionFactory({
     sandbox: input.sandbox,
     helperDirs: dirs(env.LINK_BUILDER_SANDBOX_HELPER_DIR),
+    proxyResolver: input.proxyResolver,
     async resolveComputer(persona) {
       const project = await prisma.lbProject.findUnique({
         where: { id: persona.projectId },
@@ -125,4 +137,92 @@ export async function captchaSolverForProject(input: {
       return token;
     },
   });
+}
+
+/**
+ * One deployment-wide vendor row. The password is the secret id of kind `lb_proxy`
+ * (or `LINK_BUILDER_PROXY_SECRET_ID`). The plaintext is never read here.
+ */
+export async function proxyProviderFromEnv(input: {
+  env: NodeJS.ProcessEnv;
+  prisma: PrismaClient;
+  secrets: EncryptedSecretStore;
+}): Promise<ProxyProvider | undefined> {
+  if (input.env.LINK_BUILDER_PROXY !== "template") return undefined;
+  const secretId =
+    input.env.LINK_BUILDER_PROXY_SECRET_ID ||
+    (
+      await input.prisma.secret.findFirst({
+        where: { kind: "lb_proxy" },
+        orderBy: { createdAt: "desc" },
+        select: { id: true },
+      })
+    )?.id;
+  if (!secretId) return undefined;
+  const base =
+    input.env.LINK_BUILDER_PROXY_PRESET === "oxylabs" ? oxylabsPreset() : iproyalPreset();
+  const port = Number(input.env.LINK_BUILDER_PROXY_PORT ?? base.gatewayPort);
+  const provider = new EndpointTemplateProxyProvider(
+    {
+      ...base,
+      gatewayHost: input.env.LINK_BUILDER_PROXY_HOST || base.gatewayHost,
+      gatewayPort: Number.isInteger(port) && port > 0 ? port : base.gatewayPort,
+      protocol: input.env.LINK_BUILDER_PROXY_PROTOCOL === "socks5" ? "socks5" : base.protocol,
+      usernameTemplate: input.env.LINK_BUILDER_PROXY_USERNAME_TEMPLATE || base.usernameTemplate,
+      ...(input.env.LINK_BUILDER_PROXY_PASSWORD_SUFFIX_TEMPLATE
+        ? { passwordSuffixTemplate: input.env.LINK_BUILDER_PROXY_PASSWORD_SUFFIX_TEMPLATE }
+        : {}),
+      passwordRef: { secretId },
+    },
+    {
+      seal: (plaintext, context) =>
+        sealProxyUsername({ prisma: input.prisma, secrets: input.secrets }, plaintext, context),
+    },
+  );
+  return provider;
+}
+
+/** Reads proxy credentials inside the browser factory and records them for redaction. */
+export function proxyResolverFor(input: {
+  prisma: PrismaClient;
+  secrets: EncryptedSecretStore;
+  provider?: ProxyProvider;
+  revealed: string[];
+}): ProxyResolver {
+  const load = async (ref: SecretRef, workspaceId: string) => {
+    const row = await input.prisma.secret.findFirst({
+      where: { id: ref.secretId, workspaceId },
+      select: { ciphertext: true },
+    });
+    if (!row) throw new Error("missing proxy credential");
+    return input.secrets.load(row.ciphertext);
+  };
+  return async (endpoint: ProxyEndpoint, context: AdapterContext) => {
+    const read = (ref: SecretRef) => load(ref, context.workspaceId);
+    let username: string | undefined;
+    let password: string | undefined;
+    let protocol: "http" | "socks5" = endpoint.protocol ?? "http";
+    if (input.provider instanceof EndpointTemplateProxyProvider) {
+      const creds = await input.provider.materialize(endpoint, read);
+      username = creds.username;
+      password = creds.password;
+      protocol = creds.protocol;
+    } else {
+      username = endpoint.username ? await read(endpoint.username) : undefined;
+      password = endpoint.password ? await read(endpoint.password) : undefined;
+    }
+    const userinfo = username && password ? `${username}:${password}@${endpoint.server}` : "";
+    for (const value of [password, userinfo]) {
+      if (value) input.revealed.push(value);
+    }
+    return {
+      server: `${protocol}://${endpoint.server}`,
+      username,
+      password,
+    };
+  };
+}
+
+export function camoufoxAvailable(env: NodeJS.ProcessEnv = process.env): boolean {
+  return camoufoxExecutable(env) !== null;
 }

@@ -50,6 +50,7 @@ export * from "./pi-oauth.js";
 export * from "./pi-openai-compatible-provider.js";
 export * from "./pi-runtime.js";
 export * from "./pipedream-connector.js";
+export * from "./proxy-endpoint-template.js";
 export * from "./realtime.js";
 export * from "./recorded-search.js";
 export * from "./recorded-text-model.js";

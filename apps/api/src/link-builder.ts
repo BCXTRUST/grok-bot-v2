@@ -36,6 +36,7 @@ import {
   type LbProjectPatch,
   LbProjectStartableSchema,
   type LbProjectStatus,
+  LbProxyLeaseViewSchema,
   LbProxyPolicySchema,
   LbQuotasSchema,
   LbRelDefaultSchema,
@@ -397,6 +398,33 @@ export async function verifyLbPlacement(
     include: { host: { select: { registrableDomain: true } } },
   });
   return placementView(updated);
+}
+
+/** Active leases for the Settings tab. Credentials, gateway hosts and secret ids are omitted. */
+export async function listLbProxyLeases(deps: RouterDeps, actor: Actor, projectId: string) {
+  await requireProject(deps.prisma, actor, projectId);
+  const rows = await deps.prisma.lbProxyLease.findMany({
+    where: { workspaceId: actor.workspaceId, projectId, status: "active" },
+    orderBy: { country: "asc" },
+    select: {
+      id: true,
+      country: true,
+      kind: true,
+      provider: true,
+      renewsAt: true,
+      status: true,
+    },
+  });
+  return rows.map((row) =>
+    LbProxyLeaseViewSchema.parse({
+      id: row.id,
+      country: row.country,
+      kind: row.kind,
+      providerId: row.provider,
+      expiresAt: row.renewsAt?.toISOString() ?? null,
+      status: row.status,
+    }),
+  );
 }
 
 export async function listLbRuns(deps: RouterDeps, actor: Actor, projectId: string) {

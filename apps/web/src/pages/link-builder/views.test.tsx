@@ -23,6 +23,20 @@ function step(index: number, kind: string, artifactIds: string[]): LbRunStepView
 }
 
 describe("link builder screens", () => {
+  it("shows proxy leases without credentials and names coherence and edge blocks", () => {
+    const settings = renderToStaticMarkup(<LinkBuilderPreview screen="settings" />);
+    expect(settings).toContain("static isp per persona");
+    expect(settings).toContain("DE");
+    expect(settings).toContain("static isp");
+    expect(settings).toContain("iproyal");
+    expect(settings).toContain('aria-label="Proxy leases"');
+    expect(settings).not.toContain("password");
+    expect(settings).not.toContain("secret");
+    const runs = renderToStaticMarkup(<LinkBuilderPreview screen="runs" />);
+    expect(runs).toContain("coherence_refused");
+    expect(runs).toContain("edge_block");
+  });
+
   it("shows NEW and LIVE rings and an operator pill", () => {
     const html = renderToStaticMarkup(<LinkBuilderPreview screen="dashboard" />);
     expect(html).toContain("NEW");

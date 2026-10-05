@@ -495,6 +495,17 @@ M5 deviations (as built):
 - Fixtures are loopback Node servers and `.html.tmpl` files, the same shape as M2 phpBB, not Docker images. Flarum's fixture door is none. Discourse's is hCaptcha. MyBB and vBulletin are image letters. The others are widgets (Turnstile, reCAPTCHA, hCaptcha, or Invision `data-ipsCaptcha-key`).
 - MyBB posts use `id="pid<id>"` so logged-out verification can see the `#pid<id>` permalink. Permalink parsers also accept the alternate shapes in the M5 brief: vBulletin `/threads/<id>-slug?p=`, NodeBB `/topic/<id>/slug/<index>`, and Invision `?do=findComment&comment=`.
 
+M6 deviations (as built):
+
+- `ProxyEndpoint` gained an optional `protocol` (`http` | `socks5`). `BrowserPersona` gained optional `acceptLanguage` and `engine` (`chromium` | `camoufox`). `BrowserSession.navigationMeta` is optional. The API adds `linkBuilder.proxyLeases.list`, which returns country, kind, provider id, expiry and status only.
+- IPRoyal's published residential grammar puts `_country-` `_session-` `_lifetime-` on the password. The password secret stays opaque. The preset stores that grammar in `passwordSuffixTemplate` and appends it only inside `materialize`, after the secret is loaded. Oxylabs keeps country, session and TTL in `usernameTemplate`. Both presets use `proxy.example:8080` until a deployment overrides the host and port. `{country}` is rendered lowercase.
+- The sticky session is the first 8 hex characters of SHA-256(stickyKey), which matches IPRoyal's 8-character session. A blacklisted exit releases the row and leases `stickyKey:2`, `:3`, … The host is flagged `ip_blacklisted` in `notes`. The account row stays.
+- Renewal runs on the existing real-runner tick, not a new Graphile task, same shape as M2. A lease inside 10 minutes of `renewsAt` is renewed in place. Expiry does not rotate the IP.
+- Coherence parks the host (`parked_operator`, `statusReason = coherence_refused`) and does not open an operator ticket. The project stays active. Unknown countries use Intl: a locale with a region must name that country, a region-less tag is allowed, and the time zone must be a supported IANA id.
+- Camoufox is Playwright Firefox plus `LINK_BUILDER_CAMOUFOX_PATH`. The Page Helper is not loaded; captcha uses the M3 API-token door. A missing executable is `unavailable` and the host goes `dead` with `edge_block`. CI does not install Camoufox.
+- Pacing constants gained `MAX_REGISTRATIONS_PER_HOST_PER_DAY = 1` and `HOST_IDLE_GAP`. The idle wait runs only when the runner was given a `sleep`. Verification, Captell and DataForSEO fetches are unchanged and still take no proxy.
+- Mobile has no Settings tab. Leases are on the web project Settings tab only.
+
 ---
 
 ## 17. Decisions needed from Harold

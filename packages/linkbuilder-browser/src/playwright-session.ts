@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
 import type { BrowserSession, FormFieldInfo } from "@rakazo/adapter-kit";
 import {
   assertPacing,
@@ -15,7 +16,20 @@ import type { BrowserContext, BrowserType, Page } from "playwright";
  * Both drive the same Playwright-bundled Chromium binary, because branded Chrome 137+ ignores
  * `--load-extension`.
  */
-export type BrowserEngine = "playwright" | "patchright";
+export type ChromiumEngine = "playwright" | "patchright";
+/** `camoufox` launches Playwright Firefox with the Camoufox executable. It cannot load the Page Helper. */
+export type BrowserEngine = ChromiumEngine | "camoufox";
+
+export class BrowserEngineUnavailable extends Error {
+  readonly code = "unavailable" as const;
+  readonly engine: BrowserEngine;
+
+  constructor(engine: BrowserEngine) {
+    super(`Browser engine ${engine} is unavailable`);
+    this.name = "BrowserEngineUnavailable";
+    this.engine = engine;
+  }
+}
 
 export interface BrowserProxy {
   /** `host:port`; Chromium's `--proxy-server` takes the scheme from the URL when present. */
@@ -30,6 +44,7 @@ export interface PlaywrightLaunchOptions {
   helperDirs?: readonly string[];
   locale: string;
   timezoneId: string;
+  acceptLanguage?: string;
   proxy?: BrowserProxy;
   /** Defaults to headed when `DISPLAY` is set, so the live screen shows the real browser. */
   headless?: boolean;
@@ -45,20 +60,30 @@ export interface PlaywrightLaunchOptions {
 const defaultSleep = (ms: number) =>
   ms <= 0 ? Promise.resolve() : new Promise<void>((resolve) => setTimeout(resolve, ms));
 
-const ENGINE_MODULES: Record<BrowserEngine, string> = {
+const ENGINE_MODULES: Record<ChromiumEngine, string> = {
   playwright: "playwright",
   patchright: "patchright",
 };
 
-async function loadChromium(engine: BrowserEngine): Promise<BrowserType> {
+async function loadChromium(engine: ChromiumEngine): Promise<BrowserType> {
   const specifier = ENGINE_MODULES[engine];
   const module = (await import(specifier)) as { chromium?: BrowserType };
   if (!module.chromium) throw new Error(`Browser engine ${engine} has no chromium launcher`);
   return module.chromium;
 }
 
-export function browserEngineFromEnv(env: NodeJS.ProcessEnv = process.env): BrowserEngine {
+export function browserEngineFromEnv(env: NodeJS.ProcessEnv = process.env): ChromiumEngine {
   return env.LINK_BUILDER_BROWSER_ENGINE === "playwright" ? "playwright" : "patchright";
+}
+
+/** Camoufox is optional. A missing executable is `unavailable`, not a failed Chromium launch. */
+export function camoufoxExecutable(
+  env: NodeJS.ProcessEnv = process.env,
+  path?: string,
+): string | null {
+  const executable = path ?? env.LINK_BUILDER_CAMOUFOX_PATH;
+  if (!executable || !existsSync(executable)) return null;
+  return executable;
 }
 
 /** Playwright's bundled Chromium; Patchright pins its own revision, which is not installed. */
@@ -78,6 +103,7 @@ export class PlaywrightBrowserSession implements BrowserSession {
   private readonly now: () => number;
   private readonly actions: number[] = [];
   private closed = false;
+  private lastNavigation: { status: number | null; headers: Record<string, string> } | null = null;
 
   constructor(
     private readonly context: BrowserContext,
@@ -104,7 +130,28 @@ export class PlaywrightBrowserSession implements BrowserSession {
 
   async goto(url: string): Promise<void> {
     await this.paceAction();
-    await this.page.goto(url, { waitUntil: "domcontentloaded" });
+    const response = await this.page.goto(url, { waitUntil: "domcontentloaded" });
+    this.lastNavigation = response
+      ? { status: response.status(), headers: response.headers() }
+      : { status: null, headers: {} };
+  }
+
+  async navigationMeta(): Promise<{ status: number | null; headers: Record<string, string> }> {
+    return this.lastNavigation ?? { status: null, headers: {} };
+  }
+
+  /** Locale and time zone the live page is actually using. */
+  async browserFacts(): Promise<{ locale: string; timezoneId: string }> {
+    return this.page.evaluate(() => {
+      const root = globalThis as {
+        navigator: { language: string };
+        Intl: { DateTimeFormat: () => { resolvedOptions: () => { timeZone: string } } };
+      };
+      return {
+        locale: root.navigator.language,
+        timezoneId: root.Intl.DateTimeFormat().resolvedOptions().timeZone,
+      };
+    });
   }
 
   async url(): Promise<string> {
@@ -341,35 +388,19 @@ export class PlaywrightBrowserSession implements BrowserSession {
   }
 }
 
-/**
- * Launches a persistent Chromium profile with the helper extensions loaded. Branded Chrome 137+
- * ignores `--load-extension`, so the bundled Chromium (`channel: "chromium"`) is required unless a
- * system Chromium is given.
- */
-export async function launchPlaywrightSession(
-  options: PlaywrightLaunchOptions,
-  env: NodeJS.ProcessEnv = process.env,
-): Promise<PlaywrightBrowserSession> {
-  const engine = options.engine ?? browserEngineFromEnv(env);
-  const chromium = await loadChromium(engine);
-  const executablePath =
-    options.executablePath ?? (engine === "patchright" ? await bundledChromiumPath() : undefined);
-  const helperDirs = options.helperDirs ?? [];
-  const args =
-    helperDirs.length > 0
-      ? [
-          `--disable-extensions-except=${helperDirs.join(",")}`,
-          `--load-extension=${helperDirs.join(",")}`,
-        ]
-      : [];
-  const context = await chromium.launchPersistentContext(options.profileDir, {
-    ...(executablePath ? { executablePath } : { channel: "chromium" }),
-    headless: options.headless ?? !env.DISPLAY,
-    args,
+/** Identity fields passed to Playwright. Geolocation is never set. */
+export function identityLaunchFields(options: PlaywrightLaunchOptions): {
+  locale: string;
+  timezoneId: string;
+  extraHTTPHeaders?: { "Accept-Language": string };
+  proxy?: { server: string; username?: string; password?: string };
+} {
+  return {
     locale: options.locale,
     timezoneId: options.timezoneId,
-    viewport: { width: 1280, height: 860 },
-    acceptDownloads: false,
+    ...(options.acceptLanguage
+      ? { extraHTTPHeaders: { "Accept-Language": options.acceptLanguage } }
+      : {}),
     ...(options.proxy
       ? {
           proxy: {
@@ -379,7 +410,36 @@ export async function launchPlaywrightSession(
           },
         }
       : {}),
-  });
+  };
+}
+
+/**
+ * Launches a persistent profile. Chromium loads the Page Helper. Camoufox is Firefox with
+ * the executable from config; without that file the engine is unavailable and no browser starts.
+ * Branded Chrome 137+ ignores `--load-extension`, so Chromium is the bundled one unless a
+ * system Chromium is given.
+ */
+export async function launchPlaywrightSession(
+  options: PlaywrightLaunchOptions,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<PlaywrightBrowserSession> {
+  const engine = options.engine ?? browserEngineFromEnv(env);
+  const helperDirs = engine === "camoufox" ? [] : (options.helperDirs ?? []);
+  const args = [
+    ...(helperDirs.length > 0
+      ? [
+          `--disable-extensions-except=${helperDirs.join(",")}`,
+          `--load-extension=${helperDirs.join(",")}`,
+        ]
+      : []),
+    // Chromium skips the proxy for loopback unless this token removes that bypass.
+    ...(options.proxy ? ["--proxy-bypass-list=<-loopback>"] : []),
+  ];
+  const identity = identityLaunchFields(options);
+  const context =
+    engine === "camoufox"
+      ? await launchCamoufox(options, env, args, identity)
+      : await launchChromium(options, env, engine, args, identity);
   try {
     const page = context.pages()[0] ?? (await context.newPage());
     return new PlaywrightBrowserSession(context, page, options);
@@ -387,4 +447,44 @@ export async function launchPlaywrightSession(
     await context.close();
     throw error;
   }
+}
+
+async function launchChromium(
+  options: PlaywrightLaunchOptions,
+  env: NodeJS.ProcessEnv,
+  engine: ChromiumEngine,
+  args: string[],
+  identity: ReturnType<typeof identityLaunchFields>,
+): Promise<BrowserContext> {
+  const chromium = await loadChromium(engine);
+  const executablePath =
+    options.executablePath ?? (engine === "patchright" ? await bundledChromiumPath() : undefined);
+  return chromium.launchPersistentContext(options.profileDir, {
+    ...(executablePath ? { executablePath } : { channel: "chromium" }),
+    headless: options.headless ?? !env.DISPLAY,
+    args,
+    viewport: { width: 1280, height: 860 },
+    acceptDownloads: false,
+    ...identity,
+  });
+}
+
+async function launchCamoufox(
+  options: PlaywrightLaunchOptions,
+  env: NodeJS.ProcessEnv,
+  args: string[],
+  identity: ReturnType<typeof identityLaunchFields>,
+): Promise<BrowserContext> {
+  const executablePath = camoufoxExecutable(env, options.executablePath);
+  if (!executablePath) throw new BrowserEngineUnavailable("camoufox");
+  const playwright = (await import("playwright")) as { firefox?: BrowserType };
+  if (!playwright.firefox) throw new BrowserEngineUnavailable("camoufox");
+  return playwright.firefox.launchPersistentContext(options.profileDir, {
+    executablePath,
+    headless: options.headless ?? !env.DISPLAY,
+    args,
+    viewport: { width: 1280, height: 860 },
+    acceptDownloads: false,
+    ...identity,
+  });
 }
