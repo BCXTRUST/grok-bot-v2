@@ -1,6 +1,7 @@
 import type { LbMarket } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
 import {
+  defaultMarketForCountry,
   marketForHost,
   marketKey,
   personaLanguage,
@@ -61,6 +62,24 @@ describe("selectMarkets", () => {
   ] as const)("%s with supply %j and need %i", (policy, supply, need, countries) => {
     const chosen = selectMarkets({ markets, policy, supply, need });
     expect(chosen.map((market) => market.country)).toEqual(countries);
+  });
+
+  it("derives locale and time zone from a country and keeps them editable inputs", () => {
+    expect(defaultMarketForCountry("us")).toEqual({
+      country: "US",
+      language: "en",
+      locale: "en-US",
+      timezoneId: "America/New_York",
+    });
+    expect(defaultMarketForCountry("DE").timezoneId).toBe("Europe/Berlin");
+    expect(defaultMarketForCountry("BR").language).toBe("pt-BR");
+    expect(defaultMarketForCountry("JP")).toEqual({
+      country: "JP",
+      language: "en",
+      locale: "en",
+      timezoneId: "UTC",
+    });
+    expect(() => defaultMarketForCountry("Germany")).toThrow(RangeError);
   });
 
   it("rejects empty markets and invalid counts", () => {
