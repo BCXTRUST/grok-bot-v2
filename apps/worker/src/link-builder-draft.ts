@@ -45,6 +45,7 @@ export interface ComposeInput {
   postsOnHost: number;
   linkPostsOnHost: number;
   now: Date;
+  lastActivityAt?: string | null;
 }
 
 export interface ComposeResult {
@@ -101,7 +102,7 @@ export async function composeReply(input: {
     ? selectThreadCandidate({
         relevance: relevance.relevance,
         openQuestion: relevance.openQuestion,
-        lastActivityAt: null,
+        lastActivityAt: thread.lastActivityAt ? new Date(thread.lastActivityAt) : null,
         now: thread.now,
         activityDays: project.content.threadActivityDays,
         pageText: thread.pageText,

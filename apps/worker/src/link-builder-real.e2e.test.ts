@@ -28,8 +28,10 @@ import { draftPrompt, fitPrompt, relevancePrompt, TEST_PACING } from "@rakazo/li
 import { PHPBB_SELECTORS, VERIFY_USER_AGENT } from "@rakazo/linkbuilder-drivers";
 import {
   type FixtureMail,
-  type PhpbbFixture,
+  type MarkupFixture,
+  startMybbFixture,
   startPhpbbFixture,
+  startXenforoFixture,
 } from "@rakazo/linkbuilder-drivers/testing";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { LinkBuilderRealRunner } from "./link-builder-real.js";
@@ -105,7 +107,13 @@ async function createHarness(): Promise<Harness> {
 }
 
 /** The wizard's calls, through the M1 API functions, then a qualified board for discovery's output. */
-async function wizardProject(h: Harness, fixture: PhpbbFixture, name: string, personaName: string) {
+async function wizardProject(
+  h: Harness,
+  fixture: { origin: string },
+  name: string,
+  personaName: string,
+  platform = "phpbb",
+) {
   const created = await createLbProject(h.deps, actor, {
     name,
     brandName: "Vereinsplaner",
@@ -137,7 +145,7 @@ async function wizardProject(h: Harness, fixture: PhpbbFixture, name: string, pe
       projectId: created.id,
       registrableDomain: new URL(fixture.origin).hostname,
       homepageUrl: `${fixture.origin}/`,
-      platform: "phpbb",
+      platform,
       language: "de",
       country: "DE",
       status: "qualified",
@@ -248,7 +256,7 @@ describe.skipIf(!gate.available)(
   `link builder real driver end to end${gate.reason ? ` (${gate.reason})` : ""}`,
   () => {
     let h: Harness;
-    const fixtures: PhpbbFixture[] = [];
+    const fixtures: Array<{ close(): Promise<void> }> = [];
     const runners: LinkBuilderRealRunner[] = [];
 
     beforeAll(async () => {
@@ -577,5 +585,110 @@ describe.skipIf(!gate.available)(
       const current = await h.db.prisma.lbRun.findUniqueOrThrow({ where: { id: run.id } });
       expect(current.status === "succeeded" || current.status === "running").toBe(true);
     }, 180_000);
+
+    it("registers on MyBB, solves the image captcha and posts", async () => {
+      await runFixtureBoard({
+        h,
+        fixtures,
+        runners,
+        platform: "mybb",
+        persona: "Nia Feld",
+        name: "MyBB members",
+        start: () =>
+          startMybbFixture({
+            rel: "ugc",
+            captchaAnswer: CAPTCHA_ANSWER,
+            deliverMail: deliverTo(h),
+          }),
+        permalink: /\/showthread\.php\?tid=1&pid=\d+#pid\d+$/,
+        captcha: { type: "image_letters", door: "https_api" },
+        artifact: "lb-m5-mybb-after-reply.png",
+      });
+    }, 120_000);
+
+    it("registers on XenForo, passes the widget helper and posts", async () => {
+      await runFixtureBoard({
+        h,
+        fixtures,
+        runners,
+        platform: "xenforo",
+        persona: "Leo Hart",
+        name: "XenForo members",
+        start: () =>
+          startXenforoFixture({
+            rel: "ugc",
+            deliverMail: deliverTo(h),
+          }),
+        permalink: /\/threads\/membership\.1\/post-\d+$/,
+        captcha: { type: "recaptcha_v2", door: "page_helper" },
+        artifact: "lb-m5-xenforo-after-reply.png",
+      });
+    }, 120_000);
   },
 );
+
+async function runFixtureBoard(input: {
+  h: Harness;
+  fixtures: Array<{ close(): Promise<void> }>;
+  runners: LinkBuilderRealRunner[];
+  platform: string;
+  persona: string;
+  name: string;
+  start: () => Promise<MarkupFixture>;
+  permalink: RegExp;
+  captcha: { type: string; door: string };
+  artifact: string;
+}): Promise<void> {
+  const fixture = await input.start();
+  input.fixtures.push(fixture);
+  const { project } = await wizardProject(
+    input.h,
+    fixture,
+    input.name,
+    input.persona,
+    input.platform,
+  );
+  const captcha = new FakeCaptchaSolver({ outcomes: [CAPTCHA_ANSWER] });
+  const runner = new LinkBuilderRealRunner({
+    prisma: input.h.db.prisma,
+    secrets: input.h.secrets,
+    artifacts: input.h.artifacts,
+    browsers: input.h.factory,
+    captcha,
+    mailbox: input.h.emulator,
+    textModel: await recordedDraftModel(input.persona),
+    allowPrivateVerify: true,
+    verifyDelayMs: 0,
+    pageHelperPollMs: 50,
+    workerId: `e2e-${input.platform}`,
+  });
+  input.runners.push(runner);
+  const { prisma } = input.h.db;
+  const run = await prisma.lbRun.findFirstOrThrow({ where: { projectId: project.id } });
+  await tickUntil(runner, async () => {
+    const current = await prisma.lbRun.findUniqueOrThrow({ where: { id: run.id } });
+    return current.status === "succeeded";
+  });
+  const placement = await prisma.lbPlacement.findFirstOrThrow({ where: { projectId: project.id } });
+  expect(placement.status).toBe("nofollow_live");
+  expect(placement.counted).toBe(true);
+  expect(placement.postUrl).toMatch(input.permalink);
+  const event = await prisma.lbCaptchaEvent.findFirstOrThrow({
+    where: { projectId: project.id, outcome: "placed_submitted" },
+  });
+  expect(event).toMatchObject(input.captcha);
+  const postStep = await prisma.lbRunStep.findFirstOrThrow({
+    where: { runId: run.id, kind: "post" },
+  });
+  const artifactDir = process.env.LB_E2E_ARTIFACT_DIR;
+  if (artifactDir) {
+    const shot = await prisma.artifact.findUniqueOrThrow({
+      where: { id: postStep.artifactIds.at(-1)! },
+    });
+    await mkdir(artifactDir, { recursive: true });
+    await writeFile(
+      join(artifactDir, input.artifact),
+      await input.h.artifacts.get(shot.storageKey, adapterContext),
+    );
+  }
+}

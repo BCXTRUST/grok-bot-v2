@@ -54,6 +54,7 @@ import {
   type PoolEntry,
   type ProjectConfig,
   pauseForLowBalance,
+  postsRequiredBeforeLink,
   REAL_STEP_HANDLERS,
   type RealWorkerServices,
   type RunRow,
@@ -451,11 +452,16 @@ export class LinkBuilderRealRunner {
             postCount: ctx.account.postCount,
             accountCreatedAt: ctx.account.createdAt,
             now: ctx.now,
-            ...ctx.project.warmup,
+            minAccountAgeHours: ctx.project.warmup.minAccountAgeHours,
+            minPostsBeforeLink: postsRequiredBeforeLink(
+              ctx.project.warmup.minPostsBeforeLink,
+              ctx.host?.platform ?? "",
+            ),
           })
         : false,
       warmupPostsShort: ctx.account
-        ? ctx.account.postCount < ctx.project.warmup.minPostsBeforeLink
+        ? ctx.account.postCount <
+          postsRequiredBeforeLink(ctx.project.warmup.minPostsBeforeLink, ctx.host?.platform ?? "")
         : false,
       placement: ctx.placement
         ? { status: ctx.placement.status as never, counted: ctx.placement.counted }
@@ -579,6 +585,8 @@ export class LinkBuilderRealRunner {
       cookieChecked: false,
       registerFormReady: false,
       captchaAttempts: 0,
+      registrationRetried: false,
+      profileSet: false,
     };
     this.pool.set(ctx.project.id, entry);
     return entry;
