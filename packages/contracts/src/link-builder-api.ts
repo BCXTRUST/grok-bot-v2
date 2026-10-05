@@ -8,9 +8,11 @@ import {
   LbCaptchaTypeSchema,
   LbContentSchema,
   LbDisclosureModeSchema,
+  LbDraftQualityChecksSchema,
   LbDraftStatusSchema,
   LbHostPlatformSchema,
   LbHostStatusSchema,
+  LbHrefForNewMembersSchema,
   LbLinkRatioSchema,
   LbLinkSlotSchema,
   LbMarketPolicySchema,
@@ -26,6 +28,7 @@ import {
   LbProxyPolicySchema,
   LbQuotasSchema,
   LbRegistrableDomainSchema,
+  LbRelDefaultSchema,
   LbResponsibilityAckSchema,
   LbRunStatusSchema,
   LbRunStepCostsSchema,
@@ -190,10 +193,19 @@ export const LbHostViewSchema = z.object({
   platform: LbHostPlatformSchema,
   country: z.string(),
   language: z.string(),
+  locale: z.string(),
+  timezoneId: z.string(),
   status: LbHostStatusSchema,
   parkedFrom: LbParkableHostStatusSchema.nullable(),
   qualityScore: z.number(),
   topicTags: z.array(z.string()),
+  captchaType: LbCaptchaTypeSchema.nullable(),
+  hrefForNewMembers: LbHrefForNewMembersSchema,
+  relDefault: LbRelDefaultSchema,
+  signatureLinks: z.boolean(),
+  minPostsForLinks: z.number().int().nullable(),
+  registerUrl: z.string().nullable(),
+  statusReason: z.string().nullable(),
 });
 export type LbHostView = z.infer<typeof LbHostViewSchema>;
 
@@ -240,8 +252,12 @@ export const LbThreadViewSchema = z.object({
   domain: z.string(),
   url: z.string(),
   title: z.string(),
+  excerpt: z.string(),
   status: LbThreadStatusSchema,
   relevance: z.number(),
+  openQuestion: z.boolean(),
+  laneId: z.string().nullable(),
+  rejectReason: z.string().nullable(),
 });
 export type LbThreadView = z.infer<typeof LbThreadViewSchema>;
 
@@ -252,8 +268,11 @@ export const LbDraftViewSchema = z.object({
   status: LbDraftStatusSchema,
   linkSlot: LbLinkSlotSchema,
   modelLane: LbModelLaneSchema,
+  modelId: z.string(),
   targetUrl: z.string().nullable(),
   anchorText: z.string().nullable(),
+  confidence: z.number().nullable(),
+  qualityChecks: LbDraftQualityChecksSchema,
 });
 export type LbDraftView = z.infer<typeof LbDraftViewSchema>;
 
@@ -336,6 +355,8 @@ export const linkBuilderContract = {
   },
   drafts: {
     list: oc.input(projectId).output(z.array(LbDraftViewSchema)),
+    approve: oc.input(z.object({ projectId: Id, draftId: Id })).output(LbDraftViewSchema),
+    discard: oc.input(z.object({ projectId: Id, draftId: Id })).output(LbDraftViewSchema),
   },
   captcha: {
     events: oc.input(projectId).output(z.array(LbCaptchaEventViewSchema)),
