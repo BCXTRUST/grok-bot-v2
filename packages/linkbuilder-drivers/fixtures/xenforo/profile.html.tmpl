@@ -1,0 +1,9 @@
+<form id="profile" method="post" action="{{profileAction}}" class="{{formClass}}">
+<h1>Profile</h1>
+{{{error}}}
+<label for="{{bioId}}">Bio</label>
+<textarea id="{{bioId}}" name="{{bioName}}">{{bio}}</textarea>
+<label for="{{signatureId}}">Signature</label>
+<textarea id="{{signatureId}}" name="{{signatureName}}">{{signature}}</textarea>
+<button type="submit" name="submit" id="submit" value="1">Save</button>
+</form>

@@ -6,6 +6,7 @@ import type {
   BoardThread,
   CaptchaChallenge,
   LinkRuleProbe,
+  ProfileInput,
   RegistrationPage,
   RegistrationResult,
   ReplyResult,
@@ -94,6 +95,13 @@ async function collect(
 export class PhpbbDriver implements BoardDriver {
   readonly platform = "phpbb" as const;
   readonly bodyFormat = "bbcode" as const;
+  readonly allowEmoji = false;
+  readonly nofollowDefault = true;
+
+  detect(html: string, url = ""): boolean {
+    const blob = `${html}\n${url}`;
+    return /viewtopic\.php|ucp\.php\?mode=register/i.test(blob) && /phpbb|confirm_code/i.test(blob);
+  }
 
   registerUrl(homepageUrl: string): string {
     return `${boardRoot(homepageUrl)}ucp.php?mode=register`;
@@ -244,15 +252,39 @@ export class PhpbbDriver implements BoardDriver {
       /links?[^.]{0,60}?(?:ab|nach)\s*(\d{1,4})\s*beiträgen?/i.exec(text) ??
       /(?:ab|nach)\s*(\d{1,4})\s*beiträgen?[^.]{0,60}?links?/i.exec(text) ??
       /(\d{1,4})\s*(?:posts?|beiträge)[^.]{0,60}?(?:before|bevor)[^.]{0,40}?links?/i.exec(text);
-    if (afterPosts) return { hrefForNewMembers: "after_n_posts", minPosts: Number(afterPosts[1]) };
+    if (afterPosts) {
+      return {
+        hrefForNewMembers: "after_n_posts",
+        minPosts: Number(afterPosts[1]),
+        relDefault: "unknown",
+      };
+    }
     if (
       /(?:new|neue) (?:members|users|mitglieder|benutzer)[^.]{0,60}?(?:cannot|may not|can't|dürfen keine|können keine)[^.]{0,30}?links?/i.test(
         text,
       )
     ) {
-      return { hrefForNewMembers: "no", minPosts: null };
+      return { hrefForNewMembers: "no", minPosts: null, relDefault: "unknown" };
     }
-    return { hrefForNewMembers: "unknown", minPosts: null };
+    return { hrefForNewMembers: "unknown", minPosts: null, relDefault: "unknown" };
+  }
+
+  async setProfile(
+    session: BrowserSession,
+    homepageUrl: string,
+    profile: ProfileInput,
+  ): Promise<boolean> {
+    await session.goto(`${boardRoot(homepageUrl)}ucp.php?i=ucp_profile&mode=profile_info`);
+    if (!(await session.exists("#profile-bio"))) return false;
+    await session.fill("#profile-bio", profile.bio);
+    if (await session.exists("#profile-signature")) {
+      await session.fill(
+        "#profile-signature",
+        profile.includeSignature ? (profile.signature ?? "") : "",
+      );
+    }
+    if (await session.exists("#profile-submit")) await session.click("#profile-submit");
+    return true;
   }
 
   async pageMessages(session: BrowserSession): Promise<string[]> {

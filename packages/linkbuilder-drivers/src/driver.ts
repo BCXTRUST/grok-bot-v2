@@ -1,5 +1,5 @@
 import type { BrowserSession, TokenCaptchaType } from "@rakazo/adapter-kit";
-import type { LbHostPlatform, LbHrefForNewMembers } from "@rakazo/contracts";
+import type { LbHostPlatform, LbHrefForNewMembers, LbRelDefault } from "@rakazo/contracts";
 import type { ReferenceFormat } from "@rakazo/linkbuilder-core";
 
 /*
@@ -18,9 +18,23 @@ export interface BoardThread {
   url: string;
   title: string;
   replyCount?: number;
+  /** ISO time of the last reply, when the board shows one. */
+  lastActivityAt?: string | null;
+  /** True when the title reads as an open question. */
+  openQuestion?: boolean;
 }
 
-export type RegistrationPage = "form" | "closed" | "unknown";
+export type RegistrationPage = "form" | "closed" | "unknown" | "unmapped";
+
+/** The generic driver refused to guess a form. The runner parks the host with this reason. */
+export class UnmappedFormError extends Error {
+  readonly reason = "unmapped_form" as const;
+
+  constructor(form: string) {
+    super(`unmapped_form:${form}`);
+    this.name = "UnmappedFormError";
+  }
+}
 
 export type RegistrationResult =
   | { kind: "pending_email" }
@@ -46,6 +60,16 @@ export type ReplyResult =
 export interface LinkRuleProbe {
   hrefForNewMembers: LbHrefForNewMembers;
   minPosts: number | null;
+  /** `rel` sampled from a new member's link, or unknown when the page has no sample. */
+  relDefault: LbRelDefault;
+}
+
+/** Profile text written after activation. The driver does not add an affiliation. */
+export interface ProfileInput {
+  bio: string;
+  signature: string | null;
+  /** Signature is written only when the caller already applied policy, warm-up and signatureLinks. */
+  includeSignature: boolean;
 }
 
 export interface BoardDriver {
@@ -54,6 +78,15 @@ export interface BoardDriver {
   readonly bodyFormat: ReferenceFormat;
   /** When false or omitted, a reply that contains emoji is rejected. */
   readonly allowEmoji?: boolean;
+  /** Used when a page has no sample link to read `rel` from. */
+  readonly nofollowDefault?: boolean;
+  /**
+   * Floor for link-free posts. Discourse forces this because TL0 cannot post links.
+   * The runner uses the greater of this value and the project warm-up.
+   */
+  readonly minPostsBeforeLink?: number;
+  /** True when `html` or `url` carries this platform's Appendix A footprint. */
+  detect(html: string, url?: string): boolean;
   registerUrl(homepageUrl: string): string;
   /** Opens the registration form, accepting the board terms on the way. */
   openRegistration(session: BrowserSession, homepageUrl: string): Promise<RegistrationPage>;
@@ -86,6 +119,13 @@ export interface BoardDriver {
   submitReply(session: BrowserSession): Promise<ReplyResult>;
   /** Reads the board's rule for links by new members from rules, FAQ or editor text. */
   probeLinkRule(pageText: string): LinkRuleProbe;
+  /** Same probe, plus `rel` from a new-member link on the current page when one is present. */
+  probePageLinkRule?(session: BrowserSession): Promise<LinkRuleProbe>;
+  /**
+   * Sets the persona bio. Writes a signature only when `includeSignature` is set.
+   * Returns false when the board has no profile form.
+   */
+  setProfile(session: BrowserSession, homepageUrl: string, profile: ProfileInput): Promise<boolean>;
   /** Board error and notice texts on the current page, for the captcha and form-error logic. */
   pageMessages(session: BrowserSession): Promise<string[]>;
 }
