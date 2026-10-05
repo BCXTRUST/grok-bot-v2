@@ -15,7 +15,8 @@ CREATE TABLE "lb_projects" (
     "quotas" JSONB,
     "schedule" JSONB NOT NULL DEFAULT '{"timezone":"Europe/Berlin","weekdaysOnly":true,"window":{"start":"09:00","end":"22:00"},"overtimeUntilLiveMet":false,"hardStopHour":24}',
     "topicLanes" JSONB NOT NULL DEFAULT '[]',
-    "geoPolicy" TEXT NOT NULL DEFAULT 'dach_first',
+    "markets" JSONB NOT NULL DEFAULT '[{"country":"DE","language":"de","locale":"de-DE","timezoneId":"Europe/Berlin"}]',
+    "marketPolicy" TEXT NOT NULL DEFAULT 'primary_first',
     "disclosureMode" TEXT NOT NULL DEFAULT 'undisclosed_persona',
     "responsibilityAck" JSONB,
     "linkRatio" JSONB NOT NULL DEFAULT '{"links":1,"posts":3}',
@@ -38,7 +39,7 @@ CREATE TABLE "lb_projects" (
 
 ALTER TABLE "lb_projects" ADD CONSTRAINT "lb_projects_status_check" CHECK ("status" IN ('draft', 'active', 'paused', 'stopped', 'archived'));
 
-ALTER TABLE "lb_projects" ADD CONSTRAINT "lb_projects_geoPolicy_check" CHECK ("geoPolicy" IN ('dach_first', 'en_fallback', 'en_only'));
+ALTER TABLE "lb_projects" ADD CONSTRAINT "lb_projects_marketPolicy_check" CHECK ("marketPolicy" IN ('primary_first', 'all_markets', 'primary_only'));
 
 ALTER TABLE "lb_projects" ADD CONSTRAINT "lb_projects_disclosureMode_check" CHECK ("disclosureMode" IN ('undisclosed_persona', 'disclosed_persona', 'disclosed_brand', 'drafts_only'));
 
@@ -49,6 +50,8 @@ ALTER TABLE "lb_projects" ADD CONSTRAINT "lb_projects_captchaLowBalanceCredits_c
 ALTER TABLE "lb_projects" ADD CONSTRAINT "lb_projects_json_shape_check" CHECK (
     jsonb_typeof("schedule") = 'object'
     AND jsonb_typeof("topicLanes") = 'array'
+    AND jsonb_typeof("markets") = 'array'
+    AND jsonb_array_length("markets") >= 1
     AND jsonb_typeof("linkRatio") = 'object'
     AND jsonb_typeof("targets") = 'array'
     AND jsonb_typeof("warmup") = 'object'
@@ -77,6 +80,7 @@ CREATE TABLE "lb_proxy_leases" (
     "provider" TEXT NOT NULL,
     "providerLeaseId" TEXT NOT NULL,
     "country" TEXT NOT NULL,
+    "stickyKey" TEXT NOT NULL,
     "kind" TEXT NOT NULL DEFAULT 'static_isp',
     "endpointSecretId" TEXT,
     "status" TEXT NOT NULL DEFAULT 'active',
@@ -95,7 +99,9 @@ ALTER TABLE "lb_proxy_leases" ADD CONSTRAINT "lb_proxy_leases_status_check" CHEC
 
 ALTER TABLE "lb_proxy_leases" ADD CONSTRAINT "lb_proxy_leases_country_check" CHECK ("country" ~ '^[A-Z]{2}$');
 
-CREATE UNIQUE INDEX "lb_proxy_leases_one_active_per_project" ON "lb_proxy_leases"("projectId") WHERE "status" = 'active';
+ALTER TABLE "lb_proxy_leases" ADD CONSTRAINT "lb_proxy_leases_stickyKey_check" CHECK ("stickyKey" ~ '^[A-Za-z0-9._:-]{1,128}$');
+
+CREATE UNIQUE INDEX "lb_proxy_leases_one_active_per_project_country" ON "lb_proxy_leases"("projectId", "country") WHERE "status" = 'active';
 
 CREATE INDEX "lb_proxy_leases_workspaceId_projectId_status_idx" ON "lb_proxy_leases"("workspaceId", "projectId", "status");
 
@@ -117,8 +123,8 @@ CREATE TABLE "lb_hosts" (
     "homepageUrl" TEXT NOT NULL,
     "platform" TEXT NOT NULL DEFAULT 'unknown',
     "platformVersionHint" TEXT,
-    "language" TEXT,
-    "country" TEXT,
+    "language" TEXT NOT NULL,
+    "country" TEXT NOT NULL,
     "topicTags" TEXT[] DEFAULT ARRAY[]::TEXT[],
     "qualityScore" DOUBLE PRECISION NOT NULL DEFAULT 0,
     "hrefForNewMembers" TEXT NOT NULL DEFAULT 'unknown',
@@ -156,9 +162,16 @@ ALTER TABLE "lb_hosts" ADD CONSTRAINT "lb_hosts_captchaType_check" CHECK ("captc
 
 ALTER TABLE "lb_hosts" ADD CONSTRAINT "lb_hosts_minPostsForLinks_check" CHECK ("minPostsForLinks" IS NULL OR "minPostsForLinks" >= 0);
 
+ALTER TABLE "lb_hosts" ADD CONSTRAINT "lb_hosts_market_check" CHECK (
+    "country" ~ '^[A-Z]{2}$'
+    AND "language" ~ '^[a-z]{2,3}(-[A-Za-z0-9]{1,8})*$'
+);
+
 CREATE UNIQUE INDEX "lb_hosts_workspaceId_projectId_registrableDomain_key" ON "lb_hosts"("workspaceId", "projectId", "registrableDomain");
 
 CREATE INDEX "lb_hosts_workspaceId_projectId_status_idx" ON "lb_hosts"("workspaceId", "projectId", "status");
+
+CREATE INDEX "lb_hosts_workspaceId_projectId_country_status_idx" ON "lb_hosts"("workspaceId", "projectId", "country", "status");
 
 ALTER TABLE "lb_hosts" ADD CONSTRAINT "lb_hosts_workspaceId_fkey" FOREIGN KEY ("workspaceId") REFERENCES "organization"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 

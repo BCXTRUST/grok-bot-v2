@@ -9,6 +9,7 @@ import {
   FakeBrowserSessionProvider,
   FakeCaptchaSolver,
   FakeMailboxProvider,
+  type FakeProxyInventory,
   FakeProxyProvider,
   FakeSearchProvider,
   FakeTextModel,
@@ -38,11 +39,21 @@ const persona = {
 const endpoint = (id: string, country = "DE"): ProxyEndpoint => ({
   id,
   country,
+  stickyKey: `persona-1:${country}`,
   server: `${id}.proxy.example.test:8080`,
   username: { secretId: `${id}-user` },
   password: { secretId: `${id}-pass` },
   kind: "static_isp",
 });
+
+const inventory = (
+  id: string,
+  country = "DE",
+  kind: ProxyEndpoint["kind"] = "static_isp",
+): FakeProxyInventory => {
+  const { stickyKey: _stickyKey, ...rest } = endpoint(id, country);
+  return { ...rest, kind };
+};
 
 describe("link builder contract schemas", () => {
   it("rejects captcha images below the minimum size before any solve", () => {
@@ -97,6 +108,10 @@ describe("link builder contract schemas", () => {
       false,
     );
     expect(BrowserPersonaSchema.safeParse({ ...persona, locale: "German" }).success).toBe(false);
+    expect(BrowserPersonaSchema.safeParse({ ...persona, locale: "de-de" }).success).toBe(false);
+    for (const locale of ["pt-BR", "en-US", "zh-Hant-TW", "ja"]) {
+      expect(BrowserPersonaSchema.safeParse({ ...persona, locale }).success, locale).toBe(true);
+    }
     expect(CaptchaQuestionRequestSchema.safeParse({}).success).toBe(false);
     expect(
       InboundMailSchema.safeParse({
@@ -123,7 +138,7 @@ describe("fake adapters describe themselves", () => {
     const adapters = [
       new FakeBrowserSessionProvider(),
       new FakeCaptchaSolver(),
-      new FakeProxyProvider([endpoint("p1")]),
+      new FakeProxyProvider([inventory("p1")]),
       new FakeSearchProvider(),
       new FakeMailboxProvider(),
       new FakeTextModel(),
@@ -299,32 +314,52 @@ describe("FakeCaptchaSolver", () => {
 });
 
 describe("FakeProxyProvider", () => {
-  it("leases one sticky endpoint per persona and frees it on release", async () => {
-    const proxies = new FakeProxyProvider([endpoint("p1"), endpoint("p2"), endpoint("p3", "AT")], {
-      now: () => new Date("2026-10-05T00:00:00.000Z"),
-      leaseHours: 24,
-    });
-    const first = await proxies.lease({ projectId: "a", country: "DE" }, context());
-    const again = await proxies.lease({ projectId: "a", country: "DE" }, context());
-    const second = await proxies.lease({ projectId: "b", country: "DE" }, context());
-    expect(first.id).toBe("p1");
+  it("leases one sticky endpoint per sticky key and frees it on release", async () => {
+    const proxies = new FakeProxyProvider(
+      [inventory("p1"), inventory("p2"), inventory("p3", "AT")],
+      { now: () => new Date("2026-10-05T00:00:00.000Z"), leaseHours: 24 },
+    );
+    const first = await proxies.lease({ country: "DE", stickyKey: "a:DE" }, context());
+    const again = await proxies.lease({ country: "DE", stickyKey: "a:DE" }, context());
+    const second = await proxies.lease({ country: "DE", stickyKey: "b:DE" }, context());
+    expect(first).toMatchObject({ id: "p1", stickyKey: "a:DE", country: "DE" });
     expect(again.id).toBe("p1");
     expect(second.id).toBe("p2");
     expect(first.renewsAt).toBe("2026-10-06T00:00:00.000Z");
     expect(first.password).toEqual({ secretId: "p1-pass" });
-    await expect(proxies.lease({ projectId: "c", country: "DE" }, context())).rejects.toThrow(
-      /No static_isp proxy/,
+    await expect(proxies.lease({ country: "DE", stickyKey: "c:DE" }, context())).rejects.toThrow(
+      /No static_isp or residential proxy available in DE/,
     );
-    expect((await proxies.lease({ projectId: "c", country: "AT" }, context())).id).toBe("p3");
-    expect((await proxies.renew("p1", context())).id).toBe("p1");
+    expect((await proxies.lease({ country: "AT", stickyKey: "a:AT" }, context())).id).toBe("p3");
+    await expect(proxies.lease({ country: "AT", stickyKey: "a:DE" }, context())).rejects.toThrow(
+      /leased in DE/,
+    );
+    expect((await proxies.renew("p1", context())).stickyKey).toBe("a:DE");
     await proxies.release("p1", context());
     await expect(proxies.renew("p1", context())).rejects.toThrow(/not leased/);
-    expect((await proxies.lease({ projectId: "d", country: "DE" }, context())).id).toBe("p1");
+    expect((await proxies.lease({ country: "DE", stickyKey: "d:DE" }, context())).id).toBe("p1");
+  });
+
+  it("falls back through the requested tiers in order, per country", async () => {
+    const proxies = new FakeProxyProvider([
+      inventory("isp-de", "DE"),
+      inventory("res-br", "BR", "residential"),
+      inventory("dc-br", "BR", "datacenter"),
+    ]);
+    const br = await proxies.lease({ country: "BR", stickyKey: "a:BR" }, context());
+    expect(br).toMatchObject({ id: "res-br", kind: "residential" });
+    await expect(
+      proxies.lease({ country: "US", stickyKey: "a:US", kinds: ["static_isp"] }, context()),
+    ).rejects.toThrow(/No static_isp proxy available in US/);
+    expect(
+      (await proxies.lease({ country: "BR", stickyKey: "b:BR", kinds: ["datacenter"] }, context()))
+        .id,
+    ).toBe("dc-br");
     expect(proxies.describe().capabilities).toEqual({
-      countries: ["DE", "AT"],
-      kinds: ["static_isp"],
+      coverage: { static_isp: ["DE"], residential: ["BR"], datacenter: ["BR"] },
       sticky: true,
     });
+    await expect(proxies.lease({ country: "BR", stickyKey: "a b" }, context())).rejects.toThrow();
   });
 });
 

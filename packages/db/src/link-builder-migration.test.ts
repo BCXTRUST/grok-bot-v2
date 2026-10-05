@@ -2,19 +2,21 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  LB_DEFAULT_MARKET,
   LbCaptchaDoorSchema,
   LbCaptchaOutcomeSchema,
   LbCaptchaTypeSchema,
   LbContentSchema,
   LbDisclosureModeSchema,
   LbDraftStatusSchema,
-  LbGeoPolicySchema,
   LbHostPlatformSchema,
   LbHostStatusSchema,
   LbHrefForNewMembersSchema,
   LbHumanCheckboxStateSchema,
   LbLinkRatioSchema,
   LbLinkSlotSchema,
+  LbMarketPolicySchema,
+  LbMarketsSchema,
   LbModelLaneSchema,
   LbOperatorSettingsSchema,
   LbOperatorTicketReasonSchema,
@@ -64,7 +66,7 @@ function columnDefault(table: string, column: string): unknown {
 
 const enumChecks: Array<[string, string, { options: readonly string[] }]> = [
   ["lb_projects", "status", LbProjectStatusSchema],
-  ["lb_projects", "geoPolicy", LbGeoPolicySchema],
+  ["lb_projects", "marketPolicy", LbMarketPolicySchema],
   ["lb_projects", "disclosureMode", LbDisclosureModeSchema],
   ["lb_projects", "proxyPolicy", LbProxyPolicySchema],
   ["lb_proxy_leases", "kind", LbProxyKindSchema],
@@ -119,6 +121,9 @@ describe("link builder migration", () => {
     expect(LbOperatorSettingsSchema.parse(columnDefault("lb_projects", "operator"))).toEqual(
       LbOperatorSettingsSchema.parse({}),
     );
+    expect(LbMarketsSchema.parse(columnDefault("lb_projects", "markets"))).toEqual([
+      LB_DEFAULT_MARKET,
+    ]);
     expect(LbRunStepCostsSchema.parse(columnDefault("lb_run_steps", "costs"))).toEqual(
       LbRunStepCostsSchema.parse({}),
     );
@@ -129,6 +134,21 @@ describe("link builder migration", () => {
       'CREATE UNIQUE INDEX "lb_placements_one_counted_per_host" ON "lb_placements"("workspaceId", "projectId", "hostId") WHERE "counted" = true;',
     );
     expect(schema).toContain("lb_placements_one_counted_per_host");
+  });
+
+  it("keeps one active sticky proxy lease per project and country", () => {
+    expect(migration).toContain(
+      'CREATE UNIQUE INDEX "lb_proxy_leases_one_active_per_project_country" ON "lb_proxy_leases"("projectId", "country") WHERE "status" = \'active\';',
+    );
+    expect(schema).toContain("lb_proxy_leases_one_active_per_project_country");
+    expect(migration).toMatch(/"stickyKey" TEXT NOT NULL,/);
+  });
+
+  it("tags every host with the market it was discovered in", () => {
+    const hosts = migration.match(/CREATE TABLE "lb_hosts" \(([\s\S]*?)\n\);/)?.[1] ?? "";
+    expect(hosts).toContain('"language" TEXT NOT NULL,');
+    expect(hosts).toContain('"country" TEXT NOT NULL,');
+    expect(migration).toContain('ALTER TABLE "lb_hosts" ADD CONSTRAINT "lb_hosts_market_check"');
   });
 
   it("maps every link builder model to an lb_ table owned by an organization", () => {

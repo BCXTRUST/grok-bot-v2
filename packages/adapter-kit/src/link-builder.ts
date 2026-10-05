@@ -1,6 +1,8 @@
 import {
   LbCaptchaTypeSchema,
+  LbCountryCodeSchema,
   LbLanguageSchema,
+  LbLocaleSchema,
   LbModelLaneSchema,
   LbProxyKindSchema,
   LbTokenCaptchaTypeSchema,
@@ -12,16 +14,20 @@ import type { AdapterContext, AdapterDescriptor } from "./types.js";
 export const SecretRefSchema = z.object({ secretId: z.string().min(1) }).strict();
 export type SecretRef = z.infer<typeof SecretRefSchema>;
 
-export const CountryCodeSchema = z.string().regex(/^[A-Z]{2}$/, "Expected ISO 3166-1 alpha-2");
-export type CountryCode = "DE" | "AT" | "CH" | (string & {});
+export const CountryCodeSchema = LbCountryCodeSchema;
+export type CountryCode = z.infer<typeof CountryCodeSchema>;
 
 export const ProxyKindSchema = LbProxyKindSchema;
 export type ProxyKind = z.infer<typeof ProxyKindSchema>;
+
+/** Persona × country; the same key must yield the same exit IP for the life of the account. */
+export const ProxyStickyKeySchema = z.string().regex(/^[A-Za-z0-9._:-]{1,128}$/);
 
 export const ProxyEndpointSchema = z
   .object({
     id: z.string().min(1),
     country: CountryCodeSchema,
+    stickyKey: ProxyStickyKeySchema,
     /** `host:port`; the address is not a credential, the username and password are. */
     server: z.string().regex(/^[^\s:/@]+:\d{1,5}$/, "Expected host:port"),
     username: SecretRefSchema.optional(),
@@ -32,23 +38,27 @@ export const ProxyEndpointSchema = z
   .strict();
 export type ProxyEndpoint = z.infer<typeof ProxyEndpointSchema>;
 
-export const ProxyPersonaSchema = z.object({
-  projectId: z.string().min(1),
-  country: CountryCodeSchema,
-  kind: ProxyKindSchema.default("static_isp"),
-});
-export type ProxyPersona = z.input<typeof ProxyPersonaSchema>;
+export const ProxyLeaseRequestSchema = z
+  .object({
+    /** The forum host's country, never a regional pool. */
+    country: CountryCodeSchema,
+    stickyKey: ProxyStickyKeySchema,
+    /** Tiers in order of preference; the first one with inventory in `country` wins. */
+    kinds: z.array(ProxyKindSchema).min(1).default(["static_isp", "residential"]),
+  })
+  .strict();
+export type ProxyLeaseRequest = z.input<typeof ProxyLeaseRequestSchema>;
 
 export interface ProxyProviderCapabilities {
-  countries: CountryCode[];
-  kinds: ProxyKind[];
-  /** The same endpoint is returned for a persona for the life of its lease. */
+  /** Countries with inventory per tier; `"*"` means any ISO country. */
+  coverage: Partial<Record<ProxyKind, CountryCode[] | "*">>;
+  /** Re-leasing with the same sticky key returns the same exit IP. */
   sticky: boolean;
 }
 
 export interface ProxyProvider {
   describe(): AdapterDescriptor<ProxyProviderCapabilities>;
-  lease(persona: ProxyPersona, context: AdapterContext): Promise<ProxyEndpoint>;
+  lease(request: ProxyLeaseRequest, context: AdapterContext): Promise<ProxyEndpoint>;
   renew(id: string, context: AdapterContext): Promise<ProxyEndpoint>;
   release(id: string, context: AdapterContext): Promise<void>;
 }
@@ -58,7 +68,7 @@ export const BrowserPersonaSchema = z.object({
   /** Stable key of the persistent profile directory for this persona. */
   profileKey: z.string().regex(/^[A-Za-z0-9._-]{1,128}$/),
   proxy: ProxyEndpointSchema.optional(),
-  locale: z.string().regex(/^[a-z]{2}(-[A-Z]{2})?$/),
+  locale: LbLocaleSchema,
   timezoneId: z.string().min(1),
   extensionPaths: z.array(z.string().min(1)).optional(),
 });

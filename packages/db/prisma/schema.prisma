@@ -904,7 +904,8 @@ model LbProject {
   quotas                   Json?
   schedule                 Json                @default("{\"timezone\":\"Europe/Berlin\",\"weekdaysOnly\":true,\"window\":{\"start\":\"09:00\",\"end\":\"22:00\"},\"overtimeUntilLiveMet\":false,\"hardStopHour\":24}")
   topicLanes               Json                @default("[]")
-  geoPolicy                String              @default("dach_first")
+  markets                  Json                @default("[{\"country\":\"DE\",\"language\":\"de\",\"locale\":\"de-DE\",\"timezoneId\":\"Europe/Berlin\"}]")
+  marketPolicy             String              @default("primary_first")
   disclosureMode           String              @default("undisclosed_persona")
   responsibilityAck        Json?
   linkRatio                Json                @default("{\"links\":1,\"posts\":3}")
@@ -937,8 +938,8 @@ model LbProject {
   @@map("lb_projects")
 }
 
-// At most one active lease per project: partial unique index
-// "lb_proxy_leases_one_active_per_project" in the link_builder migration.
+// One sticky exit IP per persona and country: partial unique index
+// "lb_proxy_leases_one_active_per_project_country" in the link_builder migration.
 model LbProxyLease {
   id               String       @id @default(cuid())
   workspaceId      String
@@ -948,6 +949,7 @@ model LbProxyLease {
   provider         String
   providerLeaseId  String
   country          String
+  stickyKey        String
   kind             String       @default("static_isp")
   endpointSecretId String?
   endpointSecret   Secret?      @relation("LbProxyLeaseEndpointSecret", fields: [endpointSecretId], references: [id], onDelete: SetNull)
@@ -974,8 +976,8 @@ model LbHost {
   homepageUrl         String
   platform            String              @default("unknown")
   platformVersionHint String?
-  language            String?
-  country             String?
+  language            String
+  country             String
   topicTags           String[]            @default([])
   qualityScore        Float               @default(0)
   hrefForNewMembers   String              @default("unknown")
@@ -1001,6 +1003,7 @@ model LbHost {
 
   @@unique([workspaceId, projectId, registrableDomain])
   @@index([workspaceId, projectId, status])
+  @@index([workspaceId, projectId, country, status])
   @@map("lb_hosts")
 }
 

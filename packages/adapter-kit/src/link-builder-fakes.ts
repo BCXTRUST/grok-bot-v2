@@ -1,3 +1,4 @@
+import type { z } from "zod";
 import {
   type BrowserPersona,
   BrowserPersonaSchema,
@@ -14,6 +15,7 @@ import {
   type CaptchaSolverCapabilities,
   CaptchaSolverError,
   type CaptchaType,
+  type CountryCode,
   type InboundMail,
   InboundMailSchema,
   LINK_BUILDER_CONTRACT_VERSION,
@@ -23,8 +25,9 @@ import {
   type ModelLane,
   type ProxyEndpoint,
   ProxyEndpointSchema,
-  type ProxyPersona,
-  ProxyPersonaSchema,
+  type ProxyKind,
+  type ProxyLeaseRequest,
+  ProxyLeaseRequestSchema,
   type ProxyProvider,
   type ProxyProviderCapabilities,
   parseCaptchaSolveRequest,
@@ -384,65 +387,96 @@ function normalizeQuestion(value: string): string {
   return value.normalize("NFC").trim().replace(/\s+/g, " ").toLowerCase();
 }
 
+const FakeProxyInventorySchema = ProxyEndpointSchema.omit({ stickyKey: true, renewsAt: true });
+export type FakeProxyInventory = z.input<typeof FakeProxyInventorySchema>;
+
+/** Inventory of exit IPs per country and tier; a sticky key keeps its IP until released. */
 export class FakeProxyProvider implements ProxyProvider {
-  private readonly pool: ProxyEndpoint[];
+  private readonly pool: z.infer<typeof FakeProxyInventorySchema>[];
+  /** stickyKey → leased inventory id. */
   private readonly leases = new Map<string, string>();
 
   constructor(
-    endpoints: ProxyEndpoint[],
+    inventory: FakeProxyInventory[],
     private readonly options: { now?: () => Date; leaseHours?: number } = {},
   ) {
-    this.pool = endpoints.map((endpoint) => ProxyEndpointSchema.parse(endpoint));
+    this.pool = inventory.map((endpoint) => FakeProxyInventorySchema.parse(endpoint));
   }
 
   describe(): AdapterDescriptor<ProxyProviderCapabilities> {
-    return descriptor("fake-proxy", {
-      countries: [...new Set(this.pool.map((endpoint) => endpoint.country))],
-      kinds: [...new Set(this.pool.map((endpoint) => endpoint.kind))],
-      sticky: true,
-    });
+    const coverage: Partial<Record<ProxyKind, CountryCode[]>> = {};
+    for (const endpoint of this.pool) {
+      const countries = coverage[endpoint.kind] ?? [];
+      if (!countries.includes(endpoint.country)) countries.push(endpoint.country);
+      coverage[endpoint.kind] = countries;
+    }
+    return descriptor("fake-proxy", { coverage, sticky: true });
   }
 
-  async lease(persona: ProxyPersona, context: AdapterContext): Promise<ProxyEndpoint> {
+  async lease(request: ProxyLeaseRequest, context: AdapterContext): Promise<ProxyEndpoint> {
     throwIfAborted(context);
-    const parsed = ProxyPersonaSchema.parse(persona);
-    const existing = this.leases.get(parsed.projectId);
-    if (existing) return this.withRenewal(this.endpoint(existing));
+    const parsed = ProxyLeaseRequestSchema.parse(request);
+    const existing = this.leases.get(parsed.stickyKey);
+    if (existing) {
+      const endpoint = this.inventory(existing);
+      if (endpoint.country !== parsed.country) {
+        throw new Error(`Sticky key ${parsed.stickyKey} is leased in ${endpoint.country}`);
+      }
+      return this.withLease(endpoint, parsed.stickyKey);
+    }
     const leased = new Set(this.leases.values());
-    const endpoint = this.pool.find(
-      (candidate) =>
-        !leased.has(candidate.id) &&
-        candidate.country === parsed.country &&
-        candidate.kind === parsed.kind,
-    );
-    if (!endpoint) throw new Error(`No ${parsed.kind} proxy available in ${parsed.country}`);
-    this.leases.set(parsed.projectId, endpoint.id);
-    return this.withRenewal(endpoint);
+    for (const kind of parsed.kinds) {
+      const endpoint = this.pool.find(
+        (candidate) =>
+          !leased.has(candidate.id) &&
+          candidate.country === parsed.country &&
+          candidate.kind === kind,
+      );
+      if (endpoint) {
+        this.leases.set(parsed.stickyKey, endpoint.id);
+        return this.withLease(endpoint, parsed.stickyKey);
+      }
+    }
+    throw new Error(`No ${parsed.kinds.join(" or ")} proxy available in ${parsed.country}`);
   }
 
   async renew(id: string, context: AdapterContext): Promise<ProxyEndpoint> {
     throwIfAborted(context);
-    if (![...this.leases.values()].includes(id)) throw new Error(`Proxy ${id} is not leased`);
-    return this.withRenewal(this.endpoint(id));
+    const stickyKey = this.stickyKeyOf(id);
+    if (!stickyKey) throw new Error(`Proxy ${id} is not leased`);
+    return this.withLease(this.inventory(id), stickyKey);
   }
 
   async release(id: string, context: AdapterContext): Promise<void> {
     throwIfAborted(context);
-    for (const [projectId, endpointId] of this.leases) {
-      if (endpointId === id) this.leases.delete(projectId);
-    }
+    const stickyKey = this.stickyKeyOf(id);
+    if (stickyKey) this.leases.delete(stickyKey);
   }
 
-  private endpoint(id: string): ProxyEndpoint {
+  private stickyKeyOf(id: string): string | undefined {
+    for (const [stickyKey, endpointId] of this.leases) {
+      if (endpointId === id) return stickyKey;
+    }
+    return undefined;
+  }
+
+  private inventory(id: string): z.infer<typeof FakeProxyInventorySchema> {
     const endpoint = this.pool.find((candidate) => candidate.id === id);
     if (!endpoint) throw new Error(`Unknown proxy ${id}`);
     return endpoint;
   }
 
-  private withRenewal(endpoint: ProxyEndpoint): ProxyEndpoint {
+  private withLease(
+    endpoint: z.infer<typeof FakeProxyInventorySchema>,
+    stickyKey: string,
+  ): ProxyEndpoint {
     const now = this.options.now?.() ?? new Date(0);
     const hours = this.options.leaseHours ?? 24 * 30;
-    return { ...endpoint, renewsAt: new Date(now.getTime() + hours * 3_600_000).toISOString() };
+    return {
+      ...endpoint,
+      stickyKey,
+      renewsAt: new Date(now.getTime() + hours * 3_600_000).toISOString(),
+    };
   }
 }
 

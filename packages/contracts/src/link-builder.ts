@@ -159,8 +159,9 @@ export const LbDisclosureModeSchema = z.enum([
 ]);
 export type LbDisclosureMode = z.infer<typeof LbDisclosureModeSchema>;
 
-export const LbGeoPolicySchema = z.enum(["dach_first", "en_fallback", "en_only"]);
-export type LbGeoPolicy = z.infer<typeof LbGeoPolicySchema>;
+/** How work spreads across `markets[]`; `primary_first` moves on only when primary supply is short. */
+export const LbMarketPolicySchema = z.enum(["primary_first", "all_markets", "primary_only"]);
+export type LbMarketPolicy = z.infer<typeof LbMarketPolicySchema>;
 
 export const LbProxyPolicySchema = z.enum(["static_isp_per_persona", "none"]);
 export type LbProxyPolicy = z.infer<typeof LbProxyPolicySchema>;
@@ -171,12 +172,37 @@ export type LbProxyKind = z.infer<typeof LbProxyKindSchema>;
 export const LbProxyLeaseStatusSchema = z.enum(["active", "released", "expired"]);
 export type LbProxyLeaseStatus = z.infer<typeof LbProxyLeaseStatusSchema>;
 
-export const LbRegionSchema = z.enum(["DE", "AT", "CH"]);
-export type LbRegion = z.infer<typeof LbRegionSchema>;
+function canonicalLocale(tag: string): string | null {
+  try {
+    return Intl.getCanonicalLocales(tag)[0] ?? null;
+  } catch {
+    return null;
+  }
+}
 
-export const LbLanguageSchema = z.enum(["de", "en"]);
+/** ISO 3166-1 alpha-2, upper case. Any country; there is no regional allow-list. */
+export const LbCountryCodeSchema = z.string().regex(/^[A-Z]{2}$/, "Expected ISO 3166-1 alpha-2");
+export type LbCountryCode = z.infer<typeof LbCountryCodeSchema>;
+
+/** Canonical BCP 47 tag (`de`, `pt-BR`, `zh-Hant-TW`); non-canonical spellings are rejected. */
+const CanonicalBcp47 = z
+  .string()
+  .min(2)
+  .max(35)
+  .refine((tag) => canonicalLocale(tag) === tag, "Expected a canonical BCP 47 tag");
+
+export const LbLanguageSchema = CanonicalBcp47;
 export type LbLanguage = z.infer<typeof LbLanguageSchema>;
 
+export const LbLocaleSchema = CanonicalBcp47;
+export type LbLocale = z.infer<typeof LbLocaleSchema>;
+
+/** Primary language subtag of a BCP 47 tag (`pt-BR` → `pt`). */
+export function lbPrimaryLanguage(tag: string): string {
+  return (tag.split("-")[0] ?? tag).toLowerCase();
+}
+
+/** German forms of address; ignored for every other language. */
 export const LbRegisterSchema = z.enum(["du", "sie"]);
 export type LbRegister = z.infer<typeof LbRegisterSchema>;
 
@@ -210,12 +236,62 @@ const RegistrableDomain = z
   .max(253)
   .regex(/^(?!-)[a-z0-9-]+(\.[a-z0-9-]+)+$/, "Expected a lowercase registrable domain");
 
+function localeRegion(locale: string): string | undefined {
+  return locale
+    .split("-")
+    .slice(1)
+    .find((subtag) => /^([A-Z]{2}|\d{3})$/.test(subtag));
+}
+
+/**
+ * One target market. Every session on a host from this market uses its country for the exit IP
+ * and its locale and time zone for the browser, so the three always agree.
+ */
+export const LbMarketSchema = z
+  .object({
+    country: LbCountryCodeSchema,
+    language: LbLanguageSchema,
+    locale: LbLocaleSchema,
+    timezoneId: z.string().refine(isValidTimeZone, "Unknown IANA time zone"),
+  })
+  .refine((market) => lbPrimaryLanguage(market.locale) === lbPrimaryLanguage(market.language), {
+    message: "Locale language must match the market language",
+    path: ["locale"],
+  })
+  .refine(
+    (market) => {
+      const region = localeRegion(market.locale);
+      return region === undefined || region === market.country;
+    },
+    { message: "Locale region must match the market country", path: ["locale"] },
+  );
+export type LbMarket = z.infer<typeof LbMarketSchema>;
+
+export const LB_DEFAULT_MARKET: LbMarket = {
+  country: "DE",
+  language: "de",
+  locale: "de-DE",
+  timezoneId: "Europe/Berlin",
+};
+
+/** Ordered, first entry is the primary market; one entry per country and language. */
+export const LbMarketsSchema = z
+  .array(LbMarketSchema)
+  .min(1)
+  .max(20)
+  .refine(
+    (markets) =>
+      new Set(markets.map((market) => `${market.country}:${market.language}`)).size ===
+      markets.length,
+    { message: "Each country and language pair may appear once" },
+  );
+
 export const LbPersonaSchema = z.object({
   displayName: z.string().trim().min(1).max(60),
   bio: z.string().max(500).default(""),
-  language: LbLanguageSchema.default("de"),
+  /** Defaults to the primary market's language when absent. */
+  language: LbLanguageSchema.optional(),
   register: LbRegisterSchema.default("du"),
-  region: LbRegionSchema.default("DE"),
   /** Only used by the disclosed modes; empty in the default undisclosed mode. */
   disclosureText: z.string().max(200).optional(),
 });
@@ -340,7 +416,8 @@ export const LbProjectConfigSchema = z.object({
   quotas: LbQuotasSchema,
   schedule: LbScheduleSchema,
   topicLanes: z.array(LbTopicLaneSchema).max(20).default([]),
-  geoPolicy: LbGeoPolicySchema.default("dach_first"),
+  markets: LbMarketsSchema.default(() => [{ ...LB_DEFAULT_MARKET }]),
+  marketPolicy: LbMarketPolicySchema.default("primary_first"),
   disclosureMode: LbDisclosureModeSchema.default("undisclosed_persona"),
   linkRatio: LbLinkRatioSchema.default(LB_DEFAULT_LINK_RATIO),
   proxyPolicy: LbProxyPolicySchema.default("static_isp_per_persona"),
