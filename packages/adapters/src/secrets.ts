@@ -44,6 +44,7 @@ export class EncryptedSecretStore implements SecretStore {
     return value
       .replace(/sk-[a-zA-Z0-9-_]{8,}/g, "[redacted]")
       .replace(/ct_live_[A-Za-z0-9_-]{8,}/g, "[redacted]")
-      .replace(/eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+/g, "[redacted]");
+      .replace(/eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+/g, "[redacted]")
+      .replace(/[^\s'"`<>:/]+:[^\s'"`<>@/]+@[^\s'"`<>/]+/g, "[redacted]");
   }
 }

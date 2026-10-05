@@ -30,6 +30,8 @@ export const ProxyEndpointSchema = z
     stickyKey: ProxyStickyKeySchema,
     /** `host:port`; the address is not a credential, the username and password are. */
     server: z.string().regex(/^[^\s:/@]+:\d{1,5}$/, "Expected host:port"),
+    /** How the browser should dial `server`. Absent means HTTP. */
+    protocol: z.enum(["http", "socks5"]).optional(),
     username: SecretRefSchema.optional(),
     password: SecretRefSchema.optional(),
     kind: ProxyKindSchema,
@@ -70,6 +72,10 @@ export const BrowserPersonaSchema = z.object({
   proxy: ProxyEndpointSchema.optional(),
   locale: LbLocaleSchema,
   timezoneId: z.string().min(1),
+  /** Sent as the `Accept-Language` header. Derived from `locale` when omitted. */
+  acceptLanguage: z.string().min(1).max(200).optional(),
+  /** `camoufox` is the Firefox fallback. Absent means the Chromium engine. */
+  engine: z.enum(["chromium", "camoufox"]).optional(),
   extensionPaths: z.array(z.string().min(1)).optional(),
 });
 export type BrowserPersona = z.infer<typeof BrowserPersonaSchema>;
@@ -117,6 +123,8 @@ export interface BrowserSession {
    * driver. Mapping uses this DOM description only; it never screenshots the page.
    */
   formFields?(selector: string): Promise<FormFieldInfo[]>;
+  /** Status and headers of the last document response, when the engine recorded one. */
+  navigationMeta?(): Promise<{ status: number | null; headers: Record<string, string> }>;
   close(): Promise<void>;
 }
 
