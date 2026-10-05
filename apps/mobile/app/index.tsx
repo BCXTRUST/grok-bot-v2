@@ -182,6 +182,7 @@ export default function Home() {
               Alert.alert("Create", undefined, [
                 { text: "New bot", onPress: () => router.push("/new") },
                 { text: "New group", onPress: () => router.push("/new-group") },
+                { text: "Link Builder", onPress: () => router.push("/link-builder") },
                 { text: "Cancel", style: "cancel" },
               ])
             }

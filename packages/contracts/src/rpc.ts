@@ -44,16 +44,17 @@ import {
   ThreadSnapshotSchema,
   UpdateBotInput,
   UpdateGroupInput,
+  UpsertSiteLoginInput,
   UsageRecordSchema,
   VoiceCatalogEntrySchema,
   VoiceCredentialSchema,
   VoiceInfoSchema,
   VoiceStatusSchema,
   WorkspaceMemoryConfigSchema,
-  UpsertSiteLoginInput,
 } from "./domain.js";
 import { ProductEventSchema } from "./events.js";
 import { Id } from "./ids.js";
+import { linkBuilderContract } from "./link-builder-api.js";
 import { SearchQueryOutputSchema } from "./search.js";
 
 const botId = z.object({ botId: Id });
@@ -525,6 +526,7 @@ export const appContract = {
   search: {
     query: oc.input(z.object({ q: z.string().max(200) })).output(SearchQueryOutputSchema),
   },
+  linkBuilder: linkBuilderContract,
   voice: {
     catalog: oc.output(z.array(VoiceCatalogEntrySchema)),
     status: oc.output(VoiceStatusSchema),

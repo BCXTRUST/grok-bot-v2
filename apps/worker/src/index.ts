@@ -1,5 +1,6 @@
 import type { JobPublisher, JobWorkerHost } from "@rakazo/adapter-kit";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
+import { startLinkBuilderFakeRunner } from "./link-builder-fake.js";
 
 loadRootEnv();
 
@@ -128,6 +129,7 @@ async function main() {
     deploymentModelKey: process.env.OPENROUTER_API_KEY,
   });
   await jobHost.start(jobHandlers);
+  const linkBuilder = startLinkBuilderFakeRunner({ prisma, realtime });
   const reconciler = createJobReconciler({
     prisma,
     jobs,
@@ -140,6 +142,7 @@ async function main() {
     if (stopping) return;
     stopping = true;
     await reconciler.stop();
+    linkBuilder.stop();
     await jobHost.stop();
     await jobs.close();
     await realtime.close();

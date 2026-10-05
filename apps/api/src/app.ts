@@ -240,6 +240,7 @@ export async function createApp(
     connectors: stack.connector,
     remoteConnectors,
     artifacts,
+    realtime,
     dataDir: env.dataDir,
     env: {
       defaultProvider: env.defaultProvider,

@@ -1,5 +1,39 @@
-import type { LbMarket, LbMarketPolicy } from "@rakazo/contracts";
+import { LB_DEFAULT_MARKET, type LbMarket, type LbMarketPolicy } from "@rakazo/contracts";
 import { assertCount } from "./errors.js";
+
+/**
+ * Country defaults for the project wizard. Locale and time zone stay editable after they
+ * are filled in; unknown countries fall back to English with no region and UTC.
+ */
+export const LB_COUNTRY_DEFAULTS = {
+  DE: { language: "de", locale: "de-DE", timezoneId: "Europe/Berlin" },
+  AT: { language: "de", locale: "de-AT", timezoneId: "Europe/Vienna" },
+  CH: { language: "de", locale: "de-CH", timezoneId: "Europe/Zurich" },
+  US: { language: "en", locale: "en-US", timezoneId: "America/New_York" },
+  GB: { language: "en", locale: "en-GB", timezoneId: "Europe/London" },
+  FR: { language: "fr", locale: "fr-FR", timezoneId: "Europe/Paris" },
+  ES: { language: "es", locale: "es-ES", timezoneId: "Europe/Madrid" },
+  IT: { language: "it", locale: "it-IT", timezoneId: "Europe/Rome" },
+  NL: { language: "nl", locale: "nl-NL", timezoneId: "Europe/Amsterdam" },
+  PL: { language: "pl", locale: "pl-PL", timezoneId: "Europe/Warsaw" },
+  SE: { language: "sv", locale: "sv-SE", timezoneId: "Europe/Stockholm" },
+  BR: { language: "pt-BR", locale: "pt-BR", timezoneId: "America/Sao_Paulo" },
+} as const satisfies Record<string, Omit<LbMarket, "country">>;
+
+export const LB_WIZARD_COUNTRIES = Object.keys(LB_COUNTRY_DEFAULTS);
+
+/** Derives a market from an ISO country code. Locale and time zone remain editable. */
+export function defaultMarketForCountry(country: string): LbMarket {
+  const code = country.trim().toUpperCase();
+  if (!/^[A-Z]{2}$/.test(code)) throw new RangeError("Expected ISO 3166-1 alpha-2");
+  const known = LB_COUNTRY_DEFAULTS[code as keyof typeof LB_COUNTRY_DEFAULTS];
+  if (!known) return { country: code, language: "en", locale: "en", timezoneId: "UTC" };
+  return { country: code, ...known };
+}
+
+export function defaultProjectMarket(): LbMarket {
+  return { ...LB_DEFAULT_MARKET };
+}
 
 export type MarketRef = Pick<LbMarket, "country" | "language">;
 

@@ -57,6 +57,8 @@ export default function Layout() {
             <Stack.Screen name="thread" options={{ title: "Thread" }} />
             <Stack.Screen name="routine" options={{ title: "Routine" }} />
             <Stack.Screen name="computer" options={{ title: "Computer" }} />
+            <Stack.Screen name="link-builder" options={{ title: "Link Builder" }} />
+            <Stack.Screen name="link-builder-ticket" options={{ title: "Operator" }} />
           </Stack>
         </ThemeProvider>
       ) : (
