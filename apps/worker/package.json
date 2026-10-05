@@ -11,14 +11,17 @@
   },
   "dependencies": {
     "@rakazo/adapter-kit": "workspace:*",
-    "@rakazo/contracts": "workspace:*",
-    "@rakazo/linkbuilder-core": "workspace:*",
     "@rakazo/adapters": "workspace:*",
+    "@rakazo/contracts": "workspace:*",
     "@rakazo/core": "workspace:*",
     "@rakazo/db": "workspace:*",
+    "@rakazo/linkbuilder-browser": "workspace:*",
+    "@rakazo/linkbuilder-core": "workspace:*",
+    "@rakazo/linkbuilder-drivers": "workspace:*",
     "@rakazo/memory": "workspace:*"
   },
   "devDependencies": {
+    "@rakazo/api": "workspace:*",
     "typescript": "^5.9.2",
     "vitest": "^4.1.10"
   }

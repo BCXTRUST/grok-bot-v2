@@ -16,6 +16,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { LoadingState } from "../../components/beautiful-ui/primitives";
 import { rpc } from "../../lib/rpc";
 import {
+  artifactImageSrc,
   canStart,
   draftFromProject,
   emptyDraft,
@@ -25,6 +26,14 @@ import {
   wizardStepIssues,
 } from "./model.js";
 import { DashboardView, OperatorView, ProjectView, WizardView } from "./views.js";
+
+function useArtifactLoader(projectId: string) {
+  return useCallback(
+    (artifactId: string) =>
+      rpc.linkBuilder.artifacts.get({ projectId, artifactId }).then(artifactImageSrc),
+    [projectId],
+  );
+}
 
 export function LinkBuilderPage() {
   const params = useParams();
@@ -218,6 +227,7 @@ function ProjectRoute({ projectId }: { projectId: string }) {
   const [captchas, setCaptchas] = useState<LbCaptchaEventView[]>([]);
   const [tickets, setTickets] = useState<LbOperatorTicketView[]>([]);
   const [busy, setBusy] = useState(false);
+  const loadArtifact = useArtifactLoader(projectId);
 
   const reload = useCallback(async () => {
     const [
@@ -324,6 +334,7 @@ function ProjectRoute({ projectId }: { projectId: string }) {
         void rpc.linkBuilder.placements.verify({ projectId, placementId }).then(() => reload())
       }
       onOpenTicket={(ticketId) => navigate(`/link-builder/${projectId}/operator/${ticketId}`)}
+      loadArtifact={loadArtifact}
     />
   );
 }
@@ -333,6 +344,7 @@ function OperatorRoute({ projectId, ticketId }: { projectId: string; ticketId: s
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<string | null>(null);
+  const loadArtifact = useArtifactLoader(projectId);
   useEffect(() => {
     void rpc.linkBuilder.operator.tickets({ projectId }).then((tickets) => {
       const found = tickets.find((item) => item.id === ticketId) ?? null;
@@ -369,6 +381,7 @@ function OperatorRoute({ projectId, ticketId }: { projectId: string; ticketId: s
       onNote={setNote}
       onContinue={() => void settle("continue")}
       onSkip={() => void settle("skip")}
+      loadArtifact={loadArtifact}
     />
   );
 }

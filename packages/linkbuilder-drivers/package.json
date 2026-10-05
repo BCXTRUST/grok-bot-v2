@@ -1,0 +1,33 @@
+{
+  "name": "@rakazo/linkbuilder-drivers",
+  "version": "0.1.0",
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "development": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./testing": {
+      "types": "./src/testing/index.ts",
+      "development": "./src/testing/index.ts",
+      "default": "./src/testing/index.ts"
+    }
+  },
+  "scripts": {
+    "check": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run --root ../.. packages/linkbuilder-drivers/src"
+  },
+  "dependencies": {
+    "@rakazo/adapter-kit": "workspace:*",
+    "@rakazo/contracts": "workspace:*",
+    "@rakazo/linkbuilder-core": "workspace:*",
+    "cheerio": "^1.2.0"
+  },
+  "devDependencies": {
+    "@rakazo/linkbuilder-browser": "workspace:*",
+    "typescript": "^5.9.2",
+    "vitest": "^4.1.10"
+  }
+}

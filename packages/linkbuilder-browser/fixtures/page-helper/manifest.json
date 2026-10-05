@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "Fixture Page Helper",
+  "description": "Offline stand-in for the in-page captcha helper, used by tests only.",
+  "version": "0.0.1",
+  "background": { "service_worker": "background.js" },
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

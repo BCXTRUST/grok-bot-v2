@@ -1,0 +1,9 @@
+<h2 class="topic-title"><a href="./viewtopic.php?t={{topicId}}">{{topicTitle}}</a></h2>
+<form id="postform" method="post" action="./posting.php?mode=reply&amp;t={{topicId}}">
+<div class="panel"><h3>Post a reply</h3>
+{{{error}}}
+<p class="rules">{{{linkRule}}}</p>
+<textarea name="message" id="message" rows="12" cols="76" class="inputbox">{{message}}</textarea>
+</div>
+<input type="submit" name="post" value="Submit" class="button1 default-submit-action" />
+</form>

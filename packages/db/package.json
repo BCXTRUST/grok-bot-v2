@@ -8,6 +8,11 @@
       "types": "./src/index.ts",
       "development": "./src/index.ts",
       "default": "./src/index.ts"
+    },
+    "./pglite": {
+      "types": "./src/pglite.ts",
+      "development": "./src/pglite.ts",
+      "default": "./src/pglite.ts"
     }
   },
   "scripts": {
@@ -18,16 +23,18 @@
     "test": "vitest run --root ../.. packages/db/src"
   },
   "dependencies": {
-    "@rakazo/adapter-kit": "workspace:*",
     "@prisma/adapter-pg": "^7.9.1",
     "@prisma/client": "^7.9.1",
+    "@rakazo/adapter-kit": "workspace:*",
     "@rakazo/contracts": "workspace:*",
     "@rakazo/core": "workspace:*",
-    "pg": "^8.16.3",
-    "dotenv": "^17.2.1"
+    "dotenv": "^17.2.1",
+    "pg": "^8.16.3"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8",
     "@types/pg": "^8.15.5",
+    "pglite-prisma-adapter": "^0.7.2",
     "prisma": "^7.9.1",
     "typescript": "^5.9.2",
     "vitest": "^4.1.10"

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   addMarket,
+  artifactImageSrc,
   canStart,
   emptyDraft,
   RESPONSIBILITY_SENTENCE,
@@ -8,6 +9,14 @@ import {
 } from "./model.js";
 
 describe("link builder wizard", () => {
+  it("renders only raster image artifacts as data URLs", () => {
+    expect(artifactImageSrc({ mimeType: "image/png", contentBase64: "iVBO" })).toBe(
+      "data:image/png;base64,iVBO",
+    );
+    expect(artifactImageSrc({ mimeType: "text/html", contentBase64: "PGh0bWw+" })).toBeNull();
+    expect(artifactImageSrc({ mimeType: "image/svg+xml", contentBase64: "PHN2Zz4=" })).toBeNull();
+  });
+
   it("starts on DE and derives US locale and time zone", () => {
     const draft = emptyDraft();
     expect(draft.markets[0]).toMatchObject({

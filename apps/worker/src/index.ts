@@ -1,10 +1,13 @@
-import type { JobPublisher, JobWorkerHost } from "@rakazo/adapter-kit";
+import { FakeCaptchaSolver, type JobPublisher, type JobWorkerHost } from "@rakazo/adapter-kit";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
 import { startLinkBuilderFakeRunner } from "./link-builder-fake.js";
+import { isLinkBuilderRealEnabled, startLinkBuilderRealRunner } from "./link-builder-real.js";
+import { browserFactoryFromEnv } from "./link-builder-real-wiring.js";
 
 loadRootEnv();
 
 import {
+  AgentMailEmulator,
   createBackgroundJobHandlers,
   createConnectorStack,
   createJobReconciler,
@@ -130,6 +133,19 @@ async function main() {
   });
   await jobHost.start(jobHandlers);
   const linkBuilder = startLinkBuilderFakeRunner({ prisma, realtime });
+  const linkBuilderReal = isLinkBuilderRealEnabled()
+    ? startLinkBuilderRealRunner({
+        prisma,
+        secrets,
+        artifacts,
+        realtime,
+        browsers: browserFactoryFromEnv({ env: process.env, dataDir, sandbox, prisma }),
+        // Captell and the live AgentMail inbox arrive in M3; until then real mode uses the fakes.
+        captcha: new FakeCaptchaSolver(),
+        mailbox: new AgentMailEmulator(),
+        workerId: `worker-${process.pid}`,
+      })
+    : null;
   const reconciler = createJobReconciler({
     prisma,
     jobs,
@@ -143,6 +159,7 @@ async function main() {
     stopping = true;
     await reconciler.stop();
     linkBuilder.stop();
+    await linkBuilderReal?.stop();
     await jobHost.stop();
     await jobs.close();
     await realtime.close();

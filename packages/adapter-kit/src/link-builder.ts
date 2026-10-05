@@ -100,12 +100,24 @@ export interface BrowserSession {
   /** Resolves true once the selector matches, false when the timeout elapses first. */
   waitFor(selector: string, options: { timeoutMs: number }): Promise<boolean>;
   screenshotPng(): Promise<Uint8Array>;
+  /** Ids of the extensions the browser loaded, read from their service workers. */
+  loadedExtensions?(): Promise<string[]>;
   close(): Promise<void>;
 }
 
 export interface BrowserSessionProvider {
   describe(): AdapterDescriptor<BrowserSessionCapabilities>;
   open(persona: BrowserPersona, context: AdapterContext): Promise<BrowserSession>;
+}
+
+/**
+ * Where the persona browser runs. `sandbox` drives it inside the computer sandbox; `local` runs it
+ * in-process on the worker host and is only for tests and sandbox-less development.
+ */
+export type BrowserSessionMode = "local" | "sandbox";
+
+export interface BrowserSessionFactory extends BrowserSessionProvider {
+  readonly mode: BrowserSessionMode;
 }
 
 export const CaptchaTypeSchema = LbCaptchaTypeSchema;
@@ -260,6 +272,12 @@ export interface MailboxProvider {
   describe(): AdapterDescriptor<MailboxProviderCapabilities>;
   /** Idempotent: returns the existing inbox for a project when one exists. */
   ensureInbox(projectId: string, context: AdapterContext): Promise<MailboxInbox>;
+  /** Mail received by an inbox, oldest first; `since` excludes earlier mail. */
+  listMessages?(
+    inboxId: string,
+    options: { since?: Date },
+    context: AdapterContext,
+  ): Promise<InboundMail[]>;
 }
 
 export const ModelLaneSchema = LbModelLaneSchema;

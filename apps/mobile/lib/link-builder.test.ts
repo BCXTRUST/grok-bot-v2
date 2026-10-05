@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { OPERATOR_TICKET_PATH, projectStatusLine, ticketActionBody } from "./link-builder.js";
+import {
+  artifactImageUri,
+  OPERATOR_TICKET_PATH,
+  projectStatusLine,
+  ticketActionBody,
+} from "./link-builder.js";
 
 describe("mobile link builder", () => {
   it("summarizes counters and run state", () => {
@@ -18,5 +23,12 @@ describe("mobile link builder", () => {
     expect(ticketActionBody("  solved  ")).toEqual({ note: "solved" });
     expect(ticketActionBody("   ")).toEqual({});
     expect(OPERATOR_TICKET_PATH).toBe("/link-builder-ticket");
+  });
+
+  it("shows only raster screenshots", () => {
+    expect(artifactImageUri({ mimeType: "image/png", contentBase64: "iVBO" })).toBe(
+      "data:image/png;base64,iVBO",
+    );
+    expect(artifactImageUri({ mimeType: "text/html", contentBase64: "PGh0bWw+" })).toBeNull();
   });
 });

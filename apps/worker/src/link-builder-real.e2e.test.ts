@@ -1,0 +1,441 @@
+import { randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { type AdapterContext, FakeCaptchaSolver } from "@rakazo/adapter-kit";
+import { AgentMailEmulator, EncryptedSecretStore, LocalArtifactStore } from "@rakazo/adapters";
+import {
+  continueLbTicket,
+  createLbProject,
+  getLbArtifact,
+  listLbRunSteps,
+  listLbTickets,
+  startLbProject,
+  updateLbProject,
+} from "@rakazo/api/link-builder";
+import { type Actor, LbProjectPatchSchema } from "@rakazo/contracts";
+import { createPgliteDb, type TestDatabase } from "@rakazo/db/pglite";
+import { LocalBrowserSessionFactory } from "@rakazo/linkbuilder-browser";
+import { browserTestGate, FIXTURE_PAGE_HELPER_DIR } from "@rakazo/linkbuilder-browser/testing";
+import { TEST_PACING } from "@rakazo/linkbuilder-core";
+import { PHPBB_SELECTORS, VERIFY_USER_AGENT } from "@rakazo/linkbuilder-drivers";
+import {
+  type FixtureMail,
+  type PhpbbFixture,
+  startPhpbbFixture,
+} from "@rakazo/linkbuilder-drivers/testing";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { LinkBuilderRealRunner } from "./link-builder-real.js";
+
+type ApiDeps = Parameters<typeof createLbProject>[0];
+
+const gate = browserTestGate();
+const actor: Actor = {
+  userId: "user_owner",
+  workspaceId: "org_e2e",
+  email: "owner@example.test",
+  isDeploymentOwner: false,
+};
+const CAPTCHA_ANSWER = "K7XQ2";
+const FAKE_CAPTELL_TOKEN = "ct_live_FAKE00example00token";
+
+/** All-day window in a zone that is far from local midnight now, so the run never closes mid-test. */
+function scheduleTimezone(): string {
+  const hour = new Date().getUTCHours();
+  return hour >= 21 || hour < 2 ? "Pacific/Honolulu" : "UTC";
+}
+
+function webhookFor(mail: FixtureMail, inboxId: string) {
+  return {
+    event_type: "message.received",
+    event_id: `evt_${randomUUID()}`,
+    message: {
+      inbox_id: inboxId,
+      message_id: `msg_${randomUUID()}`,
+      from: mail.from,
+      subject: mail.subject,
+      text: mail.textBody,
+      html: mail.htmlBody,
+      timestamp: new Date().toISOString(),
+    },
+  };
+}
+
+interface Harness {
+  db: TestDatabase;
+  deps: ApiDeps;
+  root: string;
+  artifacts: LocalArtifactStore;
+  secrets: EncryptedSecretStore;
+  emulator: AgentMailEmulator;
+  factory: LocalBrowserSessionFactory;
+}
+
+async function createHarness(): Promise<Harness> {
+  const db = await createPgliteDb();
+  await db.prisma.organization.create({
+    data: { id: actor.workspaceId, name: "E2E", slug: "e2e", createdAt: new Date() },
+  });
+  await db.prisma.user.create({ data: { id: actor.userId, name: "Owner", email: actor.email } });
+  const root = await mkdtemp(join(tmpdir(), "rakazo-lb-e2e-"));
+  const secrets = new EncryptedSecretStore("e2e-placeholder-encryption-key-not-a-secret");
+  const artifacts = new LocalArtifactStore(root);
+  return {
+    db,
+    deps: { prisma: db.prisma, secrets, artifacts } as unknown as ApiDeps,
+    root,
+    artifacts,
+    secrets,
+    emulator: new AgentMailEmulator(),
+    factory: new LocalBrowserSessionFactory({
+      profileRoot: join(root, ".browser-profiles"),
+      helperDirs: [FIXTURE_PAGE_HELPER_DIR],
+      headless: true,
+      pacing: TEST_PACING,
+      env: { LINK_BUILDER_BROWSER: "local" },
+    }),
+  };
+}
+
+/** The wizard's calls, through the M1 API functions, then a qualified board for discovery's output. */
+async function wizardProject(h: Harness, fixture: PhpbbFixture, name: string, personaName: string) {
+  const created = await createLbProject(h.deps, actor, {
+    name,
+    brandName: "Vereinsplaner",
+    allowedDomains: ["vereinsplaner.example"],
+    markets: [{ country: "DE", language: "de", locale: "de-DE", timezoneId: "Europe/Berlin" }],
+  });
+  const patch = LbProjectPatchSchema.parse({
+    persona: { displayName: personaName, register: "du" },
+    quotas: { newPerDay: 1, livePerDay: 1 },
+    schedule: {
+      timezone: scheduleTimezone(),
+      weekdaysOnly: false,
+      window: { start: "00:00", end: "23:59" },
+    },
+    topicLanes: [{ id: "lane-members", tag: "members", description: "Member lists for clubs" }],
+    targets: [{ url: "https://vereinsplaner.example/mitglieder", priority: 80 }],
+    warmup: { minPostsBeforeLink: 0, minAccountAgeHours: 0 },
+    captchaToken: FAKE_CAPTELL_TOKEN,
+    provisionMailbox: true,
+  });
+  const updated = await updateLbProject(h.deps, actor, { projectId: created.id, ...patch });
+  const row = await h.db.prisma.lbProject.findUniqueOrThrow({ where: { id: created.id } });
+  h.emulator.registerInbox(created.id, { inboxId: row.mailboxId!, address: row.mailboxAddress! });
+  await startLbProject(h.deps, actor, created.id);
+  const host = await h.db.prisma.lbHost.create({
+    data: {
+      workspaceId: actor.workspaceId,
+      projectId: created.id,
+      registrableDomain: new URL(fixture.origin).hostname,
+      homepageUrl: `${fixture.origin}/`,
+      platform: "phpbb",
+      language: "de",
+      country: "DE",
+      status: "qualified",
+      qualityScore: 0.7,
+    },
+  });
+  return { project: updated, host, mailboxId: row.mailboxId! };
+}
+
+function deliverTo(h: Harness) {
+  return (mail: FixtureMail) => {
+    const inbox = h.emulator.inboxForAddress(mail.to);
+    if (inbox) h.emulator.receiveWebhook(webhookFor(mail, inbox.inboxId));
+  };
+}
+
+async function tickUntil(
+  runner: LinkBuilderRealRunner,
+  done: () => Promise<boolean>,
+  maxTicks = 40,
+): Promise<number> {
+  for (let tick = 1; tick <= maxTicks; tick += 1) {
+    await runner.tick();
+    if (await done()) return tick;
+  }
+  throw new Error(`Not done after ${maxTicks} ticks`);
+}
+
+const adapterContext: AdapterContext = {
+  operationId: "e2e",
+  traceId: "e2e",
+  workspaceId: actor.workspaceId,
+  userId: actor.userId,
+  signal: new AbortController().signal,
+};
+
+it.runIf(gate.required)("has Chromium when the browser end to end test is required", () => {
+  expect(gate.reason).toBeUndefined();
+});
+
+describe.skipIf(!gate.available)(
+  `link builder real driver end to end${gate.reason ? ` (${gate.reason})` : ""}`,
+  () => {
+    let h: Harness;
+    const fixtures: PhpbbFixture[] = [];
+    const runners: LinkBuilderRealRunner[] = [];
+
+    beforeAll(async () => {
+      h = await createHarness();
+    }, 60_000);
+
+    afterAll(async () => {
+      await Promise.all(runners.map((runner) => runner.close()));
+      await Promise.all(fixtures.map((fixture) => fixture.close()));
+      await h?.db.close();
+      if (h?.root) await rm(h.root, { recursive: true, force: true });
+    });
+
+    it("registers, verifies mail, posts and counts one LIVE placement", async () => {
+      const fixture = await startPhpbbFixture({
+        rel: "ugc",
+        cookieWall: true,
+        linkRuleMinPosts: 0,
+        captchaAnswer: CAPTCHA_ANSWER,
+        deliverMail: deliverTo(h),
+      });
+      fixtures.push(fixture);
+      const { project, host, mailboxId } = await wizardProject(
+        h,
+        fixture,
+        "Vereinsplaner Forum",
+        "Mira Sol",
+      );
+      const captcha = new FakeCaptchaSolver({ outcomes: [CAPTCHA_ANSWER] });
+      const runner = new LinkBuilderRealRunner({
+        prisma: h.db.prisma,
+        secrets: h.secrets,
+        artifacts: h.artifacts,
+        browsers: h.factory,
+        captcha,
+        mailbox: h.emulator,
+        allowPrivateVerify: true,
+        verifyDelayMs: 0,
+        pageHelperPollMs: 50,
+        workerId: "e2e-worker-a",
+      });
+      runners.push(runner);
+      const { prisma } = h.db;
+      const run = await prisma.lbRun.findFirstOrThrow({ where: { projectId: project.id } });
+
+      await tickUntil(runner, async () => {
+        const current = await prisma.lbRun.findUniqueOrThrow({ where: { id: run.id } });
+        return current.status === "succeeded";
+      });
+
+      const placements = await prisma.lbPlacement.findMany({ where: { projectId: project.id } });
+      expect(placements).toHaveLength(1);
+      const placement = placements[0]!;
+      expect(placement.status).toBe("nofollow_live");
+      expect(placement.rel).toEqual(["ugc"]);
+      expect(placement.counted).toBe(true);
+      expect(placement.verifyMethod).toBe("logged_out_fetch");
+      expect(placement.postUrl).toBe(`${fixture.origin}/viewtopic.php?p=2#p2`);
+      expect(placement.targetUrl).toBe("https://vereinsplaner.example/mitglieder");
+
+      const finalHost = await prisma.lbHost.findUniqueOrThrow({ where: { id: host.id } });
+      expect(finalHost.status).toBe("used");
+      const finalRun = await prisma.lbRun.findUniqueOrThrow({ where: { id: run.id } });
+      expect(finalRun).toMatchObject({ newToday: 1, liveToday: 1, uniqueHosts: 1 });
+
+      const steps = await prisma.lbRunStep.findMany({
+        where: { runId: run.id },
+        orderBy: { stepIndex: "asc" },
+      });
+      expect(steps.map((step) => step.kind)).toEqual([
+        "select_host",
+        "open_session",
+        "cookie_wall",
+        "register",
+        "captcha",
+        "email_verify",
+        "warmup",
+        "post",
+        "verify",
+        "close",
+      ]);
+      expect(steps.every((step) => step.error === null)).toBe(true);
+      const shots = steps.flatMap((step) => step.artifactIds);
+      const shotRows = await prisma.artifact.findMany({ where: { id: { in: shots } } });
+      expect(shotRows.filter((row) => row.mimeType === "image/png").length).toBeGreaterThanOrEqual(
+        6,
+      );
+      const postStep = steps.find((step) => step.kind === "post")!;
+      expect(postStep.artifactIds).toHaveLength(2);
+
+      const snapshot = await prisma.artifact.findUniqueOrThrow({
+        where: { id: placement.snapshotArtifactId! },
+      });
+      expect(snapshot.mimeType).toBe("text/html");
+      const snapshotHtml = new TextDecoder().decode(
+        await h.artifacts.get(snapshot.storageKey, adapterContext),
+      );
+      expect(snapshotHtml).toContain('href="https://vereinsplaner.example/mitglieder"');
+
+      // Logged-out verification: no persona cookie, the verifier's own user agent.
+      const verifyRequests = fixture.requests.filter((r) => r.userAgent === VERIFY_USER_AGENT);
+      expect(verifyRequests.length).toBeGreaterThan(0);
+      expect(verifyRequests.every((r) => r.cookie === null)).toBe(true);
+
+      // Credentials live only in the encrypted vault and never reach step outcomes.
+      const account = await prisma.lbHostAccount.findUniqueOrThrow({ where: { hostId: host.id } });
+      const login = await prisma.siteLogin.findUniqueOrThrow({
+        where: { id: account.siteLoginId! },
+        include: { secret: true },
+      });
+      const password = h.secrets.load(login.secret.ciphertext);
+      expect(fixture.users.get(account.username)?.password).toBe(password);
+      expect(JSON.stringify(steps)).not.toContain(password);
+      expect(login.secret.ciphertext).not.toContain(password);
+      expect(account).toMatchObject({ postCount: 1, linkPostCount: 1 });
+      expect(account.emailVerifiedAt).not.toBeNull();
+      expect(h.emulator.listMessages).toBeDefined();
+      expect(
+        (await h.emulator.listMessages(mailboxId, {}, adapterContext)).some(
+          (m) => m.subject.length > 0,
+        ),
+      ).toBe(true);
+
+      const captchaEvents = await prisma.lbCaptchaEvent.findMany({
+        where: { projectId: project.id },
+      });
+      expect(captchaEvents).toMatchObject([
+        { type: "image_letters", door: "https_api", outcome: "placed_submitted", attempt: 1 },
+      ]);
+      expect(captcha.requests[0]?.type).toBe("ImageToText");
+
+      expect(existsSync(join(h.root, ".browser-profiles", project.id))).toBe(true);
+
+      // The partial unique index keeps it at one counted placement per host.
+      await expect(
+        prisma.lbPlacement.create({
+          data: {
+            workspaceId: actor.workspaceId,
+            projectId: project.id,
+            hostId: host.id,
+            hostAccountId: account.id,
+            threadUrl: placement.threadUrl,
+            postUrl: `${fixture.origin}/viewtopic.php?p=99#p99`,
+            targetUrl: placement.targetUrl,
+            anchorText: placement.anchorText,
+            status: "live",
+            counted: true,
+          },
+        }),
+      ).rejects.toThrow();
+
+      const viewSteps = await listLbRunSteps(h.deps, actor, {
+        projectId: project.id,
+        runId: run.id,
+      });
+      expect(viewSteps.find((step) => step.kind === "post")?.artifactIds).toEqual(
+        postStep.artifactIds,
+      );
+
+      const artifactDir = process.env.LB_E2E_ARTIFACT_DIR;
+      if (artifactDir) {
+        const shot = await prisma.artifact.findUniqueOrThrow({
+          where: { id: postStep.artifactIds.at(-1)! },
+        });
+        await mkdir(artifactDir, { recursive: true });
+        await writeFile(
+          join(artifactDir, "lb-m2-board-after-reply.png"),
+          await h.artifacts.get(shot.storageKey, adapterContext),
+        );
+        await writeFile(join(artifactDir, "lb-m2-verification-snapshot.html"), snapshotHtml);
+      }
+    }, 180_000);
+
+    it("parks a rejected captcha and resumes from the page without replaying a submit", async () => {
+      const fixture = await startPhpbbFixture({
+        rel: "follow",
+        linkRuleMinPosts: 0,
+        captchaAnswer: CAPTCHA_ANSWER,
+        deliverMail: deliverTo(h),
+      });
+      fixtures.push(fixture);
+      const { project, host } = await wizardProject(
+        h,
+        fixture,
+        "Vereinsplaner Operator",
+        "Jonas Brandt",
+      );
+      const runner = new LinkBuilderRealRunner({
+        prisma: h.db.prisma,
+        secrets: h.secrets,
+        artifacts: h.artifacts,
+        browsers: h.factory,
+        captcha: new FakeCaptchaSolver({ outcomes: ["WRONG1", "WRONG2"] }),
+        mailbox: h.emulator,
+        allowPrivateVerify: true,
+        verifyDelayMs: 0,
+        workerId: "e2e-worker-b",
+      });
+      runners.push(runner);
+      const { prisma } = h.db;
+      const hostStatus = async () =>
+        (await prisma.lbHost.findUniqueOrThrow({ where: { id: host.id } })).status;
+
+      await tickUntil(runner, async () => (await hostStatus()) === "parked_operator");
+      expect(fixture.registrationSubmits()).toBe(2);
+      const [ticket] = await listLbTickets(h.deps, actor, {
+        projectId: project.id,
+        status: "open",
+      });
+      expect(ticket).toMatchObject({ reason: "captcha_unsolved", hostId: host.id });
+      expect(ticket?.screenshotArtifactId).toBeTruthy();
+      const parkedHost = await prisma.lbHost.findUniqueOrThrow({ where: { id: host.id } });
+      expect(parkedHost.parkedFrom).toBe("registering");
+      const ticketShot = await getLbArtifact(h.deps, actor, {
+        projectId: project.id,
+        artifactId: ticket!.screenshotArtifactId!,
+      });
+      expect(ticketShot.mimeType).toBe("image/png");
+      if (process.env.LB_E2E_ARTIFACT_DIR) {
+        await writeFile(
+          join(process.env.LB_E2E_ARTIFACT_DIR, "lb-m2-operator-ticket.png"),
+          Buffer.from(ticketShot.contentBase64, "base64"),
+        );
+      }
+
+      // While parked the runner waits instead of retrying the board.
+      const stepsBefore = await prisma.lbRunStep.count({ where: { hostId: host.id } });
+      await runner.tick();
+      expect(await prisma.lbRunStep.count({ where: { hostId: host.id } })).toBe(stepsBefore);
+
+      // The operator solves the captcha in the persona browser and submits the form themselves.
+      const session = runner.sessionFor(project.id);
+      expect(session).not.toBeNull();
+      await session!.fill(PHPBB_SELECTORS.captchaAnswer, CAPTCHA_ANSWER);
+      await session!.click(PHPBB_SELECTORS.registerSubmit);
+      expect(fixture.registrationSubmits()).toBe(3);
+      const imagesBeforeResume = fixture.captchaImagesServed();
+
+      await continueLbTicket(h.deps, actor, { projectId: project.id, ticketId: ticket!.id });
+      expect(await hostStatus()).toBe("registering");
+
+      await runner.tick();
+      expect(await hostStatus()).toBe("pending_email");
+      const resumed = await prisma.lbRunStep.findFirstOrThrow({
+        where: { hostId: host.id },
+        orderBy: { stepIndex: "desc" },
+      });
+      expect(resumed.kind).toBe("register");
+      expect(resumed.outcome).toMatchObject({ resumed: true, registration: "pending_email" });
+      expect(fixture.registrationSubmits()).toBe(3);
+      expect(fixture.captchaImagesServed()).toBe(imagesBeforeResume);
+
+      const run = await prisma.lbRun.findFirstOrThrow({ where: { projectId: project.id } });
+      await tickUntil(runner, async () => {
+        const current = await prisma.lbRun.findUniqueOrThrow({ where: { id: run.id } });
+        return current.status === "succeeded";
+      });
+      const placement = await prisma.lbPlacement.findFirstOrThrow({ where: { hostId: host.id } });
+      expect(placement).toMatchObject({ status: "live", counted: true });
+      expect(fixture.registrationSubmits()).toBe(3);
+    }, 180_000);
+  },
+);

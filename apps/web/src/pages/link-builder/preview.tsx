@@ -29,6 +29,7 @@ const ticket: LbOperatorTicketView = {
   runId: "run-1",
   reason: "captcha_unsolved",
   screenUrl: null,
+  screenshotArtifactId: null,
   note: null,
   status: "open",
   createdAt: "2026-10-05T12:00:00.000Z",

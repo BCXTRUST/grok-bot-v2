@@ -114,6 +114,7 @@ import {
   continueLbTicket,
   createLbProject,
   followLbProject,
+  getLbArtifact,
   getLbProject,
   listLbCaptchaEvents,
   listLbDrafts,
@@ -3029,6 +3030,11 @@ export function createRouter(deps: RouterDeps) {
         ),
         skip: authed.linkBuilder.operator.skip.handler(async ({ context, input }) =>
           skipLbTicket(deps, context.actor, input),
+        ),
+      },
+      artifacts: {
+        get: authed.linkBuilder.artifacts.get.handler(async ({ context, input }) =>
+          getLbArtifact(deps, context.actor, input),
         ),
       },
       captell: {
