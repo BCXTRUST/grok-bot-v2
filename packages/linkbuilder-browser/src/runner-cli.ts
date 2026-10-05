@@ -30,6 +30,8 @@ export const RunnerLaunchSchema = z
     helperDirs: z.array(z.string().min(1)).default([]),
     locale: z.string().min(2),
     timezoneId: z.string().min(1),
+    acceptLanguage: z.string().min(1).optional(),
+    engine: z.enum(["playwright", "patchright", "camoufox"]).optional(),
     proxy: z
       .object({
         server: z.string().min(1),
@@ -83,7 +85,11 @@ async function serve(statePath: string, env: NodeJS.ProcessEnv, io: RunnerIo): P
   const launch = RunnerLaunchSchema.parse(decodeEnvJson(env[LAUNCH_ENV]));
   const session = await launchPlaywrightSession(launch, env).catch((error: unknown) => {
     const message = error instanceof Error ? error.message : String(error);
-    throw new Error(redactSecrets(message, [launch.proxy?.password ?? ""]));
+    const password = launch.proxy?.password ?? "";
+    const username = launch.proxy?.username ?? "";
+    const userinfo = username && password ? `${username}:${password}` : "";
+    const atHost = userinfo && launch.proxy?.server ? `${userinfo}@${launch.proxy.server}` : "";
+    throw new Error(redactSecrets(message, [password, username, userinfo, atHost]));
   });
   const rpc = new BrowserRpcServer(session);
   let idleTimer: NodeJS.Timeout | undefined;

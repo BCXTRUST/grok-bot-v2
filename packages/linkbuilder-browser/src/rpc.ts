@@ -40,6 +40,7 @@ export const BrowserRpcRequestSchema = z.discriminatedUnion("method", [
     })
     .strict(),
   z.object({ method: z.literal("pageText") }).strict(),
+  z.object({ method: z.literal("navigationMeta") }).strict(),
   z.object({ method: z.literal("formFields"), selector }).strict(),
   z
     .object({
@@ -117,6 +118,8 @@ export class BrowserRpcServer {
         return session.injectToken(request.fieldName, request.token);
       case "pageText":
         return session.pageText();
+      case "navigationMeta":
+        return session.navigationMeta ? session.navigationMeta() : { status: null, headers: {} };
       case "formFields":
         if (!session.formFields) throw new Error("This browser cannot list form fields");
         return session.formFields(request.selector);
@@ -208,6 +211,12 @@ export class RpcBrowserSession implements BrowserSession {
 
   async pageText(): Promise<string> {
     return z.string().parse(await this.call({ method: "pageText" }));
+  }
+
+  async navigationMeta(): Promise<{ status: number | null; headers: Record<string, string> }> {
+    return z
+      .object({ status: z.number().nullable(), headers: z.record(z.string(), z.string()) })
+      .parse(await this.call({ method: "navigationMeta" }));
   }
 
   async formFields(selector: string): Promise<FormFieldInfo[]> {

@@ -77,6 +77,8 @@ export interface LocalBrowserSessionFactoryOptions {
   pacing?: PacingPolicy;
   random?: () => number;
   executablePath?: string;
+  /** Camoufox binary. Falls back to `LINK_BUILDER_CAMOUFOX_PATH`. */
+  camoufoxPath?: string;
   engine?: BrowserEngine;
   proxyResolver?: ProxyResolver;
   env?: NodeJS.ProcessEnv;
@@ -109,12 +111,16 @@ export class LocalBrowserSessionFactory implements BrowserSessionFactory {
         helperDirs: parsed.extensionPaths ?? this.options.helperDirs ?? [],
         locale: parsed.locale,
         timezoneId: parsed.timezoneId,
+        acceptLanguage: parsed.acceptLanguage,
         proxy: await resolveProxy(parsed, this.options.proxyResolver, context),
         headless: this.options.headless,
         pacing: this.options.pacing,
         random: this.options.random,
-        executablePath: this.options.executablePath,
-        engine: this.options.engine,
+        executablePath:
+          parsed.engine === "camoufox"
+            ? (this.options.camoufoxPath ?? this.env.LINK_BUILDER_CAMOUFOX_PATH)
+            : this.options.executablePath,
+        engine: parsed.engine === "camoufox" ? "camoufox" : this.options.engine,
       },
       this.env,
     );
@@ -133,6 +139,7 @@ export interface SandboxBrowserSessionFactoryOptions {
   /** Helper extension directories inside the sandbox. */
   helperDirs?: readonly string[];
   executablePath?: string;
+  camoufoxPath?: string;
   headless?: boolean;
   pacing?: PacingPolicy;
   proxyResolver?: ProxyResolver;
@@ -233,9 +240,14 @@ export class SandboxBrowserSessionFactory implements BrowserSessionFactory {
         helperDirs: [...(parsed.extensionPaths ?? this.options.helperDirs ?? [])],
         locale: parsed.locale,
         timezoneId: parsed.timezoneId,
+        acceptLanguage: parsed.acceptLanguage,
         proxy: await resolveProxy(parsed, this.options.proxyResolver, context),
         headless: this.options.headless,
-        executablePath: this.options.executablePath ?? SANDBOX_CHROMIUM,
+        executablePath:
+          parsed.engine === "camoufox"
+            ? (this.options.camoufoxPath ?? process.env.LINK_BUILDER_CAMOUFOX_PATH)
+            : (this.options.executablePath ?? SANDBOX_CHROMIUM),
+        engine: parsed.engine === "camoufox" ? "camoufox" : undefined,
         pacing: this.options.pacing,
       };
       const started = await collect(
