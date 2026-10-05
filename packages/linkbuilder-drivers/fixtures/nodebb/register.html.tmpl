@@ -1,0 +1,17 @@
+<form id="register" method="post" action="{{registerAction}}" class="{{formClass}}">
+<h1>Register</h1>
+{{{error}}}
+<p id="rules">{{linkRule}}</p>
+<label for="{{userId}}">Username</label>
+<input id="{{userId}}" name="{{userName}}" autocomplete="username" value="{{username}}" />
+<label for="{{emailId}}">Email</label>
+<input id="{{emailId}}" name="{{emailName}}" type="email" autocomplete="email" value="{{email}}" />
+<label for="{{passwordId}}">Password</label>
+<input id="{{passwordId}}" name="{{passwordName}}" type="password" autocomplete="new-password" />
+<label for="{{confirmId}}">Confirm password</label>
+<input id="{{confirmId}}" name="{{confirmName}}" type="password" autocomplete="new-password" />
+{{{captchaBlock}}}
+<label for="{{consentId}}">I accept the board rules</label>
+<input id="{{consentId}}" name="{{consentName}}" type="checkbox" value="yes" />
+<button type="submit" name="submit" id="submit" value="1">Register</button>
+</form>

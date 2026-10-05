@@ -1,0 +1,8 @@
+<form id="reply" method="post" action="{{replyAction}}" class="{{formClass}}">
+<h1>Reply: {{topicTitle}}</h1>
+{{{error}}}
+{{{memberLink}}}
+<label for="{{bodyId}}">Message</label>
+<textarea id="{{bodyId}}" name="{{bodyName}}">{{message}}</textarea>
+<button type="submit" name="submit" id="submit" value="1">Post reply</button>
+</form>

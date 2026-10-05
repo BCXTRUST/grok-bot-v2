@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { BrowserSession } from "@rakazo/adapter-kit";
+import type { BrowserSession, FormFieldInfo } from "@rakazo/adapter-kit";
 import {
   assertPacing,
   HUMAN_PACING,
@@ -236,6 +236,67 @@ export class PlaywrightBrowserSession implements BrowserSession {
 
   async pageText(): Promise<string> {
     return this.page.locator("body").innerText();
+  }
+
+  async formFields(selector: string): Promise<FormFieldInfo[]> {
+    return this.page.evaluate((rootSelector) => {
+      const cssEscape = (value: string) => value.replace(/[^A-Za-z0-9_-]/g, "\\$&");
+      const rootDoc = globalThis as unknown as {
+        document: {
+          querySelector: (selector: string) => DomNode | null;
+        };
+      };
+      interface DomNode {
+        matches: (selector: string) => boolean;
+        querySelector: (selector: string) => DomNode | null;
+        querySelectorAll: (selector: string) => Iterable<DomNode>;
+        closest: (selector: string) => DomNode | null;
+        id: string;
+        tagName: string;
+        textContent: string | null;
+        getAttribute: (name: string) => string | null;
+        hasAttribute: (name: string) => boolean;
+      }
+      const root = rootDoc.document.querySelector(rootSelector);
+      if (!root) return [];
+      const form = root.matches("form") ? root : root.querySelector("form");
+      const scope = form ?? root;
+      return [...scope.querySelectorAll("input, textarea, select, button")].map((el, index) => {
+        const id = el.id || null;
+        const name = el.getAttribute("name");
+        const tag = el.tagName.toLowerCase();
+        const labelFor = id
+          ? rootDoc.document.querySelector(`label[for="${cssEscape(id)}"]`)
+          : null;
+        const parent = el.closest("label");
+        const own = tag === "button" || el.getAttribute("type") === "submit" ? el.textContent : "";
+        const label = (
+          labelFor?.textContent ||
+          parent?.textContent ||
+          el.getAttribute("aria-label") ||
+          own ||
+          ""
+        )
+          .replace(/\s+/g, " ")
+          .trim();
+        const control = id
+          ? `#${cssEscape(id)}`
+          : name
+            ? `[name="${cssEscape(name)}"]`
+            : `${tag}:nth-of-type(${index + 1})`;
+        return {
+          selector: control,
+          tag,
+          type: el.getAttribute("type"),
+          name,
+          id,
+          autocomplete: el.getAttribute("autocomplete"),
+          label,
+          role: el.getAttribute("role") ?? (tag === "textarea" ? "textbox" : null),
+          required: el.hasAttribute("required"),
+        };
+      });
+    }, selector);
   }
 
   async waitFor(selector: string, options: { timeoutMs: number }): Promise<boolean> {

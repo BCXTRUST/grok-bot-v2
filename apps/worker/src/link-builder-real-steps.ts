@@ -64,10 +64,13 @@ import {
   boardDriverFor,
   type CaptchaChallenge,
   enrichCaptchaChallenge,
+  formErrorFixable,
   placeCaptchaToken,
   type RegistrationResult,
   runPageHelper,
   solveImageCaptcha,
+  UnmappedFormError,
+  usernameTaken,
   verifyPlacement,
 } from "@rakazo/linkbuilder-drivers";
 import { bumpModelRefusal, composeReply } from "./link-builder-draft.js";
@@ -108,6 +111,11 @@ export interface PoolEntry {
   cookieChecked: boolean;
   registerFormReady: boolean;
   captchaAttempts: number;
+  /** One correction of a fixable registration error (taken username, banned email, missing password). */
+  registrationRetried: boolean;
+  profileSet: boolean;
+  /** Kept for the open session so a mapped form survives the next step. */
+  driver?: BoardDriver;
 }
 
 export interface ProjectConfig {
@@ -223,10 +231,18 @@ function requireHost(ctx: StepContext): HostRow {
   return ctx.host;
 }
 
-function requireDriver(host: HostRow): BoardDriver {
+function requireDriver(host: HostRow, entry?: PoolEntry): BoardDriver {
+  if (entry?.driver && entry.hostId === host.id) return entry.driver;
   const driver = boardDriverFor(host.platform as LbHostPlatform);
   if (!driver) throw new StepFailure(`No driver for ${host.platform}`);
+  if (entry) entry.driver = driver;
   return driver;
+}
+
+/** Project warm-up, raised when the driver requires more link-free posts (Discourse TL0). */
+export function postsRequiredBeforeLink(projectMin: number, platform: string): number {
+  const floor = boardDriverFor(platform as LbHostPlatform)?.minPostsBeforeLink ?? 0;
+  return Math.max(projectMin, floor);
 }
 
 function requireSession(ctx: StepContext, host: HostRow): PoolEntry {
@@ -340,7 +356,9 @@ async function selectHost(ctx: StepContext): Promise<StepResult> {
     if (row.status === "warming") {
       const account = row.accounts[0];
       if (!account) return false;
-      const postsShort = account.postCount < ctx.project.warmup.minPostsBeforeLink;
+      const postsShort =
+        account.postCount <
+        postsRequiredBeforeLink(ctx.project.warmup.minPostsBeforeLink, row.platform);
       return (
         postsShort ||
         isWarmupMet({
@@ -384,6 +402,9 @@ async function selectHost(ctx: StepContext): Promise<StepResult> {
           cookieChecked: false,
           registerFormReady: false,
           captchaAttempts: 0,
+          registrationRetried: false,
+          profileSet: false,
+          driver: undefined,
         });
       }
     },
@@ -401,6 +422,9 @@ async function openSession(ctx: StepContext): Promise<StepResult> {
     cookieChecked: false,
     registerFormReady: false,
     captchaAttempts: 0,
+    registrationRetried: false,
+    profileSet: false,
+    driver: undefined,
   });
   return {
     kind: "step",
@@ -632,7 +656,7 @@ function registrationOutcome(
 async function register(ctx: StepContext): Promise<StepResult> {
   const host = requireHost(ctx);
   const entry = requireSession(ctx, host);
-  const driver = requireDriver(host);
+  const driver = requireDriver(host, entry);
   if (host.status === "registering") {
     // A resumed step: the operator may already have submitted, so read the page and never submit.
     const current = await driver.readRegistrationResult(entry.session);
@@ -646,7 +670,14 @@ async function register(ctx: StepContext): Promise<StepResult> {
     }
   }
   const credentials = await ensureCredentials(ctx, host);
-  const page = await driver.openRegistration(entry.session, host.homepageUrl);
+  let page: Awaited<ReturnType<BoardDriver["openRegistration"]>>;
+  try {
+    page = await driver.openRegistration(entry.session, host.homepageUrl);
+  } catch (error) {
+    if (error instanceof UnmappedFormError) return unmappedForm(ctx, host);
+    throw error;
+  }
+  if (page === "unmapped") return unmappedForm(ctx, host);
   if (page !== "form") {
     const artifactIds = await screenshot(ctx, entry, "register");
     if (page === "closed") {
@@ -799,7 +830,7 @@ function widgetRecord(
 async function captcha(ctx: StepContext): Promise<StepResult> {
   const host = requireHost(ctx);
   const entry = requireSession(ctx, host);
-  const driver = requireDriver(host);
+  const driver = requireDriver(host, entry);
   const challenge = await enrichCaptchaChallenge(
     entry.session,
     await driver.detectCaptcha(entry.session),
@@ -1154,13 +1185,73 @@ async function finishRegistration(
       credits,
     );
   }
+  if (
+    result.kind === "form_error" &&
+    formErrorFixable(result.messages) &&
+    !entry.registrationRetried
+  ) {
+    entry.registrationRetried = true;
+    entry.registerFormReady = false;
+    entry.captchaAttempts = 0;
+    if (usernameTaken(result.messages)) await rotateUsername(ctx, host);
+    return withEvent(
+      {
+        kind: "step",
+        lastAction: "Correcting the registration form",
+        hostId: host.id,
+        artifactIds,
+        outcome: {
+          registration: "form_error",
+          retry: true,
+          messages: redactAll(ctx, result.messages),
+        },
+      },
+      event,
+      credits,
+    );
+  }
   return withEvent(registrationOutcome(ctx, host, entry, result, artifactIds), event, credits);
+}
+
+function unmappedForm(ctx: StepContext, host: HostRow): Extract<StepResult, { kind: "step" }> {
+  return {
+    kind: "step",
+    lastAction: "Parked for the operator",
+    hostId: host.id,
+    outcome: { reason: "unmapped_form" },
+    apply: park(ctx, host, "unmapped_form"),
+  };
+}
+
+async function rotateUsername(ctx: StepContext, host: HostRow): Promise<void> {
+  const { prisma, secrets } = ctx.services;
+  const account = await prisma.lbHostAccount.findUnique({ where: { hostId: host.id } });
+  if (!account?.siteLoginId) return;
+  const password = await loadPassword(ctx, account.siteLoginId);
+  const username = await freshUsername(ctx, host);
+  const stored = await upsertSiteLogin(
+    { prisma, secrets },
+    {
+      workspaceId: ctx.project.workspaceId,
+      userId: ctx.project.ownerUserId,
+      botId: LINK_BUILDER_LOGIN_BOT,
+      site: host.homepageUrl,
+      username,
+      password,
+      from: "bot",
+    },
+  );
+  if ("error" in stored) return;
+  await prisma.lbHostAccount.update({
+    where: { id: account.id },
+    data: { username, siteLoginId: stored.login.id },
+  });
 }
 
 async function emailVerify(ctx: StepContext): Promise<StepResult> {
   const host = requireHost(ctx);
   const entry = requireSession(ctx, host);
-  const driver = requireDriver(host);
+  const driver = requireDriver(host, entry);
   const { mailbox } = ctx.services;
   if (!ctx.project.mailboxId || !mailbox.listMessages) {
     throw new StepFailure("Project mailbox cannot be read");
@@ -1250,7 +1341,7 @@ export function templateReply(input: {
 async function publish(ctx: StepContext, warmup: boolean): Promise<StepResult> {
   const host = requireHost(ctx);
   const entry = requireSession(ctx, host);
-  const driver = requireDriver(host);
+  const driver = requireDriver(host, entry);
   const { prisma } = ctx.services;
   const account = ctx.account;
   if (!account) throw new StepFailure("Host has no account");
@@ -1263,9 +1354,17 @@ async function publish(ctx: StepContext, warmup: boolean): Promise<StepResult> {
     };
   }
   const password = await loadPassword(ctx, account.siteLoginId);
-  if (
-    !(await driver.login(entry.session, host.homepageUrl, { username: account.username, password }))
-  ) {
+  let loggedIn = false;
+  try {
+    loggedIn = await driver.login(entry.session, host.homepageUrl, {
+      username: account.username,
+      password,
+    });
+  } catch (error) {
+    if (error instanceof UnmappedFormError) return unmappedForm(ctx, host);
+    throw error;
+  }
+  if (!loggedIn) {
     return {
       kind: "step",
       lastAction: "Parked for the operator",
@@ -1274,6 +1373,31 @@ async function publish(ctx: StepContext, warmup: boolean): Promise<StepResult> {
       outcome: { login: false },
       apply: park(ctx, host, "unknown_page_state", { note: "Login failed" }),
     };
+  }
+  if (!entry.profileSet) {
+    const pastWarmup = isWarmupMet({
+      postCount: account.postCount,
+      accountCreatedAt: account.createdAt,
+      now: ctx.now,
+      minPostsBeforeLink: postsRequiredBeforeLink(
+        ctx.project.warmup.minPostsBeforeLink,
+        host.platform,
+      ),
+      minAccountAgeHours: ctx.project.warmup.minAccountAgeHours,
+    });
+    const target = ctx.project.targets[0]?.url ?? null;
+    const includeSignature = host.signatureLinks && pastWarmup && target !== null;
+    try {
+      await driver.setProfile(entry.session, host.homepageUrl, {
+        bio: ctx.project.persona.bio.trim() || ctx.project.persona.displayName,
+        signature: includeSignature ? target : null,
+        includeSignature,
+      });
+    } catch (error) {
+      if (error instanceof UnmappedFormError) return unmappedForm(ctx, host);
+      throw error;
+    }
+    entry.profileSet = true;
   }
   const known = await prisma.lbThreadCandidate.findMany({
     where: { hostId: host.id, status: { in: ["posted", "rejected"] } },
@@ -1313,7 +1437,14 @@ async function publish(ctx: StepContext, warmup: boolean): Promise<StepResult> {
             threadCandidate: { hostId: host.id, url: thread.url },
           },
         });
-    if (!(await driver.openReply(entry.session, thread))) {
+    let opened = false;
+    try {
+      opened = await driver.openReply(entry.session, thread);
+    } catch (error) {
+      if (error instanceof UnmappedFormError) return unmappedForm(ctx, host);
+      throw error;
+    }
+    if (!opened) {
       rejections.push({
         url: thread.url,
         title: thread.title,
@@ -1323,7 +1454,9 @@ async function publish(ctx: StepContext, warmup: boolean): Promise<StepResult> {
       continue;
     }
     const pageText = await entry.session.pageText().catch(() => "");
-    rule = driver.probeLinkRule(pageText);
+    rule = driver.probePageLinkRule
+      ? await driver.probePageLinkRule(entry.session)
+      : driver.probeLinkRule(pageText);
     if (approved) {
       chosen = {
         thread,
@@ -1351,6 +1484,7 @@ async function publish(ctx: StepContext, warmup: boolean): Promise<StepResult> {
         title: thread.title,
         excerpt: "",
         pageText,
+        lastActivityAt: thread.lastActivityAt ?? null,
         citeSource: !warmup,
         signatureLinks: host.signatureLinks,
         allowEmoji: driver.allowEmoji === true,
@@ -1592,6 +1726,7 @@ async function publish(ctx: StepContext, warmup: boolean): Promise<StepResult> {
   const ruleData = {
     hrefForNewMembers: rule.hrefForNewMembers,
     minPostsForLinks: rule.minPosts,
+    ...(rule.relDefault !== "unknown" ? { relDefault: rule.relDefault } : {}),
   };
   if (reply.kind === "rejected") {
     return {

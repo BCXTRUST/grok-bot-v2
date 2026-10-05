@@ -21,7 +21,7 @@ import {
   solveImageCaptcha,
 } from "./captcha.js";
 import { acceptCookieWall } from "./cookie-wall.js";
-import { boardDriverFor, supportedPlatforms } from "./index.js";
+import { boardDriverFor } from "./index.js";
 import { PhpbbDriver, phpbbPermalink } from "./phpbb.js";
 import { type FixtureMail, renderBbcode, startPhpbbFixture } from "./testing/phpbb-fixture.js";
 import { noisePng, TINY_PNG } from "./testing/png.js";
@@ -40,10 +40,14 @@ const driver = new PhpbbDriver();
 const target = "https://www.vereinsplaner.example/mitglieder?utm_source=forum";
 
 describe("phpBB driver helpers", () => {
-  it("is registered for phpBB only so far", () => {
-    expect(supportedPlatforms()).toEqual(["phpbb"]);
+  it("is registered for phpBB", () => {
     expect(boardDriverFor("phpbb")).toBeInstanceOf(PhpbbDriver);
-    expect(boardDriverFor("xenforo")).toBeNull();
+    expect(
+      driver.detect(
+        "<input id='confirm_code'> viewtopic.php",
+        "http://b.example/viewtopic.php?t=1",
+      ),
+    ).toBe(true);
   });
 
   it("builds canonical permalinks", () => {
@@ -62,18 +66,21 @@ describe("phpBB driver helpers", () => {
   it("probes the new-member link rule", () => {
     expect(
       driver.probeLinkRule("New members cannot post links until they have made 5 posts."),
-    ).toEqual({ hrefForNewMembers: "after_n_posts", minPosts: 5 });
+    ).toEqual({ hrefForNewMembers: "after_n_posts", minPosts: 5, relDefault: "unknown" });
     expect(driver.probeLinkRule("Links sind erst nach 10 Beiträgen erlaubt.")).toEqual({
       hrefForNewMembers: "after_n_posts",
       minPosts: 10,
+      relDefault: "unknown",
     });
     expect(driver.probeLinkRule("Neue Mitglieder dürfen keine Links posten.")).toEqual({
       hrefForNewMembers: "no",
       minPosts: null,
+      relDefault: "unknown",
     });
     expect(driver.probeLinkRule("Be polite.")).toEqual({
       hrefForNewMembers: "unknown",
       minPosts: null,
+      relDefault: "unknown",
     });
   });
 
