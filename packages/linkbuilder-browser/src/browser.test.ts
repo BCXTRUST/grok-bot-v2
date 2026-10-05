@@ -354,3 +354,26 @@ describe.skipIf(!gate.available)(
     }, 90_000);
   },
 );
+
+describe("form field rpc", () => {
+  it("round-trips labelled controls without a screenshot", async () => {
+    const field = {
+      selector: "#handle",
+      tag: "input",
+      type: "text",
+      name: "handle",
+      id: "handle",
+      autocomplete: "username",
+      label: "Username",
+      role: null,
+      required: true,
+    };
+    const session = {
+      id: "fields",
+      formFields: async () => [field],
+    } as unknown as BrowserSession;
+    const rpc = new BrowserRpcServer(session);
+    const client = new RpcBrowserSession("fields", (request) => rpc.handle(request));
+    expect(await client.formFields("form")).toEqual([field]);
+  });
+});

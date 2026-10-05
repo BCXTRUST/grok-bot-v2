@@ -1,4 +1,4 @@
-import type { BrowserSession } from "@rakazo/adapter-kit";
+import type { BrowserSession, FormFieldInfo } from "@rakazo/adapter-kit";
 import { redactSecrets } from "@rakazo/linkbuilder-core";
 import { z } from "zod";
 
@@ -40,6 +40,7 @@ export const BrowserRpcRequestSchema = z.discriminatedUnion("method", [
     })
     .strict(),
   z.object({ method: z.literal("pageText") }).strict(),
+  z.object({ method: z.literal("formFields"), selector }).strict(),
   z
     .object({
       method: z.literal("waitFor"),
@@ -116,6 +117,9 @@ export class BrowserRpcServer {
         return session.injectToken(request.fieldName, request.token);
       case "pageText":
         return session.pageText();
+      case "formFields":
+        if (!session.formFields) throw new Error("This browser cannot list form fields");
+        return session.formFields(request.selector);
       case "waitFor":
         return session.waitFor(request.selector, { timeoutMs: request.timeoutMs });
       case "screenshotPng":
@@ -204,6 +208,24 @@ export class RpcBrowserSession implements BrowserSession {
 
   async pageText(): Promise<string> {
     return z.string().parse(await this.call({ method: "pageText" }));
+  }
+
+  async formFields(selector: string): Promise<FormFieldInfo[]> {
+    return z
+      .array(
+        z.object({
+          selector: z.string(),
+          tag: z.string(),
+          type: z.string().nullable(),
+          name: z.string().nullable(),
+          id: z.string().nullable(),
+          autocomplete: z.string().nullable(),
+          label: z.string(),
+          role: z.string().nullable(),
+          required: z.boolean(),
+        }),
+      )
+      .parse(await this.call({ method: "formFields", selector }));
   }
 
   async waitFor(selector: string, options: { timeoutMs: number }): Promise<boolean> {
