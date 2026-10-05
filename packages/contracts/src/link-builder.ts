@@ -28,6 +28,17 @@ export const LbHostStatusSchema = z.enum([
 ]);
 export type LbHostStatus = z.infer<typeof LbHostStatusSchema>;
 
+/** Statuses a host can be parked from for an operator and resumed back into. */
+export const LbParkableHostStatusSchema = LbHostStatusSchema.extract([
+  "qualified",
+  "registering",
+  "pending_email",
+  "pending_admin",
+  "warming",
+  "ready",
+]);
+export type LbParkableHostStatus = z.infer<typeof LbParkableHostStatusSchema>;
+
 export const LbHostPlatformSchema = z.enum([
   "phpbb",
   "woltlab",
