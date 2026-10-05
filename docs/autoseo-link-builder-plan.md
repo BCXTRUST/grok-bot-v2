@@ -482,6 +482,19 @@ M4 deviations (as built):
 - Warm-up replies are a `warmup_post` step with `linkSlot = none` while the account is still short of `minPostsBeforeLink`. The age gate still waits without posting. The fixed `template-m2` reply is no longer used by the real pipeline. `LINK_BUILDER_DRIVER=fake` is unchanged.
 - A model refusal, schema failure or `confidence < 0.3` retries once on the fallback lane and increments `whyNot.modelRefusals`. The supply counts in that object stay as they were (or zero if none was stored yet). The full why-not report remains M7.
 
+M5 deviations (as built):
+
+- Nine platform drivers share `MarkupBoardDriver`. phpBB stays its own class. `unknown` gets a new `GenericFormDriver` per call. `qa_other` still has no driver.
+- Additive contract only. `BoardThread` gained `lastActivityAt` and `openQuestion`. `LinkRuleProbe` gained `relDefault`. `BoardDriver` gained `detect`, `setProfile`, `nofollowDefault`, `minPostsBeforeLink`, and optional `probePageLinkRule`. `RegistrationPage` gained `unmapped`. `UnmappedFormError` parks the host with ticket reason `unmapped_form`. The reason column was already a string; `20261005220000_lb_unmapped_form` replaces its check constraint. No new column.
+- `BrowserSession.formFields` is optional. Playwright, the RPC session, and the fake implement it. The generic mapper uses that list only. It does not screenshot a page to map a form.
+- `fillRegistration` ticks a consent checkbox when one is present. A knowledge answer is still typed by the captcha step, so the driver does not invent one.
+- Discourse `minPostsBeforeLink` is 1. Core TL1 is a reading gate, not a post count. The floor means a link cannot be the account's first post. The runner uses the greater of that floor and the project warm-up.
+- Pacing stays on `PlaywrightBrowserSession`. Every driver action goes through `BrowserSession`, so the same policy applies.
+- Profile is written inside the existing post step, not a new step kind. The bio is `persona.bio` or the display name, with no affiliation. A signature is the first target URL only when `signatureLinks` is set, warm-up is met, and a target exists.
+- A fixable registration error (username taken, banned email, password required) is corrected once. A taken username is rotated in the vault. The next register step resubmits. A second failure marks the host dead. Other form errors are dead immediately.
+- Fixtures are loopback Node servers and `.html.tmpl` files, the same shape as M2 phpBB, not Docker images. Flarum's fixture door is none. Discourse's is hCaptcha. MyBB and vBulletin are image letters. The others are widgets (Turnstile, reCAPTCHA, hCaptcha, or Invision `data-ipsCaptcha-key`).
+- MyBB posts use `id="pid<id>"` so logged-out verification can see the `#pid<id>` permalink. Permalink parsers also accept the alternate shapes in the M5 brief: vBulletin `/threads/<id>-slug?p=`, NodeBB `/topic/<id>/slug/<index>`, and Invision `?do=findComment&comment=`.
+
 ---
 
 ## 17. Decisions needed from Harold
