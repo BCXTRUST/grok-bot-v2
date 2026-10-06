@@ -171,7 +171,9 @@ describe("project computer screen", () => {
     const opened = scripts.find((script) => script.includes("google.com/search"));
     expect(opened).toContain("Vitaminexpress");
     expect(opened).toContain("forum");
-    expect(opened).toContain("--no-first-run");
+    expect(opened).toContain("RAKAZO_DETACH_BROWSER");
+    expect(opened).toContain("exec /usr/bin/google-chrome");
+    expect(opened).not.toContain("nohup");
     expect(opened).not.toContain(".example");
     expect(scripts.join("\n")).not.toMatch(/register|signup|post/i);
   });

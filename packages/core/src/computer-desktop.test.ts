@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   COMPUTER_AUTONOMY_INSTRUCTION,
+  detachedBrowserCommand,
   exposeBrowserDesktopCommand,
   isFileManagerLabel,
   isHttpUrl,
@@ -50,6 +51,14 @@ describe("computer desktop window helpers", () => {
     expect(command).toContain("https://www.google.com/search?q=Vitaminexpress+forum");
     expect(command).toContain(") </dev/null >/tmp/rakazo-browser.log 2>&1 &");
     expect(command.trimEnd().endsWith("&")).toBe(true);
+  });
+
+  it("replaces the shell with Chrome so the sandbox cannot reap it", () => {
+    const command = detachedBrowserCommand(":0", "https://www.google.com/search?q=Vitaminexpress+forum");
+    expect(command).toContain("RAKAZO_DETACH_BROWSER");
+    expect(command).toContain("exec /usr/bin/google-chrome");
+    expect(command).toContain("https://www.google.com/search?q=Vitaminexpress+forum");
+    expect(command).not.toContain("nohup");
   });
 
   it("quotes URLs so query strings stay one argv", () => {

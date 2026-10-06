@@ -644,4 +644,44 @@ describe("E2B computer backend", () => {
       false,
     );
   });
+
+  it("keeps a detached browser after the command handle disconnects", async () => {
+    const disconnect = vi.fn(async () => undefined);
+    const command = vi.fn(async (value: string, opts?: { background?: boolean; timeoutMs?: number }) => {
+      if (opts?.background) {
+        expect(value).toContain("RAKAZO_DETACH_BROWSER");
+        expect(opts.timeoutMs).toBe(0);
+        return { disconnect };
+      }
+      return { stdout: "", stderr: "", exitCode: 0 };
+    });
+    const desktop = {
+      sandboxId: "e2b-detach-browser",
+      display: ":0",
+      commands: { run: command },
+      setTimeout: vi.fn(async () => undefined),
+    } as unknown as Sandbox;
+    const provider = new E2BSandboxProvider("test-key", {
+      create: vi.fn(async () => desktop),
+      connect: vi.fn(async () => desktop),
+      pause: vi.fn(async () => undefined),
+    });
+    const computer = await provider.provision({ botId: "bot-1", homePath: "/unused" }, context);
+    const events = [];
+    for await (const event of provider.execute(
+      computer,
+      {
+        argv: [
+          "bash",
+          "-lc",
+          "# RAKAZO_DETACH_BROWSER\nexec /usr/bin/google-chrome --new-window https://www.google.com/search?q=forum",
+        ],
+      },
+      context,
+    )) {
+      events.push(event);
+    }
+    expect(events).toEqual([{ type: "exit", code: 0 }]);
+    expect(disconnect).toHaveBeenCalledOnce();
+  });
 });
