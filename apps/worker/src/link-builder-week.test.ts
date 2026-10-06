@@ -238,7 +238,7 @@ describe("link builder week", () => {
         const status = fail ? 500 : 200;
         deliveries.push({
           body,
-          signature: headers.get("X-Rakazo-Signature") ?? "",
+          signature: headers.get("X-autoSEO-Signature") ?? "",
           status,
         });
         return new Response(fail ? "no" : "ok", { status });

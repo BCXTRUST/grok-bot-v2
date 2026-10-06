@@ -20,7 +20,7 @@ export function AuthPage({ mode }: { mode: "in" | "up" }) {
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
-  const title = mode === "in" ? "Sign in to Rakazo" : "Create your Rakazo";
+  const title = mode === "in" ? "Sign in to autoSEO" : "Create your autoSEO";
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();

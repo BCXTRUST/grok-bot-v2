@@ -171,7 +171,7 @@ export async function deliverDueWebhooks(deps: {
         redirect: "error",
         headers: {
           "content-type": "application/json",
-          "X-Rakazo-Signature": header,
+          "X-autoSEO-Signature": header,
         },
         body,
         signal: AbortSignal.timeout(10_000),
