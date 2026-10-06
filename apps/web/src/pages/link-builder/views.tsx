@@ -729,7 +729,12 @@ function ComputerPane({
         {frame?.kind === "url" ? (
           <iframe title="Computer" src={frame.url} className="absolute inset-0 h-full w-full" />
         ) : (
-          <WorkingScreen working={working} label={label} stage={stage} />
+          <WorkingScreen
+            working={working}
+            label={label}
+            stage={stage}
+            closed={session === "closed"}
+          />
         )}
         {frame?.kind === "artifact" && loadArtifact ? (
           <ArtifactShot
@@ -754,10 +759,12 @@ function WorkingScreen({
   working,
   label,
   stage,
+  closed,
 }: {
   working: boolean;
   label: string;
   stage: (typeof WORK_STAGES)[number];
+  closed: boolean;
 }) {
   return (
     <section aria-label={label} className="flex min-h-[360px] bg-[#0c0c0e] p-4 sm:min-h-[500px]">
@@ -768,6 +775,7 @@ function WorkingScreen({
         ) : (
           <p className="text-[22px] font-medium leading-none text-[#ECECEE]">{label}</p>
         )}
+        {closed ? <p className="text-[12px] text-[#6C6C70]">No session</p> : null}
       </BuiCard>
     </section>
   );

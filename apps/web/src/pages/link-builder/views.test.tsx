@@ -389,7 +389,7 @@ describe("link builder screens", () => {
     expect(html).toContain("Verify");
     expect(html).toContain('aria-label="Reading threads"');
     expect(html).toContain("bui-pixel-on");
-    expect(html).not.toContain("No session");
+    expect(html).toContain("No session");
     expect(html).toContain('data-session="closed"');
     expect(html).toContain('data-pixel="trail"');
     expect(html).toContain('aria-label="Settings"');
