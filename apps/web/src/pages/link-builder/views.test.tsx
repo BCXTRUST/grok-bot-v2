@@ -113,6 +113,56 @@ describe("link builder screens", () => {
     expect(html).not.toContain(">Runs<");
   });
 
+  it("embeds the team computer stream in the main pane", () => {
+    const stream = "https://app.autoseo.run/novnc/remote/view/9.abc/vnc.html";
+    const html = renderToStaticMarkup(
+      <ProjectView
+        project={{ name: "Vitaminexpress", slug: "vitaminexpress" } as LbProjectDetail}
+        status={null}
+        hosts={[]}
+        placements={[]}
+        steps={[]}
+        threads={[]}
+        drafts={[]}
+        tickets={[]}
+        surface="dashboard"
+        onSurface={noop}
+        onStart={noop}
+        onPause={noop}
+        onStop={noop}
+        busy={false}
+        screenUrl={stream}
+      />,
+    );
+    expect(html).toContain('data-frame="url"');
+    expect(html).toContain(`src="${stream}"`);
+    expect(html).toContain('title="Computer"');
+    expect(html).toContain("allow-scripts allow-same-origin");
+    expect(html).not.toContain("No session");
+    const failed = renderToStaticMarkup(
+      <ProjectView
+        project={{ name: "Vitaminexpress", slug: "vitaminexpress" } as LbProjectDetail}
+        status={null}
+        hosts={[]}
+        placements={[]}
+        steps={[]}
+        threads={[]}
+        drafts={[]}
+        tickets={[]}
+        surface="dashboard"
+        onSurface={noop}
+        onStart={noop}
+        onPause={noop}
+        onStop={noop}
+        busy={false}
+        screenError="Could not open the computer"
+      />,
+    );
+    expect(failed).toContain("Could not open the computer");
+    expect(failed).not.toContain("<iframe");
+    expect(failed).not.toContain("No session");
+  });
+
   it("shows the parked screenshot on an operator ticket without a live screen", () => {
     const ticket = {
       id: "ticket-1",

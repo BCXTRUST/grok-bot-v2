@@ -401,6 +401,13 @@ export const linkBuilderContract = {
     pause: oc.input(projectId).output(LbProjectDetailSchema),
     stop: oc.input(projectId).output(LbProjectDetailSchema),
     status: oc.input(projectId).output(LbProjectStatusViewSchema),
+    /** Live team-computer stream for the dashboard. Proxied like the agent computer. */
+    screen: oc.input(projectId).output(
+      z.object({
+        url: z.string().nullable(),
+        error: z.string().nullable(),
+      }),
+    ),
     seedDemo: oc.output(LbProjectDetailSchema),
   },
   billing: {

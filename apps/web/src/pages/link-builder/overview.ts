@@ -300,16 +300,20 @@ export function overviewStage(input: {
   return stage;
 }
 
-/** Prefer the open computer, then the newest screenshot on the run. */
+/** Prefer an open ticket screen, then the team computer stream, then the newest screenshot. */
 export function overviewFrame(input: {
   steps: LbRunStepView[];
   tickets: LbOperatorTicketView[];
+  /** Live team-computer stream (`/novnc/` or `https://`). */
+  screenUrl?: string | null;
 }): OverviewFrame | null {
   const open = input.tickets.find(
     (ticket) => ticket.status === "open" && liveScreen(ticket.screenUrl),
   );
   const screen = open ? liveScreen(open.screenUrl) : null;
   if (screen) return { kind: "url", url: screen };
+  const computer = liveScreen(input.screenUrl);
+  if (computer) return { kind: "url", url: computer };
   const steps = [...input.steps].sort((a, b) => a.stepIndex - b.stepIndex);
   for (let index = steps.length - 1; index >= 0; index -= 1) {
     const artifactId = steps[index]?.artifactIds[0];

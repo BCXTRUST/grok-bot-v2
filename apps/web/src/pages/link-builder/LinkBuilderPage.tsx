@@ -12,7 +12,7 @@ import type {
   LbThreadView,
 } from "@rakazo/contracts";
 import { isFixtureHostDomain } from "@rakazo/linkbuilder-core";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { LoadingState } from "../../components/beautiful-ui/primitives";
 import { rpc } from "../../lib/rpc";
@@ -359,6 +359,10 @@ function ProjectRoute({ projectId }: { projectId: string }) {
   const [tickets, setTickets] = useState<LbOperatorTicketView[]>([]);
   const [leases, setLeases] = useState<LbProxyLeaseView[]>([]);
   const [busy, setBusy] = useState(false);
+  const [screenUrl, setScreenUrl] = useState<string | null>(null);
+  const [screenError, setScreenError] = useState<string | null>(null);
+  const [screenPending, setScreenPending] = useState(true);
+  const screenUrlRef = useRef<string | null>(null);
   const loadArtifact = useArtifactLoader(projectId);
 
   const reload = useCallback(async () => {
@@ -398,6 +402,48 @@ function ProjectRoute({ projectId }: { projectId: string }) {
   useEffect(() => {
     void reload().catch(() => undefined);
   }, [reload]);
+
+  useEffect(() => {
+    screenUrlRef.current = screenUrl;
+  }, [screenUrl]);
+
+  useEffect(() => {
+    if (surface !== "dashboard") return;
+    let cancelled = false;
+    let timer = 0;
+    screenUrlRef.current = null;
+    setScreenUrl(null);
+    setScreenError(null);
+    setScreenPending(true);
+    const pull = async () => {
+      try {
+        const next = await rpc.linkBuilder.projects.screen({ projectId });
+        if (cancelled) return;
+        if (next.url) {
+          screenUrlRef.current = next.url;
+          setScreenUrl(next.url);
+          setScreenError(null);
+          setScreenPending(false);
+        } else if (next.error) {
+          screenUrlRef.current = null;
+          setScreenUrl(null);
+          setScreenError(next.error);
+          setScreenPending(false);
+        } else if (!screenUrlRef.current) {
+          setScreenPending(true);
+        }
+      } catch {
+        if (!cancelled && !screenUrlRef.current) setScreenPending(true);
+      }
+      if (cancelled) return;
+      timer = window.setTimeout(pull, screenUrlRef.current ? 45_000 : 8_000);
+    };
+    void pull();
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [projectId, surface]);
 
   useEffect(() => {
     if (surface !== "dashboard") return;
@@ -492,6 +538,9 @@ function ProjectRoute({ projectId }: { projectId: string }) {
       loadArtifact={loadArtifact}
       creditNote={null}
       onBuyCredits={() => navigate("/link-builder/credits")}
+      screenUrl={screenUrl}
+      screenError={screenError}
+      screenPending={screenPending}
     />
   );
 }

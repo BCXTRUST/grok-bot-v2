@@ -356,6 +356,9 @@ export function ProjectView({
   busy,
   creditNote,
   onBuyCredits,
+  screenUrl,
+  screenError,
+  screenPending,
 }: {
   project: LbProjectDetail;
   status: LbProjectStatusView | null;
@@ -381,6 +384,9 @@ export function ProjectView({
   busy: boolean;
   creditNote?: string | null;
   onBuyCredits?: () => void;
+  screenUrl?: string | null;
+  screenError?: string | null;
+  screenPending?: boolean;
 }) {
   const [intent, setIntent] = useState<OverviewIntent>(null);
   useEffect(() => {
@@ -477,6 +483,9 @@ export function ProjectView({
           drafts={drafts}
           tickets={tickets}
           working={working}
+          screenUrl={screenUrl}
+          screenError={screenError}
+          screenPending={screenPending}
           loadArtifact={loadArtifact}
           onDecideDraft={onDecideDraft}
         />
@@ -584,6 +593,9 @@ function Dashboard({
   drafts,
   tickets,
   working,
+  screenUrl,
+  screenError,
+  screenPending,
   loadArtifact,
   onDecideDraft,
 }: {
@@ -596,6 +608,9 @@ function Dashboard({
   drafts: LbDraftView[];
   tickets: LbOperatorTicketView[];
   working: boolean;
+  screenUrl?: string | null;
+  screenError?: string | null;
+  screenPending?: boolean;
   loadArtifact?: ArtifactLoader;
   onDecideDraft?: (draftId: string, decision: "approved" | "discarded") => void;
 }) {
@@ -623,7 +638,7 @@ function Dashboard({
     threadName: visibleThreads[0]?.title ?? null,
   });
   const action = overviewAction(items, working);
-  const frame = overviewFrame({ steps, tickets });
+  const frame = overviewFrame({ steps, tickets, screenUrl });
   const stage = overviewStage({
     runStatus: working ? "running" : (status?.run?.status ?? null),
     lastAction: status?.run?.lastAction ?? status?.lastEvent ?? action ?? null,
@@ -638,6 +653,8 @@ function Dashboard({
           action={action}
           stage={stage}
           frame={frame}
+          screenError={screenError}
+          screenPending={screenPending}
           loadArtifact={loadArtifact}
         />
         <div className="flex min-h-0 flex-col gap-3 lg:max-h-[calc(100dvh-11rem)]">
@@ -669,12 +686,16 @@ function ComputerPane({
   action,
   stage,
   frame,
+  screenError,
+  screenPending,
   loadArtifact,
 }: {
   working: boolean;
   action: string;
   stage: (typeof WORK_STAGES)[number];
   frame: ReturnType<typeof overviewFrame>;
+  screenError?: string | null;
+  screenPending?: boolean;
   loadArtifact?: ArtifactLoader;
 }) {
   const label = action || WORK_STAGE_LABELS[stage];
@@ -725,13 +746,22 @@ function ComputerPane({
       </div>
       <div className="relative min-h-[360px] flex-1 sm:min-h-[500px]">
         {frame?.kind === "url" ? (
-          <iframe title="Computer" src={frame.url} className="absolute inset-0 h-full w-full" />
+          <iframe
+            title="Computer"
+            src={frame.url}
+            className="absolute inset-0 h-full w-full border-0 bg-black"
+            sandbox={computerFrameSandbox(frame.url)}
+            allow="fullscreen"
+            style={{ pointerEvents: "none" }}
+          />
         ) : (
           <WorkingScreen
             working={working}
             label={label}
             stage={stage}
             closed={session === "closed"}
+            screenError={screenError}
+            screenPending={screenPending}
           />
         )}
         {frame?.kind === "artifact" && loadArtifact ? (
@@ -753,16 +783,30 @@ function ComputerPane({
   );
 }
 
+function computerFrameSandbox(url: string): string | undefined {
+  try {
+    return new URL(url, "https://app.local").pathname.startsWith("/novnc/")
+      ? "allow-scripts allow-same-origin allow-pointer-lock"
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function WorkingScreen({
   working,
   label,
   stage,
   closed,
+  screenError,
+  screenPending,
 }: {
   working: boolean;
   label: string;
   stage: (typeof WORK_STAGES)[number];
   closed: boolean;
+  screenError?: string | null;
+  screenPending?: boolean;
 }) {
   return (
     <section aria-label={label} className="flex min-h-[360px] bg-[#0c0c0e] p-4 sm:min-h-[500px]">
@@ -773,7 +817,13 @@ function WorkingScreen({
         ) : (
           <p className="text-[22px] font-medium leading-none text-[#ECECEE]">{label}</p>
         )}
-        {closed ? <p className="text-[12px] text-[#6C6C70]">No session</p> : null}
+        {screenError ? (
+          <p className="text-[13px] text-[#C8C8CD]">{screenError}</p>
+        ) : screenPending ? (
+          <p className="text-[12px] text-[#6C6C70]">Starting computer</p>
+        ) : closed ? (
+          <p className="text-[12px] text-[#6C6C70]">No session</p>
+        ) : null}
       </BuiCard>
     </section>
   );

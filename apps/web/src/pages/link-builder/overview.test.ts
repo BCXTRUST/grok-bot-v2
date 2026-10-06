@@ -160,6 +160,18 @@ describe("overview feed", () => {
       artifactId: "newer",
     });
     expect(overviewFrame({ steps: [], tickets: [] })).toBeNull();
+    const stream = "https://app.autoseo.run/novnc/remote/view/9.abc/vnc.html";
+    expect(overviewFrame({ steps, tickets: [], screenUrl: stream })).toEqual({
+      kind: "url",
+      url: stream,
+    });
+    expect(
+      overviewFrame({
+        steps: [],
+        tickets: [],
+        screenUrl: "http://127.0.0.1:6080/vnc.html",
+      }),
+    ).toBeNull();
   });
 
   it("prefers the newest sentence and keeps the older lines", () => {

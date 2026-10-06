@@ -112,15 +112,14 @@ import {
 import {
   archiveLbProject,
   buyLbCredits,
-  checkoutLbPackage,
   checkLbCaptchaBalance,
+  checkoutLbPackage,
   continueLbTicket,
   createLbProject,
   decideLbDraft,
   followLbProject,
   getLbArtifact,
   getLbProject,
-  offerLbBilling,
   listLbCaptchaEvents,
   listLbDrafts,
   listLbHosts,
@@ -131,6 +130,7 @@ import {
   listLbRuns,
   listLbThreads,
   listLbTickets,
+  offerLbBilling,
   pauseLbProject,
   seedLbDemo,
   skipLbTicket,
@@ -142,6 +142,7 @@ import {
   updateLbProject,
   verifyLbPlacement,
 } from "./link-builder.js";
+import { openProjectComputerScreen } from "./link-builder-screen.js";
 import { buildMcpUpdateMaterial } from "./mcp-material.js";
 import { chooseFocus, markAppConnected, startOnboarding } from "./onboarding.js";
 import { addScreenProxyCapability, shouldProxyComputerScreen } from "./screen-proxy.js";
@@ -2998,6 +2999,9 @@ export function createRouter(deps: RouterDeps) {
         ),
         status: authed.linkBuilder.projects.status.handler(async ({ context, input }) =>
           statusLbProject(deps, context.actor, input.projectId),
+        ),
+        screen: authed.linkBuilder.projects.screen.handler(async ({ context, input }) =>
+          openProjectComputerScreen(deps, context.actor, input.projectId),
         ),
         seedDemo: authed.linkBuilder.projects.seedDemo.handler(async ({ context }) =>
           seedLbDemo(deps, context.actor),
