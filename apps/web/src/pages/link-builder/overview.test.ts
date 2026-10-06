@@ -4,6 +4,8 @@ import {
   overviewAction,
   overviewFeed,
   overviewFrame,
+  overviewHasPlacement,
+  overviewStage,
   overviewWorking,
   whyNotFeedLines,
 } from "./overview.js";
@@ -112,6 +114,7 @@ describe("overview feed", () => {
       working: true,
       blockers: [],
       hideExampleCopy: true,
+      hasPlacement: true,
     });
     expect(items.map((item) => item.label)).toEqual([
       "Researching topics",
@@ -160,5 +163,71 @@ describe("overview feed", () => {
       artifactId: "newer",
     });
     expect(overviewFrame({ steps: [], tickets: [] })).toBeNull();
+  });
+
+  it("does not verify, or spin on Verify, when nothing was placed", () => {
+    const verify = step(5, "Verify");
+    verify.kind = "lb_verify";
+    const registered = step(6, "Registered");
+    registered.kind = "register";
+    const items = overviewFeed({
+      steps: [
+        step(0, "Researching topics"),
+        step(1, "Still researching"),
+        Object.assign(step(2, "Register"), { kind: "lb_register" }),
+        Object.assign(step(3, "Warmup"), { kind: "lb_warmup" }),
+        Object.assign(step(4, "Place"), { kind: "lb_place" }),
+        verify,
+        registered,
+      ],
+      lastEvent: "Verify",
+      working: true,
+      blockers: [],
+      hideExampleCopy: true,
+      hasPlacement: false,
+    });
+    expect(items.map((item) => item.label)).toEqual([
+      "Researching topics",
+      "Still researching",
+      "Registered",
+    ]);
+    expect(items.some((item) => item.label === "Verify")).toBe(false);
+    expect(items.find((item) => item.status === "working")?.label).toBe("Registered");
+    expect(overviewHasPlacement([], "vitaminexpress")).toBe(false);
+    expect(overviewHasPlacement(["fragen-1ej2xe.example"], "vitaminexpress")).toBe(false);
+    expect(
+      overviewStage({
+        runStatus: "running",
+        lastAction: "Verify",
+        stepKinds: ["research", "lb_register", "lb_warmup", "lb_place", "lb_verify"],
+        hasPlacement: false,
+      }),
+    ).toBe("research");
+  });
+
+  it("keeps a verify line and a frame when a placement or a screenshot exists", () => {
+    const verify = step(1, "Verify", ["shot"]);
+    verify.kind = "verify";
+    const items = overviewFeed({
+      steps: [step(0, "Reading threads"), verify],
+      lastEvent: "Verify",
+      working: true,
+      blockers: [],
+      hasPlacement: true,
+    });
+    expect(items.at(-1)).toMatchObject({ label: "Verify", status: "working" });
+    expect(overviewFrame({ steps: [verify], tickets: [] })).toEqual({
+      kind: "artifact",
+      artifactId: "shot",
+    });
+    expect(overviewHasPlacement(["www.vitaminexpress.org"], "vitaminexpress")).toBe(true);
+    expect(
+      overviewStage({
+        runStatus: "running",
+        lastAction: "Verify",
+        stepKinds: ["verify"],
+        hasPlacement: true,
+      }),
+    ).toBe("verify");
   });
 });

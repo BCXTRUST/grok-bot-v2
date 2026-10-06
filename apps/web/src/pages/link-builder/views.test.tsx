@@ -343,6 +343,43 @@ describe("link builder screens", () => {
     expect(html).toContain('aria-label="Reading threads"');
     expect(html).toContain("bui-pixel-on");
     expect(html).not.toContain("I've solved it");
+    expect(html).not.toContain("28px 28px");
+  });
+
+  it("stays on research when Verify has no placement, and still shows a frame", () => {
+    const reading = step(0, "research", []);
+    reading.lastAction = "Still researching";
+    const verify = step(1, "lb_verify", ["shot-9"]);
+    verify.lastAction = "Verify";
+    const html = renderOverview(
+      statusView({
+        activity: "running",
+        activityLabel: "running",
+        lastEvent: "Verify",
+        run: {
+          id: "run-1",
+          date: "2026-10-06",
+          status: "running",
+          newToday: 0,
+          liveToday: 0,
+          liveWeek: 0,
+          uniqueHosts: 0,
+          lastAction: "Verify",
+          lastError: null,
+        },
+      }),
+      [reading, verify],
+    );
+    expect(html).toContain('data-stage="research"');
+    expect(html).toContain('data-frame="artifact"');
+    const workingAt = html.indexOf('data-status="working"');
+    const row = html.slice(workingAt, workingAt + 2500);
+    expect(row).toContain("Still researching");
+    expect(row).not.toContain("Verify");
+    expect(html).not.toContain("I've solved it");
+    expect(html).not.toContain("fragen-");
+    expect(html).toContain("New accounts per day");
+    expect(html).toContain("Live links today");
   });
 
   it("keeps a calm computer when the run is paused and hides an all-zero why-not list", () => {

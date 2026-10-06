@@ -34,7 +34,7 @@ describe("fake scenario", () => {
     expect(fakeDomains("other")).not.toEqual(fakeDomains(input.seed));
   });
 
-  it("researches, then changes stage, without creating example hosts", () => {
+  it("researches, then holds, without inventing hosts or a verify step", () => {
     const steps = replayFakeScript(input);
     expect(steps).toHaveLength(fakeScriptLength());
     expect(steps.map((step) => step.lastAction)).toEqual([
@@ -42,20 +42,12 @@ describe("fake scenario", () => {
       "Reading on-topic pages",
       "Reading threads",
       "Still researching",
-      "Register",
-      "Warmup",
-      "Place",
-      "Verify",
     ]);
     expect(steps.map((step) => step.kind)).toEqual([
       "research",
       "research",
       "research",
       "research",
-      "lb_register",
-      "lb_warmup",
-      "lb_place",
-      "lb_verify",
     ]);
     expect(new Set(steps.map((step) => step.lastAction)).size).toBe(steps.length);
     expect(steps.every((step) => step.host === undefined)).toBe(true);
@@ -63,18 +55,15 @@ describe("fake scenario", () => {
     expect(steps.every((step) => step.captcha === undefined)).toBe(true);
     expect(steps.every((step) => step.ticket === undefined)).toBe(true);
     expect(JSON.stringify(steps)).not.toContain(".example");
-    expect(JSON.stringify(steps)).not.toMatch(/captcha|solved it|LIVE quota|Parked/i);
+    expect(JSON.stringify(steps)).not.toMatch(/captcha|solved it|LIVE quota|Parked|Verify/i);
     expect(steps.at(-1)?.runStatus).toBe("running");
-    expect(planFakeStep({ ...input, stepIndex: 3, researchBeats: 6, stageBeats: 4 })).toEqual({
+    expect(steps.at(-1)?.lastAction).toBe("Still researching");
+    expect(planFakeStep({ ...input, stepIndex: 3, researchBeats: 4, stageBeats: 4 })).toEqual({
       hold: true,
     });
-    const continued = planFakeStep({ ...input, stepIndex: 20, researchBeats: 6, stageBeats: 0 });
-    expect(continued).toMatchObject({ kind: "lb_register", lastAction: "Register" });
-    if (!("kind" in continued)) throw new Error("expected a step");
-    expect(continued.host).toBeUndefined();
-    expect(continued.ticket).toBeUndefined();
-    expect(continued.captcha).toBeUndefined();
-    expect(continued.placement).toBeUndefined();
+    expect(planFakeStep({ ...input, stepIndex: 20, researchBeats: 6, stageBeats: 0 })).toEqual({
+      hold: true,
+    });
   });
 
   it("treats the offline boards as fixtures and leaves real domains alone", () => {

@@ -69,7 +69,7 @@ describe("link builder fake runner", () => {
     expect(isLinkBuilderFakeEnabled({ LINK_BUILDER_DRIVER: "playwright" })).toBe(false);
   });
 
-  it("moves through stages without creating example hosts, then holds the run open", async () => {
+  it("researches without creating hosts, then holds the run open", async () => {
     vi.stubGlobal("fetch", () => {
       throw new Error("network");
     });
@@ -97,21 +97,18 @@ describe("link builder fake runner", () => {
       "research",
       "research",
       "research",
-      "lb_register",
-      "lb_warmup",
-      "lb_place",
-      "lb_verify",
     ]);
     expect(sample.steps.every((step) => step.host === undefined)).toBe(true);
+    expect(sample.steps.every((step) => step.placement === undefined)).toBe(true);
     expect(
       sample.steps.every((step) => step.captcha === undefined && step.ticket === undefined),
     ).toBe(true);
     expect(JSON.stringify(sample.steps)).not.toContain(".example");
-    expect(JSON.stringify(sample.steps)).not.toMatch(/captcha|solved it|LIVE quota|Parked/i);
+    expect(JSON.stringify(sample.steps)).not.toMatch(/captcha|solved it|LIVE quota|Parked|Verify/i);
     expect(sample.current.status).toBe("running");
-    expect(sample.steps).toHaveLength(8);
+    expect(sample.steps).toHaveLength(4);
     expect(sample.steps[0]?.lastAction).toBe("Researching topics");
-    expect(sample.steps.at(-1)?.lastAction).toBe("Verify");
+    expect(sample.steps.at(-1)?.lastAction).toBe("Still researching");
     expect(sample.current.counters).toEqual(run().counters);
     vi.unstubAllGlobals();
   });

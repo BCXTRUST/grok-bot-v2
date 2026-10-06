@@ -16,7 +16,6 @@ import {
   formatPackagePrice,
   isFixtureHostDomain,
   showHostToCustomer,
-  stageFromActivity,
   WORK_STAGE_LABELS,
   WORK_STAGES,
 } from "@rakazo/linkbuilder-core";
@@ -52,7 +51,9 @@ import {
   overviewAction,
   overviewFeed,
   overviewFrame,
+  overviewHasPlacement,
   overviewPill,
+  overviewStage,
   overviewWorking,
   whyNotFeedLines,
 } from "./overview.js";
@@ -148,7 +149,7 @@ export function CreditPackagesView({
         </ol>
         <h1 className="text-[22px] font-medium text-[#ECECEE]">Credits</h1>
       </header>
-      <p aria-label="Credit balance" className="text-[13px] text-[#ECECEE]">
+      <p className="text-[13px] text-[#ECECEE]">
         <span className="tabular-nums">{balance}</span>
         <span className="text-[#A6A6AD]"> credits</span>
       </p>
@@ -432,7 +433,7 @@ export function ProjectView({
             type="button"
             role="tab"
             aria-selected={tab === name}
-            className={`rounded-full px-3 py-1 text-[13px] ${tab === name ? "bg-[#232327] text-[#ECECEE]" : "text-[#A6A6AD]"}`}
+            className={`rounded-full px-3 py-1.5 text-[13px] ${tab === name ? "bg-[#232327] text-[#ECECEE]" : "text-[#8A8A90] hover:text-[#C8C8CD]"}`}
             onClick={() => onTab(name)}
           >
             {name}
@@ -444,6 +445,7 @@ export function ProjectView({
           project={project}
           status={status}
           steps={steps}
+          placements={placements}
           tickets={tickets}
           working={working}
           busy={busy}
@@ -565,6 +567,7 @@ function Overview({
   project,
   status,
   steps,
+  placements,
   tickets,
   working,
   busy,
@@ -576,6 +579,7 @@ function Overview({
   project: LbProjectDetail;
   status: LbProjectStatusView | null;
   steps: LbRunStepView[];
+  placements: LbPlacementView[];
   tickets: LbOperatorTicketView[];
   working: boolean;
   busy: boolean;
@@ -589,23 +593,29 @@ function Overview({
   const newPerDay = status?.newPerDay ?? project.quotas?.newPerDay ?? 0;
   const livePerDay = status?.livePerDay ?? project.quotas?.livePerDay ?? 0;
   const hideExampleCopy = project.slug !== FIXTURE_DEMO_SLUG;
+  const hasPlacement = overviewHasPlacement(
+    placements.map((row) => row.domain),
+    project.slug,
+  );
   const items = overviewFeed({
     steps,
     lastEvent: status?.lastEvent ?? null,
     working,
     blockers: whyNotFeedLines(status?.whyNot),
     hideExampleCopy,
+    hasPlacement,
   });
   const action = overviewAction(items, working);
   const frame = overviewFrame({ steps, tickets });
-  const stage = stageFromActivity({
+  const stage = overviewStage({
     runStatus: working ? "running" : (status?.run?.status ?? null),
     lastAction: status?.run?.lastAction ?? status?.lastEvent ?? action ?? null,
     stepKinds: steps.map((step) => step.kind),
+    hasPlacement,
   });
   return (
-    <section className="flex min-h-0 flex-1 flex-col gap-3" aria-label="Overview">
-      <div className="flex flex-wrap items-end justify-between gap-4">
+    <section className="flex min-h-0 flex-1 flex-col gap-4" aria-label="Overview">
+      <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex flex-wrap gap-2">
           <BuiButton tone="accent" label="Start" onClick={onStart} disabled={busy}>
             Start
@@ -617,12 +627,12 @@ function Overview({
             Stop
           </BuiButton>
         </div>
-        <div className="flex flex-wrap gap-6">
+        <div className="flex flex-wrap items-baseline gap-6">
           <TodayCount label={OVERVIEW_COUNTS.newToday} value={newToday} max={newPerDay} />
           <TodayCount label={OVERVIEW_COUNTS.liveToday} value={liveToday} max={livePerDay} />
         </div>
       </div>
-      <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-[minmax(0,1.5fr)_minmax(280px,380px)]">
+      <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[minmax(0,1.6fr)_minmax(280px,360px)]">
         <ComputerPane
           working={working}
           action={action}
@@ -630,7 +640,7 @@ function Overview({
           frame={frame}
           loadArtifact={loadArtifact}
         />
-        <div className="flex min-h-[520px] flex-col gap-3 lg:max-h-[calc(100dvh-9rem)]">
+        <div className="flex min-h-[560px] flex-col gap-3 lg:max-h-[calc(100dvh-9rem)]">
           <ActivityFeed items={items} />
           {status?.costs ? <CostNote costs={status.costs} /> : null}
         </div>
@@ -641,9 +651,8 @@ function Overview({
 
 function TodayCount({ label, value, max }: { label: string; value: number; max: number }) {
   return (
-    <p className="text-[15px] text-[#ECECEE]">
-      <span className="text-[#A6A6AD]">{label} </span>
-      <span className="tabular-nums">{`${value}/${max}`}</span>
+    <p className="text-[13px] text-[#A6A6AD]">
+      {label} <span className="text-[15px] tabular-nums text-[#ECECEE]">{`${value}/${max}`}</span>
     </p>
   );
 }
@@ -668,15 +677,15 @@ function ComputerPane({
       aria-label="Computer"
       data-frame={frame?.kind ?? "pending"}
       data-stage={stage}
-      className="relative flex min-h-[520px] flex-col overflow-hidden rounded-[16px] border border-[#2A2A31] bg-[#101012]"
+      className="relative flex min-h-[560px] flex-col overflow-hidden rounded-[16px] bg-[#0c0c0e]"
       style={{ boxShadow: "var(--bui-shadow-card)" }}
     >
-      <div className="flex h-10 items-center gap-2 border-b border-[#2A2A31] bg-[#101012] px-3">
+      <div className="flex h-11 items-center gap-3 border-b border-[#2A2A31] px-3.5">
         <span
           className="h-2 w-2 shrink-0 rounded-full"
           style={{ background: working ? "var(--bui-green)" : "#3a3a40" }}
         />
-        <ol aria-label="Stage" className="flex min-w-0 gap-1 overflow-hidden">
+        <ol aria-label="Stage" className="flex min-w-0 items-center gap-0.5 overflow-hidden">
           {WORK_STAGES.map((name, index) => {
             const current = name === stage;
             const done = index < stageIndex;
@@ -684,12 +693,12 @@ function ComputerPane({
               <li
                 key={name}
                 aria-current={current ? "step" : undefined}
-                className={`rounded-full px-2 py-0.5 text-[12px] ${
+                className={`rounded-full px-2.5 py-1 text-[12.5px] leading-none ${
                   current
                     ? "bg-[#232327] text-[#ECECEE]"
                     : done
                       ? "text-[#C8C8CD]"
-                      : "text-[#8A8A90]"
+                      : "text-[#5E5E66]"
                 }`}
               >
                 {current && working ? (
@@ -702,7 +711,7 @@ function ComputerPane({
           })}
         </ol>
       </div>
-      <div className="relative min-h-[480px] flex-1">
+      <div className="relative min-h-[500px] flex-1">
         {frame?.kind === "url" ? (
           <iframe title="Computer" src={frame.url} className="absolute inset-0 h-full w-full" />
         ) : (
@@ -737,28 +746,27 @@ function WorkingScreen({
   stage: (typeof WORK_STAGES)[number];
 }) {
   return (
-    <div
-      className="grid min-h-[480px] place-items-center p-6"
-      style={{
-        backgroundColor: "#0c0c0e",
-        backgroundImage:
-          "linear-gradient(rgba(255,255,255,0.035) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.035) 1px, transparent 1px)",
-        backgroundSize: "28px 28px",
-      }}
+    <section
+      aria-label={label}
+      className="relative flex min-h-[500px] flex-col items-center justify-center bg-[#0c0c0e] px-8"
     >
-      <BuiCard className="w-full max-w-lg p-5" aria-label={label}>
-        <div className="text-[12px] text-[#A6A6AD]">
-          {working ? <Shimmer>{WORK_STAGE_LABELS[stage]}</Shimmer> : WORK_STAGE_LABELS[stage]}
-        </div>
-        <div className="mt-3">
-          {working ? (
-            <LoadingState label={label} />
-          ) : (
-            <p className="text-[15px] text-[#ECECEE]">{label}</p>
-          )}
-        </div>
-      </BuiCard>
-    </div>
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0"
+        style={{
+          background:
+            "radial-gradient(ellipse 520px 300px at 50% 46%, rgba(119,133,255,0.10), transparent 70%)",
+        }}
+      />
+      <div className="relative flex flex-col items-center gap-4 text-center">
+        <p className="text-[13px] text-[#A6A6AD]">{WORK_STAGE_LABELS[stage]}</p>
+        {working ? (
+          <LoadingState label={label} />
+        ) : (
+          <p className="text-[18px] font-medium text-[#ECECEE]">{label}</p>
+        )}
+      </div>
+    </section>
   );
 }
 

@@ -1,5 +1,11 @@
 import type { LbOperatorTicketView, LbRunStepView, LbWhyNot } from "@rakazo/contracts";
-import { mentionsExampleDomain, mentionsFixtureHost } from "@rakazo/linkbuilder-core";
+import {
+  mentionsExampleDomain,
+  mentionsFixtureHost,
+  showHostToCustomer,
+  stageFromActivity,
+  type WorkStage,
+} from "@rakazo/linkbuilder-core";
 
 export const OVERVIEW_COUNTS = {
   newToday: "New accounts per day",
@@ -20,6 +26,27 @@ export interface OverviewFeedItem {
 export type OverviewFrame = { kind: "url"; url: string } | { kind: "artifact"; artifactId: string };
 
 const BLOCKED_KINDS = new Set(["coherence_refused", "edge_block"]);
+
+/** Stage kinds the offline runner used to print without a host or a placed link. */
+const OFFLINE_STAGE_KINDS = new Set([
+  "lb_register",
+  "lb_warmup",
+  "lb_place",
+  "lb_verify",
+  "verify",
+]);
+
+/** Exact labels from that script. Real work uses longer lines ("Registered", "Account warmed up"). */
+const OFFLINE_STAGE_LABEL = /^(register|warmup|place|verify)$/i;
+
+/** A placed link the customer can see. Fixture boards do not count. */
+export function overviewHasPlacement(domains: readonly string[], slug?: string | null): boolean {
+  return domains.some((domain) => showHostToCustomer(domain, slug));
+}
+
+function offlineStage(kind: string, label: string): boolean {
+  return OFFLINE_STAGE_KINDS.has(kind) || OFFLINE_STAGE_LABEL.test(label.trim());
+}
 
 /** Old offline runs wrote a captcha park and a met quota. Customer projects no longer show that. */
 function leftoverHandoff(label: string): boolean {
@@ -76,11 +103,15 @@ export function overviewFeed(input: {
   blockers: string[];
   /** Customer projects drop leftover `*.example` lines. The Nordlicht demo keeps its own. */
   hideExampleCopy?: boolean;
+  /** Verify runs only after a link is placed. Without one, those lines stay off the feed. */
+  hasPlacement?: boolean;
 }): OverviewFeedItem[] {
+  const hasPlacement = input.hasPlacement === true;
   const steps = [...input.steps]
     .sort((a, b) => a.stepIndex - b.stepIndex)
     .filter((step) => {
       const label = step.lastAction?.trim() || step.kind;
+      if (!hasPlacement && offlineStage(step.kind, label)) return false;
       if (mentionsFixtureHost(label)) return false;
       if (input.hideExampleCopy && (mentionsExampleDomain(label) || leftoverHandoff(label))) {
         return false;
@@ -104,6 +135,7 @@ export function overviewFeed(input: {
   const event = input.lastEvent?.trim() ?? "";
   const hiddenEvent =
     mentionsFixtureHost(event) ||
+    (!hasPlacement && offlineStage("", event)) ||
     (input.hideExampleCopy && (mentionsExampleDomain(event) || leftoverHandoff(event)));
   if (event && !seen.has(event) && !hiddenEvent) {
     items.push({ id: `event:${event}`, label: event, status: "done", at: null });
@@ -155,6 +187,31 @@ function liveScreen(url: string | null | undefined): string | null {
   if (!url) return null;
   if (url.startsWith("/novnc/") || url.startsWith("https://")) return url;
   return null;
+}
+
+/**
+ * Stage shown on the rail. Verify is only current when a placement exists to check.
+ * Offline register, warmup, and place labels are the same: they are not work.
+ */
+export function overviewStage(input: {
+  runStatus: string | null;
+  lastAction: string | null;
+  stepKinds?: readonly string[];
+  hasPlacement: boolean;
+}): WorkStage {
+  const kinds = (input.stepKinds ?? []).filter(
+    (kind) => input.hasPlacement || !OFFLINE_STAGE_KINDS.has(kind),
+  );
+  const action = input.lastAction?.trim() ?? "";
+  const lastAction =
+    !input.hasPlacement && OFFLINE_STAGE_LABEL.test(action) ? null : input.lastAction;
+  const stage = stageFromActivity({
+    runStatus: input.runStatus,
+    lastAction,
+    stepKinds: kinds,
+  });
+  if (!input.hasPlacement && stage === "verify") return "research";
+  return stage;
 }
 
 /** Prefer the open computer, then the newest screenshot on the run. */
