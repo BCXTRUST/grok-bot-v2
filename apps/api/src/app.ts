@@ -7,6 +7,7 @@ import type {
   SandboxProvider,
 } from "@rakazo/adapter-kit";
 import {
+  AgentMailMailbox,
   type ComposioProvider,
   type ConnectorRegistry,
   createBackgroundJobHandlers,
@@ -43,7 +44,9 @@ import { createDb, createThreadEvents, type PrismaClient, requireMembership } fr
 import { MarkdownMemoryStore } from "@rakazo/memory";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import { createAgentMailInbox, listAgentMailInboxes } from "./agentmail.js";
 import { type AppEnv, loadEnv } from "./env.js";
+import { ingestInboundMail, verifyInboundMailSignature } from "./link-builder-mail.js";
 import { createRouter } from "./router.js";
 import { mountVoiceHttpRoutes } from "./voice.js";
 
@@ -224,6 +227,24 @@ export async function createApp(
   const reconciler = inMemoryJobs ? createJobReconciler({ prisma, jobs }) : undefined;
   reconciler?.start();
 
+  const mailbox = env.agentMailApiKey
+    ? new AgentMailMailbox(
+        {
+          listInboxes: async () => {
+            const rows = await listAgentMailInboxes(env.agentMailApiKey ?? "");
+            return rows.map((row) => ({
+              inboxId: row.inboxId,
+              email: row.email,
+              projectId: row.projectId,
+              workspaceId: null,
+            }));
+          },
+          createInbox: (input) => createAgentMailInbox(env.agentMailApiKey ?? "", input),
+        },
+        prisma,
+      )
+    : undefined;
+
   const router = createRouter({
     prisma,
     events,
@@ -241,6 +262,7 @@ export async function createApp(
     remoteConnectors,
     artifacts,
     realtime,
+    mailbox,
     dataDir: env.dataDir,
     env: {
       defaultProvider: env.defaultProvider,
@@ -287,6 +309,15 @@ export async function createApp(
     const session = await auth.api.getSession({ headers: sessionHeaders(c.req.raw) });
     if (!session?.user) return null;
     return requireMembership(prisma, session.user.id).catch(() => null);
+  });
+  app.post("/api/link-builder/mail", async (c) => {
+    const secret = process.env.AGENTMAIL_WEBHOOK_SECRET;
+    const raw = await c.req.text();
+    const header = c.req.header("X-AgentMail-Signature") ?? null;
+    if (!secret || !(await verifyInboundMailSignature(secret, raw, header))) {
+      return c.json({ error: "invalid signature" }, 401);
+    }
+    return c.json(await ingestInboundMail(prisma, raw));
   });
   app.get("/health", (c) =>
     c.json({

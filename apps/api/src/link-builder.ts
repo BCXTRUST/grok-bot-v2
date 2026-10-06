@@ -1,9 +1,9 @@
-import { randomUUID } from "node:crypto";
 import { ORPCError } from "@orpc/server";
 import { CaptchaSolverError } from "@rakazo/adapter-kit";
 import { CaptellHttpSolver } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import {
+  EMPTY_COST_SUMMARY,
   LB_DEFAULT_LINK_RATIO,
   LB_DEFAULT_MARKET,
   LB_RESPONSIBILITY_ACK_TEXT_VERSION,
@@ -63,6 +63,7 @@ import {
   transitionPlacement,
   transitionProject,
   transitionRun,
+  webhookUrlAllowed,
 } from "@rakazo/linkbuilder-core";
 import type { RouterDeps } from "./router.js";
 
@@ -74,13 +75,17 @@ export async function listLbProjects(deps: RouterDeps, actor: Actor) {
     orderBy: { updatedAt: "desc" },
   });
   const ids = projects.map((project) => project.id);
-  const [runs, tickets] = await Promise.all([
+  const [runs, tickets, alerts] = await Promise.all([
     deps.prisma.lbRun.findMany({
       where: { workspaceId: actor.workspaceId, projectId: { in: ids } },
     }),
     deps.prisma.lbOperatorTicket.findMany({
       where: { workspaceId: actor.workspaceId, projectId: { in: ids }, status: "open" },
       select: { projectId: true },
+    }),
+    deps.prisma.lbAlert.findMany({
+      where: { workspaceId: actor.workspaceId, projectId: { in: ids } },
+      orderBy: { createdAt: "desc" },
     }),
   ]);
   const now = new Date();
@@ -118,7 +123,11 @@ export async function listLbProjects(deps: RouterDeps, actor: Actor) {
       livePerDay: quotas?.livePerDay ?? 0,
       liveWeekCap: quotas?.liveWeekCap ?? null,
       runStatus,
-      lastEvent: todayRun?.lastAction ?? latest?.lastAction ?? null,
+      lastEvent: newerEvent(
+        todayRun?.lastAction ?? latest?.lastAction ?? null,
+        todayRun?.updatedAt ?? latest?.updatedAt ?? null,
+        alerts.find((alert) => alert.projectId === project.id) ?? null,
+      ),
       operatorQueue: openTickets,
     };
   });
@@ -198,9 +207,29 @@ export async function updateLbProject(
   if (input.content !== undefined) data.content = json(input.content);
   if (input.operator !== undefined) data.operator = json(input.operator);
   if (input.provisionMailbox && !row.mailboxId) {
-    const name = input.persona?.displayName ?? readPersona(row.persona)?.displayName ?? row.slug;
-    data.mailboxId = `mbx_${randomUUID().replace(/-/g, "")}`;
-    data.mailboxAddress = `${slugifyProjectName(name)}@inbox.example`;
+    const inbox = await provisionProjectInbox(deps, actor, row.id);
+    data.mailboxId = inbox.inboxId;
+    data.mailboxAddress = inbox.address;
+  }
+  if (input.webhookUrl !== undefined) {
+    if (!input.webhookUrl) {
+      data.webhookUrl = null;
+    } else {
+      const allowed = webhookUrlAllowed(input.webhookUrl, {
+        production: process.env.NODE_ENV === "production",
+      });
+      if (!allowed.ok)
+        throw new ORPCError("BAD_REQUEST", { message: "Webhook URL is not allowed" });
+      data.webhookUrl = allowed.url.toString();
+    }
+  }
+  if (input.webhookSecret) {
+    const secretValue = input.webhookSecret.startsWith("whsec_")
+      ? input.webhookSecret
+      : `whsec_${input.webhookSecret}`;
+    data.webhookSecret = {
+      connect: { id: await storeWebhookSecret(deps, actor, secretValue) },
+    };
   }
   if (input.captchaToken) {
     data.captchaSecret = {
@@ -278,7 +307,7 @@ export async function statusLbProject(deps: RouterDeps, actor: Actor, projectId:
   const quotas = readQuotas(row.quotas);
   const now = new Date();
   const today = localDateKey(now, schedule.timezone);
-  const [runs, openTickets, hosts] = await Promise.all([
+  const [runs, openTickets, hosts, latestAlert, costs] = await Promise.all([
     deps.prisma.lbRun.findMany({ where: { workspaceId: actor.workspaceId, projectId: row.id } }),
     deps.prisma.lbOperatorTicket.count({
       where: { workspaceId: actor.workspaceId, projectId: row.id, status: "open" },
@@ -287,6 +316,11 @@ export async function statusLbProject(deps: RouterDeps, actor: Actor, projectId:
       where: { workspaceId: actor.workspaceId, projectId: row.id },
       select: { status: true },
     }),
+    deps.prisma.lbAlert.findFirst({
+      where: { workspaceId: actor.workspaceId, projectId: row.id },
+      orderBy: { createdAt: "desc" },
+    }),
+    costWindow(deps.prisma, actor.workspaceId, row.id, schedule.timezone),
   ]);
   const todayRun = runs.find((run) => run.date === today) ?? null;
   const runStatus = todayRun ? readRunStatus(todayRun.status) : null;
@@ -326,8 +360,21 @@ export async function statusLbProject(deps: RouterDeps, actor: Actor, projectId:
     newPerDay: quotas?.newPerDay ?? 0,
     livePerDay: quotas?.livePerDay ?? 0,
     liveWeekCap: quotas?.liveWeekCap ?? null,
-    lastEvent: todayRun?.lastAction ?? null,
+    lastEvent: newerEvent(todayRun?.lastAction ?? null, todayRun?.updatedAt ?? null, latestAlert),
+    costs,
   };
+}
+
+export async function summarizeLbCosts(
+  deps: RouterDeps,
+  actor: Actor,
+  input: { projectId: string; range: "day" | "week" },
+) {
+  const row = await requireProject(deps.prisma, actor, input.projectId);
+  const schedule = readSchedule(row.schedule);
+  const today = localDateKey(new Date(), schedule.timezone);
+  const from = input.range === "week" ? weekStart(today) : today;
+  return sumCosts(deps.prisma, actor.workspaceId, row.id, schedule.timezone, from, today);
 }
 
 export async function seedLbDemo(deps: RouterDeps, actor: Actor) {
@@ -914,6 +961,94 @@ function weekStart(dateKey: string): string {
   return date.toISOString().slice(0, 10);
 }
 
+function newerEvent(
+  action: string | null,
+  actionAt: Date | null,
+  alert: { message: string; createdAt: Date } | null,
+): string | null {
+  if (!alert) return action;
+  if (!action || !actionAt || alert.createdAt.getTime() >= actionAt.getTime()) return alert.message;
+  return action;
+}
+
+async function costWindow(
+  prisma: PrismaClient,
+  workspaceId: string,
+  projectId: string,
+  timeZone: string,
+) {
+  const today = localDateKey(new Date(), timeZone);
+  const [day, week] = await Promise.all([
+    sumCosts(prisma, workspaceId, projectId, timeZone, today, today),
+    sumCosts(prisma, workspaceId, projectId, timeZone, weekStart(today), today),
+  ]);
+  return { day, week };
+}
+
+async function sumCosts(
+  prisma: PrismaClient,
+  workspaceId: string,
+  projectId: string,
+  timeZone: string,
+  from: string,
+  to: string,
+) {
+  const entries = await prisma.lbCostEntry.findMany({
+    where: { workspaceId, projectId },
+    select: { kind: true, quantity: true, occurredAt: true },
+  });
+  const totals = { ...EMPTY_COST_SUMMARY };
+  for (const entry of entries) {
+    let date = "";
+    try {
+      date = localDateKey(entry.occurredAt, timeZone);
+    } catch {
+      continue;
+    }
+    if (date < from || date > to) continue;
+    if (entry.kind === "captell_credits") totals.captellCredits += entry.quantity;
+    if (entry.kind === "model_tokens") totals.modelTokens += entry.quantity;
+    if (entry.kind === "search_query") totals.searchQueries += entry.quantity;
+    if (entry.kind === "proxy_lease_day") totals.proxyLeaseDays += entry.quantity;
+  }
+  return totals;
+}
+
+async function provisionProjectInbox(deps: RouterDeps, actor: Actor, projectId: string) {
+  if (deps.mailbox) {
+    return deps.mailbox.ensureInbox(projectId, {
+      operationId: "lb-mailbox",
+      traceId: "lb-mailbox",
+      workspaceId: actor.workspaceId,
+      userId: actor.userId,
+      signal: new AbortController().signal,
+    });
+  }
+  const local = `lb-${projectId.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`.slice(0, 48);
+  return { inboxId: `${local}@inbox.example`, address: `${local}@inbox.example` };
+}
+
+async function storeWebhookSecret(deps: RouterDeps, actor: Actor, secret: string): Promise<string> {
+  const stored = await deps.secrets.put(secret, {
+    operationId: "lb-webhook",
+    traceId: "lb-webhook",
+    workspaceId: actor.workspaceId,
+    userId: actor.userId,
+    signal: new AbortController().signal,
+  });
+  const row = await deps.prisma.secret.create({
+    data: {
+      id: stored.id,
+      userId: actor.userId,
+      workspaceId: actor.workspaceId,
+      kind: "lb_webhook",
+      ciphertext: stored.ciphertext,
+    },
+    select: { id: true },
+  });
+  return row.id;
+}
+
 async function storeCaptchaToken(deps: RouterDeps, actor: Actor, token: string): Promise<string> {
   const stored = await deps.secrets.put(token, {
     operationId: "lb-captcha",
@@ -944,7 +1079,7 @@ async function requireProject(prisma: PrismaClient, actor: Actor, projectId: str
 }
 
 async function projectCursor(prisma: PrismaClient, workspaceId: string, projectId: string) {
-  const [step, ticket] = await Promise.all([
+  const [step, ticket, placement, alert] = await Promise.all([
     prisma.lbRunStep.findFirst({
       where: { workspaceId, run: { projectId, workspaceId } },
       orderBy: [{ createdAt: "desc" }, { stepIndex: "desc" }],
@@ -953,10 +1088,25 @@ async function projectCursor(prisma: PrismaClient, workspaceId: string, projectI
     prisma.lbOperatorTicket.findFirst({
       where: { workspaceId, projectId },
       orderBy: { updatedAt: "desc" },
-      select: { status: true, updatedAt: true },
+      select: { id: true, status: true, updatedAt: true },
+    }),
+    prisma.lbPlacement.findFirst({
+      where: { workspaceId, projectId },
+      orderBy: { updatedAt: "desc" },
+      select: { id: true, status: true, updatedAt: true },
+    }),
+    prisma.lbAlert.findFirst({
+      where: { workspaceId, projectId },
+      orderBy: { createdAt: "desc" },
+      select: { id: true, createdAt: true },
     }),
   ]);
-  return `${step?.runId ?? ""}:${step?.stepIndex ?? -1}:${ticket?.status ?? ""}:${ticket?.updatedAt.toISOString() ?? ""}`;
+  return [
+    `${step?.runId ?? ""}:${step?.stepIndex ?? -1}`,
+    `${ticket?.id ?? ""}:${ticket?.status ?? ""}:${ticket?.updatedAt.toISOString() ?? ""}`,
+    `${placement?.id ?? ""}:${placement?.status ?? ""}:${placement?.updatedAt.toISOString() ?? ""}`,
+    `${alert?.id ?? ""}:${alert?.createdAt.toISOString() ?? ""}`,
+  ].join("|");
 }
 
 async function publish(deps: RouterDeps, projectId: string) {
@@ -1055,6 +1205,8 @@ function toDetail(row: ProjectRow): LbProjectDetail {
     content: LbContentSchema.safeParse(row.content).data ?? LbContentSchema.parse({}),
     operator:
       LbOperatorSettingsSchema.safeParse(row.operator).data ?? LbOperatorSettingsSchema.parse({}),
+    webhookUrl: row.webhookUrl ?? null,
+    webhookConfigured: Boolean(row.webhookSecretId),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -1100,6 +1252,7 @@ function ticketView(
     screenUrl: string | null;
     note: string | null;
     status: string;
+    expiresAt: Date | null;
     createdAt: Date;
     host: { registrableDomain: string };
   },
@@ -1116,6 +1269,7 @@ function ticketView(
     screenshotArtifactId,
     note: row.note,
     status: LbOperatorTicketStatusSchema.parse(row.status),
+    expiresAt: row.expiresAt?.toISOString() ?? null,
     createdAt: row.createdAt.toISOString(),
   };
 }
