@@ -188,17 +188,28 @@ describe("link builder screens", () => {
   it("renders the brand step", () => {
     const html = renderToStaticMarkup(<LinkBuilderPreview screen="wizard" />);
     expect(html).toContain("Brand &amp; domains");
+    expect(html).toContain("Persona &amp; inbox");
+    expect(html).toContain("Quotas &amp; schedule");
+    expect(html).toContain("Topics &amp; targets");
+    expect(html).toContain("Review");
+    expect(html).not.toContain("Policy");
+    expect(html).not.toContain("Countries to post in");
+    expect(html).not.toContain("Forums to skip");
+    expect(html).not.toContain("How posts identify you");
     expect(html).toContain("nordlicht.example");
     expect(html).toContain('aria-label="Setup steps"');
+    expect(html).toContain("Step 1 of 5");
     expect(html).not.toContain("M20 6 9 17 4 12");
     expect(emptyDraft().disclosureMode).toBe("undisclosed_persona");
   });
 
   it("marks earlier steps done beside the review form", () => {
     const html = renderToStaticMarkup(<LinkBuilderPreview screen="review" />);
-    expect(html.split("M20 6 9 17 4 12").length - 1).toBe(5);
+    expect(html.split("M20 6 9 17 4 12").length - 1).toBe(4);
+    expect(html).not.toContain("Policy");
     expect(html).not.toContain("Captell token");
     expect(html).not.toContain("Check balance");
     expect(html).toContain('aria-current="step"');
+    expect(html).toContain("Step 5 of 5: Review");
   });
 });

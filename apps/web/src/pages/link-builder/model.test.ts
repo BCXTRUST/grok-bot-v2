@@ -11,6 +11,7 @@ import {
   patchFromDraft,
   RESPONSIBILITY_SENTENCE,
   removeWizardPage,
+  WIZARD_STEPS,
   warmupNote,
   withPagePrefill,
   withPersonaPrefill,
@@ -18,6 +19,16 @@ import {
 } from "./model.js";
 
 describe("link builder wizard", () => {
+  it("lists five setup steps and keeps policy defaults off the rail", () => {
+    expect([...WIZARD_STEPS]).toEqual([
+      "Brand & domains",
+      "Persona & inbox",
+      "Quotas & schedule",
+      "Topics & targets",
+      "Review",
+    ]);
+  });
+
   it("renders only raster image artifacts as data URLs", () => {
     expect(artifactImageSrc({ mimeType: "image/png", contentBase64: "iVBO" })).toBe(
       "data:image/png;base64,iVBO",

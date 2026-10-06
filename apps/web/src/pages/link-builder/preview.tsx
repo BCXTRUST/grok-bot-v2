@@ -7,7 +7,7 @@ import type {
   LbProjectStatusView,
   LbThreadView,
 } from "@rakazo/contracts";
-import { emptyDraft } from "./model.js";
+import { emptyDraft, WIZARD_STEPS } from "./model.js";
 import { DashboardView, OperatorView, ProjectView, WizardView } from "./views.js";
 
 const card: LbProjectCard = {
@@ -90,7 +90,7 @@ export function LinkBuilderPreview({ screen }: { screen: string }) {
     return (
       <div className="min-h-screen bg-[#050506]">
         <WizardView
-          step={5}
+          step={WIZARD_STEPS.length - 1}
           draft={draft}
           issues={[]}
           busy={false}

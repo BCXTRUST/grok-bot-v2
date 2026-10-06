@@ -19,18 +19,15 @@ import {
   SuccessPop,
 } from "../../components/beautiful-ui/primitives";
 import {
-  addMarket,
   addWizardPage,
   disclosureLabel,
   FUNNEL_COLUMNS,
   funnelColumnId,
-  LB_WIZARD_COUNTRIES,
   normalizePageUrl,
   PAGE_BOX_LIMIT,
   pageDomains,
   QUOTA_LABELS,
   RESPONSIBILITY_SENTENCE,
-  removeMarket,
   removeWizardPage,
   WIZARD_STEP_HINTS,
   WIZARD_STEPS,
@@ -174,7 +171,6 @@ export function WizardView({
               {step === 0 ? <BrandFields draft={draft} onChange={onChange} /> : null}
               {step === 1 ? <PersonaFields draft={draft} onChange={onChange} /> : null}
               {step === 2 ? <QuotaFields draft={draft} onChange={onChange} /> : null}
-              {step === 4 ? <PolicyFields draft={draft} onChange={onChange} /> : null}
               {step === last ? <ReviewFields draft={draft} /> : null}
             </BuiCard>
           )}
@@ -1069,103 +1065,6 @@ function updatePage(
   };
 }
 
-function PolicyFields({
-  draft,
-  onChange,
-}: {
-  draft: WizardDraft;
-  onChange: (draft: WizardDraft) => void;
-}) {
-  return (
-    <>
-      <fieldset className="flex flex-col gap-2 border-0 p-0">
-        <legend className="text-[12.5px] text-[#A6A6AD]">Countries to post in</legend>
-        <div className="flex flex-wrap gap-2">
-          {LB_WIZARD_COUNTRIES.map((country) => {
-            const selected = draft.markets.some((market) => market.country === country);
-            return (
-              <button
-                key={country}
-                type="button"
-                aria-pressed={selected}
-                aria-label={country}
-                className={`rounded-full px-3 py-1 text-[13px] ${selected ? "bg-[#232327] text-[#ECECEE]" : "text-[#A6A6AD]"}`}
-                onClick={() => onChange(toggleCountry(draft, country, selected))}
-              >
-                {country}
-              </button>
-            );
-          })}
-        </div>
-      </fieldset>
-      {draft.markets.map((market, index) => (
-        <div key={`${market.country}-${market.language}`} className="grid grid-cols-2 gap-2">
-          <Field label={`${market.country} language and region`}>
-            <input
-              aria-label={`${market.country} language and region`}
-              className={inputClass}
-              value={market.locale}
-              onChange={(event) =>
-                onChange({
-                  ...draft,
-                  markets: draft.markets.map((item, itemIndex) =>
-                    itemIndex === index ? { ...item, locale: event.target.value } : item,
-                  ),
-                })
-              }
-            />
-          </Field>
-          <Field label={`${market.country} time zone`}>
-            <input
-              aria-label={`${market.country} time zone`}
-              className={inputClass}
-              value={market.timezoneId}
-              onChange={(event) =>
-                onChange({
-                  ...draft,
-                  markets: draft.markets.map((item, itemIndex) =>
-                    itemIndex === index ? { ...item, timezoneId: event.target.value } : item,
-                  ),
-                  timezone: index === 0 ? event.target.value : draft.timezone,
-                })
-              }
-            />
-          </Field>
-        </div>
-      ))}
-      <Field label="Forums to skip">
-        <input
-          aria-label="Forums to skip"
-          className={inputClass}
-          value={draft.denyHosts}
-          onChange={(event) => onChange({ ...draft, denyHosts: event.target.value })}
-        />
-      </Field>
-      <details>
-        <summary className="cursor-pointer text-[13px] text-[#A6A6AD]">
-          How posts identify you
-        </summary>
-        <select
-          aria-label="How posts identify you"
-          className={`${inputClass} mt-2`}
-          value={draft.disclosureMode}
-          onChange={(event) =>
-            onChange({
-              ...draft,
-              disclosureMode: event.target.value as WizardDraft["disclosureMode"],
-            })
-          }
-        >
-          <option value="undisclosed_persona">{disclosureLabel("undisclosed_persona")}</option>
-          <option value="disclosed_persona">{disclosureLabel("disclosed_persona")}</option>
-          <option value="disclosed_brand">{disclosureLabel("disclosed_brand")}</option>
-          <option value="drafts_only">{disclosureLabel("drafts_only")}</option>
-        </select>
-      </details>
-    </>
-  );
-}
-
 function ReviewFields({ draft }: { draft: WizardDraft }) {
   return (
     <dl className="flex flex-col gap-2 text-[13px]">
@@ -1256,11 +1155,4 @@ function WeekBar({ value, max }: { value: number; max: number | null }) {
       </div>
     </div>
   );
-}
-
-function toggleCountry(draft: WizardDraft, country: string, selected: boolean): WizardDraft {
-  if (!selected) return addMarket(draft, country);
-  const index = draft.markets.findIndex((market) => market.country === country);
-  if (index < 0) return draft;
-  return removeMarket(draft, index);
 }

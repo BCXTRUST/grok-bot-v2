@@ -169,7 +169,7 @@ function WizardRoute({ projectId }: { projectId?: string }) {
     try {
       const saved = await save(next);
       setDraft(draftFromProject(saved));
-      setStep((value) => Math.min(6, value + 1));
+      setStep((value) => Math.min(WIZARD_STEPS.length - 1, value + 1));
     } catch (err) {
       setIssues([err instanceof Error ? err.message : "Could not save"]);
     } finally {

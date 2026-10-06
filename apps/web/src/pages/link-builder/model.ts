@@ -2,10 +2,8 @@ import {
   LB_RESPONSIBILITY_ACK_SENTENCE,
   type LbDisclosureMode,
   type LbHostStatus,
-  LbLinkRatioSchema,
   type LbMarket,
   type LbMarketPolicy,
-  LbMarketsSchema,
   LbPersonaSchema,
   type LbProjectDetail,
   LbQuotasSchema,
@@ -26,7 +24,6 @@ export const WIZARD_STEPS = [
   "Persona & inbox",
   "Quotas & schedule",
   "Topics & targets",
-  "Policy",
   "Review",
 ] as const;
 
@@ -36,7 +33,6 @@ export const WIZARD_STEP_HINTS = [
   "The person who writes, and where forum mail goes.",
   "How many accounts to open, and how many links to publish.",
   "Each page posts may link to, and what to say about it.",
-  "Where to post, and which forums to skip.",
   "Check this, then start.",
 ] as const;
 
@@ -211,7 +207,6 @@ export function wizardStepIssues(step: number, draft: WizardDraft): string[] {
   if (step === 1) return personaIssues(draft);
   if (step === 2) return quotaIssues(draft);
   if (step === 3) return topicIssues(draft);
-  if (step === 4) return policyIssues(draft);
   return ["Unknown step"];
 }
 
@@ -401,21 +396,6 @@ function topicIssues(draft: WizardDraft): string[] {
     if (!checked.ok) issues.push(`Page ${number} must be on a site you added`);
     if (!page.keyword.trim()) issues.push(`Add a keyword for page ${number}`);
     else if (page.keyword.trim().length > 80) issues.push(`Keyword for page ${number} is too long`);
-  }
-  return issues;
-}
-
-function policyIssues(draft: WizardDraft): string[] {
-  const issues: string[] = [];
-  if (!LbMarketsSchema.safeParse(draft.markets).success) issues.push("Check the markets");
-  const ratio = LbLinkRatioSchema.safeParse({
-    links: Number(draft.links),
-    posts: Number(draft.posts),
-  });
-  if (!ratio.success) issues.push(ratio.error.issues[0]?.message ?? "Link ratio looks wrong");
-  for (const host of splitList(draft.denyHosts)) {
-    if (!LbRegistrableDomainSchema.safeParse(host).success)
-      issues.push(`Deny host ${host} looks wrong`);
   }
   return issues;
 }
