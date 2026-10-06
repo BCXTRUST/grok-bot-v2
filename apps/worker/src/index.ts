@@ -162,6 +162,7 @@ async function main() {
           dataDir,
           sandbox,
           prisma,
+          secrets,
           proxyResolver: proxyResolverFor({
             prisma,
             secrets,

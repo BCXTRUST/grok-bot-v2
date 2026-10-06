@@ -150,7 +150,7 @@ export interface BrowserSessionProvider {
  * Where the persona browser runs. `sandbox` drives it inside the computer sandbox; `local` runs it
  * in-process on the worker host and is only for tests and sandbox-less development.
  */
-export type BrowserSessionMode = "local" | "sandbox";
+export type BrowserSessionMode = "local" | "sandbox" | "kernel";
 
 export interface BrowserSessionFactory extends BrowserSessionProvider {
   readonly mode: BrowserSessionMode;

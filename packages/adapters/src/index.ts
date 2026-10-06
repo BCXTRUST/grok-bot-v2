@@ -36,6 +36,7 @@ export * from "./home.js";
 export * from "./host-aware-sandbox.js";
 export * from "./installed-connectors.js";
 export * from "./job-reconciler.js";
+export * from "./kernel-browser.js";
 export * from "./mcp-connector.js";
 export * from "./mcp-emulator.js";
 export * from "./mcp-oauth.js";

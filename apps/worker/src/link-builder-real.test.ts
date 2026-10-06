@@ -44,6 +44,34 @@ describe("link builder real driver wiring", () => {
       }).mode,
     ).toBe("local");
   });
+
+  it("builds a Kernel factory only when the secret ref is set", () => {
+    expect(() =>
+      browserFactoryFromEnv({
+        env: { LINK_BUILDER_BROWSER: "kernel" },
+        dataDir: "/tmp/data",
+        sandbox,
+        prisma,
+      }),
+    ).toThrow(/LINK_BUILDER_KERNEL_SECRET_ID/);
+    const kernel = browserFactoryFromEnv({
+      env: { LINK_BUILDER_BROWSER: "kernel", LINK_BUILDER_KERNEL_SECRET_ID: "secret-kernel" },
+      dataDir: "/tmp/data",
+      sandbox,
+      prisma,
+      secrets: { load: () => "", redact: () => undefined } as never,
+    });
+    expect(kernel.mode).toBe("kernel");
+    expect(kernel.describe().id).toBe("kernel-browser");
+    const unused = browserFactoryFromEnv({
+      env: { LINK_BUILDER_KERNEL_SECRET_ID: "secret-kernel" },
+      dataDir: "/tmp/data",
+      sandbox,
+      prisma,
+      secrets: { load: () => "", redact: () => undefined } as never,
+    });
+    expect(unused.mode).toBe("sandbox");
+  });
 });
 
 describe("proxy resolver", () => {

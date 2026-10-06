@@ -15,6 +15,7 @@ import {
   type EncryptedSecretStore,
   EndpointTemplateProxyProvider,
   iproyalPreset,
+  KernelBrowserSessionFactory,
   oxylabsPreset,
   RecordedSearchProvider,
   recordedSerpDir,
@@ -72,9 +73,37 @@ export function browserFactoryFromEnv(input: {
   dataDir: string;
   sandbox: SandboxProvider;
   prisma: PrismaClient;
+  secrets?: EncryptedSecretStore;
   proxyResolver?: ProxyResolver;
 }): BrowserSessionFactory {
   const { env, prisma } = input;
+  if (env.LINK_BUILDER_BROWSER === "kernel") {
+    const secretId = env.LINK_BUILDER_KERNEL_SECRET_ID?.trim();
+    if (!secretId || !input.secrets) {
+      throw new Error("Kernel browser needs LINK_BUILDER_KERNEL_SECRET_ID");
+    }
+    const secrets = input.secrets;
+    return new KernelBrowserSessionFactory(
+      {
+        apiKey: { secretId },
+        ...(env.LINK_BUILDER_KERNEL_BASE_URL ? { baseUrl: env.LINK_BUILDER_KERNEL_BASE_URL } : {}),
+        extensionNames: dirs(env.LINK_BUILDER_KERNEL_EXTENSION),
+      },
+      {
+        onSecret: (secret) => secrets.redact(secret),
+        loadSecret: async (ref, context) => {
+          const row = await prisma.secret.findFirst({
+            where: { id: ref.secretId, workspaceId: context.workspaceId },
+            select: { ciphertext: true },
+          });
+          if (!row) throw new Error("missing kernel credential");
+          const plain = secrets.load(row.ciphertext);
+          secrets.redact(plain);
+          return plain;
+        },
+      },
+    );
+  }
   if (env.LINK_BUILDER_BROWSER === "local") {
     return new LocalBrowserSessionFactory({
       profileRoot: join(input.dataDir, ".browser-profiles"),
