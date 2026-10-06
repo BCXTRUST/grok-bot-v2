@@ -19,6 +19,9 @@ function run(status: LbRunStatus = "running"): FakeRunRecord {
     stepCount: 0,
     researchBeats: 0,
     stageBeats: 0,
+    previousAction: null,
+    forumName: null,
+    threadName: null,
     counters: { newToday: 0, liveToday: 0, liveWeek: 0, uniqueHosts: 0 },
     seed: "project-1",
     brandName: "Nordlicht",
@@ -49,6 +52,7 @@ function memoryStore(initial: FakeRunRecord): LinkBuilderFakeStore & {
     async apply(record, step) {
       steps.push(step);
       current.stepCount = record.stepCount + 1;
+      current.previousAction = step.lastAction;
       if (step.kind === "research") current.researchBeats += 1;
       if (step.kind.startsWith("lb_")) current.stageBeats += 1;
       current.status = step.runStatus;
@@ -69,35 +73,38 @@ describe("link builder fake runner", () => {
     expect(isLinkBuilderFakeEnabled({ LINK_BUILDER_DRIVER: "playwright" })).toBe(false);
   });
 
-  it("researches without creating hosts, then holds the run open", async () => {
+  it("keeps writing the next research sentence instead of holding one line", async () => {
     vi.stubGlobal("fetch", () => {
       throw new Error("network");
     });
     const store = memoryStore(run());
     const clocks = [now, new Date("2026-10-05T18:00:00.000Z")];
-    const kinds: string[][] = [];
+    const lines: string[][] = [];
     for (const clock of clocks) {
       const fresh = memoryStore(run());
-      for (let guard = 0; guard < 30; guard += 1) {
-        const stepped = await tickLinkBuilderFake(fresh, clock);
-        if (stepped === 0) break;
+      for (let guard = 0; guard < 5; guard += 1) {
+        expect(await tickLinkBuilderFake(fresh, clock)).toBe(1);
       }
-      kinds.push(fresh.steps.map((step) => step.kind));
+      lines.push(fresh.steps.map((step) => step.lastAction));
     }
-    expect(kinds[0]).toEqual(kinds[1]);
+    expect(lines[0]).toEqual(lines[1]);
     expect(store.steps).toHaveLength(0);
     const sample = memoryStore(run("running"));
-    sample.current.researchBeats = 0;
+    sample.current.previousAction = "Still researching";
+    sample.current.researchBeats = 4;
     sample.current.stepCount = 18;
-    for (let guard = 0; guard < 30; guard += 1) {
-      if ((await tickLinkBuilderFake(sample, now)) === 0) break;
+    for (let guard = 0; guard < 5; guard += 1) {
+      expect(await tickLinkBuilderFake(sample, now)).toBe(1);
     }
-    expect(sample.steps.map((step) => step.kind)).toEqual([
-      "research",
-      "research",
-      "research",
-      "research",
+    expect(sample.steps.map((step) => step.lastAction)).toEqual([
+      "Checking Google for on-topic forums",
+      "Looking for threads",
+      "Continuing",
+      "Checking Google for on-topic forums",
+      "Looking for threads",
     ]);
+    expect(sample.steps[1]?.lastAction).not.toBe(sample.steps[0]?.lastAction);
+    expect(sample.steps.every((step) => step.kind === "research")).toBe(true);
     expect(sample.steps.every((step) => step.host === undefined)).toBe(true);
     expect(sample.steps.every((step) => step.placement === undefined)).toBe(true);
     expect(
@@ -106,9 +113,6 @@ describe("link builder fake runner", () => {
     expect(JSON.stringify(sample.steps)).not.toContain(".example");
     expect(JSON.stringify(sample.steps)).not.toMatch(/captcha|solved it|LIVE quota|Parked|Verify/i);
     expect(sample.current.status).toBe("running");
-    expect(sample.steps).toHaveLength(4);
-    expect(sample.steps[0]?.lastAction).toBe("Researching topics");
-    expect(sample.steps.at(-1)?.lastAction).toBe("Still researching");
     expect(sample.current.counters).toEqual(run().counters);
     vi.unstubAllGlobals();
   });

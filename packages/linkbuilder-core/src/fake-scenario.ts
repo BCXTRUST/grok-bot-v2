@@ -10,13 +10,21 @@ import type {
 import { type RunCounters, startRunCounters } from "./run-state.js";
 import { initialWorkState, transitionWork } from "./work-stage.js";
 
-/** Distinct research lines. The runner does not repeat them. */
-const RESEARCH_LINES = [
-  "Researching topics",
-  "Reading on-topic pages",
-  "Reading threads",
-  "Still researching",
-] as const;
+/** What the bot is doing when research has no result yet. */
+export const RESEARCH_OPENING = "Checking Google for on-topic forums";
+
+const RESEARCH_LOOKING = "Looking for threads";
+
+const RESEARCH_CONTINUING = "Continuing";
+
+/** Lines the old offline script left on the screen. They are not a live log. */
+const STALE_RESEARCH_LINES = new Set([
+  "researching",
+  "researching topics",
+  "reading on-topic pages",
+  "reading threads",
+  "still researching",
+]);
 
 /**
  * Kinds an older offline script wrote without a host or a placement.
@@ -24,10 +32,10 @@ const RESEARCH_LINES = [
  */
 const CUSTOMER_STAGE_KINDS = new Set(["lb_register", "lb_warmup", "lb_place", "lb_verify"]);
 
-/** Research beats the offline runner may write. It does not invent hosts. */
-export const CUSTOMER_RESEARCH_BEATS = RESEARCH_LINES.length;
+/** One pass of the live log when nothing has been found. Later ticks keep going. */
+export const CUSTOMER_RESEARCH_BEATS = 3;
 
-/** Offline customer runs research, then hold. They do not invent hosts, accounts, placements, or a verify check. */
+/** Offline customer runs keep researching. They do not invent hosts, accounts, placements, or a verify check. */
 
 export function isCustomerStageKind(kind: string): boolean {
   return CUSTOMER_STAGE_KINDS.has(kind);
@@ -41,6 +49,12 @@ export interface FakeScenarioInput {
   stepIndex: number;
   /** Research beats already stored. Old fixture steps do not count. */
   researchBeats?: number;
+  /** Sentence written on the previous tick. The next tick moves one line ahead. */
+  previousAction?: string | null;
+  /** Real forum name. A found line is skipped when this is empty or an example host. */
+  forumName?: string | null;
+  /** Real thread title. A found line is skipped when this is empty or an example host. */
+  threadName?: string | null;
   /** Stage changes already stored (`lb_register` and the steps after it). */
   stageBeats?: number;
   /** Counters to keep. Research does not invent registrations or LIVE links. */
@@ -126,7 +140,58 @@ export function fakeDomains(seed: string): Record<FakeHostKey, string> {
   };
 }
 
-/** Plans one research beat. After that the run holds in research. No host, account, placement, or verify step is invented. */
+/** A name we can say. Blank text and `*.example` hosts are not results. */
+export function researchResultName(name: string | null | undefined): string | null {
+  const cleaned = name?.replace(/\s+/g, " ").trim() ?? "";
+  if (cleaned.length < 2) return null;
+  if (/\.example\b/i.test(cleaned) || FIXTURE_HOST_DOMAIN.test(cleaned)) return null;
+  return cleaned;
+}
+
+export function foundForumLine(name: string | null | undefined): string | null {
+  const forum = researchResultName(name);
+  return forum ? `Found forum ${forum}` : null;
+}
+
+export function foundThreadLine(name: string | null | undefined): string | null {
+  const thread = researchResultName(name);
+  return thread ? `Found ${thread}` : null;
+}
+
+export function isStaleResearchLine(label: string): boolean {
+  return STALE_RESEARCH_LINES.has(label.trim().toLowerCase());
+}
+
+/** Sentences for one pass, in order. Found lines exist only when the name is real. */
+export function researchLogLines(found?: {
+  forumName?: string | null;
+  threadName?: string | null;
+}): string[] {
+  const forum = researchResultName(found?.forumName);
+  const thread = researchResultName(found?.threadName);
+  const lines = [RESEARCH_OPENING];
+  const forumLine = foundForumLine(forum);
+  if (forumLine) lines.push(forumLine);
+  lines.push(forum ? `Looking for threads on ${forum}` : RESEARCH_LOOKING);
+  const threadLine = foundThreadLine(thread);
+  if (threadLine) lines.push(threadLine);
+  lines.push(RESEARCH_CONTINUING);
+  return lines;
+}
+
+/** The sentence after `previous`. A frozen research line starts the log over. */
+export function nextResearchLine(
+  previous: string | null | undefined,
+  found?: { forumName?: string | null; threadName?: string | null },
+): string {
+  const lines = researchLogLines(found);
+  const current = previous?.trim() ?? "";
+  const index = current ? lines.indexOf(current) : -1;
+  if (index < 0) return lines[0]!;
+  return lines[(index + 1) % lines.length]!;
+}
+
+/** Plans the next research sentence. Later ticks keep moving. No host is invented. */
 export function planFakeStep(input: FakeScenarioInput): FakePlan {
   if (!Number.isInteger(input.stepIndex) || input.stepIndex < 0) {
     throw new RangeError("stepIndex must be a non-negative integer");
@@ -140,29 +205,37 @@ export function planFakeStep(input: FakeScenarioInput): FakePlan {
     throw new RangeError("stageBeats must be a non-negative integer");
   }
   const counters = input.counters ?? startRunCounters(0);
-  if (beat < CUSTOMER_RESEARCH_BEATS) {
-    transitionWork(initialWorkState(), "research");
-    return {
-      done: false,
-      stepIndex: input.stepIndex,
-      kind: "research",
-      lastAction: RESEARCH_LINES[beat]!,
-      runStatus: "running",
-      counters,
-      costs: { credits: 1, tokens: 0, bytes: 0, ms: 400 },
-    };
-  }
-  return { hold: true };
+  transitionWork(initialWorkState(), "research");
+  return {
+    done: false,
+    stepIndex: input.stepIndex,
+    kind: "research",
+    lastAction: nextResearchLine(input.previousAction, {
+      forumName: input.forumName,
+      threadName: input.threadName,
+    }),
+    runStatus: "running",
+    counters,
+    costs: { credits: 0, tokens: 0, bytes: 0, ms: 400 },
+  };
 }
 
-/** Replays research. The run then holds. No host is written. */
+/** Replays one pass. The following tick writes the next sentence, it does not hold. */
 export function replayFakeScript(input: Omit<FakeScenarioInput, "stepIndex">): FakeStepPlan[] {
   const steps: FakeStepPlan[] = [];
   let researchBeats = 0;
+  let previousAction: string | null = input.previousAction ?? null;
   for (let index = 0; index < fakeScriptLength(); index += 1) {
-    const plan = planFakeStep({ ...input, stepIndex: index, researchBeats, stageBeats: 0 });
+    const plan = planFakeStep({
+      ...input,
+      stepIndex: index,
+      researchBeats,
+      stageBeats: 0,
+      previousAction,
+    });
     if (!("kind" in plan)) break;
     steps.push(plan);
+    previousAction = plan.lastAction;
     researchBeats += 1;
   }
   return steps;

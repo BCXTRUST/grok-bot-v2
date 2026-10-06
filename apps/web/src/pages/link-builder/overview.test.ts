@@ -56,14 +56,17 @@ describe("overview feed", () => {
 
   it("appends steps in order and marks the latest one working", () => {
     const items = overviewFeed({
-      steps: [step(1, "Reading threads"), step(0, "Researching topics")],
-      lastEvent: "Reading threads",
+      steps: [step(1, "Looking for threads"), step(0, "Checking Google for on-topic forums")],
+      lastEvent: "Looking for threads",
       working: true,
       blockers: [],
     });
-    expect(items.map((item) => item.label)).toEqual(["Researching topics", "Reading threads"]);
+    expect(items.map((item) => item.label)).toEqual([
+      "Checking Google for on-topic forums",
+      "Looking for threads",
+    ]);
     expect(items.map((item) => item.status)).toEqual(["done", "working"]);
-    expect(overviewAction(items, true)).toBe("Reading threads");
+    expect(overviewAction(items, true)).toBe("Looking for threads");
   });
 
   it("drops fixture hosts and starts on research before any step arrives", () => {
@@ -74,58 +77,52 @@ describe("overview feed", () => {
       blockers: [],
     });
     expect(starting).toEqual([
-      { id: "researching", label: "Researching", status: "working", at: null },
+      {
+        id: "researching",
+        label: "Checking Google for on-topic forums",
+        status: "working",
+        at: null,
+      },
     ]);
     const blocked = overviewFeed({
-      steps: [step(0, "Reading threads"), step(1, "Discovered forum-a.example")],
+      steps: [step(0, "Looking for threads"), step(1, "Discovered forum-a.example")],
       lastEvent: "Discovered forum-a.example",
       working: false,
       blockers: ["Parked 1"],
     });
-    expect(blocked.map((item) => item.label)).toEqual(["Reading threads", "Parked 1"]);
+    expect(blocked.map((item) => item.label)).toEqual(["Looking for threads", "Parked 1"]);
     const customer = overviewFeed({
-      steps: [step(0, "Reading threads"), step(1, "LIVE quota met")],
+      steps: [step(0, "Looking for threads"), step(1, "LIVE quota met")],
       lastEvent: "Parked the host for an operator",
       working: true,
       blockers: [],
       hideExampleCopy: true,
     });
-    expect(customer.map((item) => item.label)).toEqual(["Reading threads"]);
+    expect(customer.map((item) => item.label)).toEqual(["Looking for threads"]);
     expect(blocked[1]?.status).toBe("blocked");
-    expect(overviewAction(blocked, false)).toBe("Reading threads");
+    expect(overviewAction(blocked, false)).toBe("Looking for threads");
   });
 
-  it("collapses identical lines from the same minute and keeps later stage changes", () => {
-    const register = step(5, "Register");
-    register.createdAt = "2026-10-06T12:02:08.000Z";
-    const laterResearch = step(6, "Researching topics");
-    laterResearch.createdAt = "2026-10-06T12:05:00.000Z";
+  it("collapses a stuck repeat and keeps the next sentence", () => {
+    const repeat = step(1, "Checking Google for on-topic forums");
+    repeat.createdAt = "2026-10-06T12:00:20.000Z";
+    const later = step(2, "Looking for threads");
+    later.createdAt = "2026-10-06T12:00:40.000Z";
+    const again = step(3, "Checking Google for on-topic forums");
+    again.createdAt = "2026-10-06T12:01:10.000Z";
     const items = overviewFeed({
-      steps: [
-        step(0, "Researching topics"),
-        step(1, "Reading on-topic pages"),
-        step(2, "Reading threads"),
-        step(3, "Still researching"),
-        step(4, "Researching topics"),
-        register,
-        laterResearch,
-      ],
-      lastEvent: "Researching topics",
+      steps: [step(0, "Checking Google for on-topic forums"), repeat, later, again],
+      lastEvent: "Checking Google for on-topic forums",
       working: true,
       blockers: [],
-      hideExampleCopy: true,
-      hasPlacement: true,
     });
     expect(items.map((item) => item.label)).toEqual([
-      "Researching topics",
-      "Reading on-topic pages",
-      "Reading threads",
-      "Still researching",
-      "Register",
-      "Researching topics",
+      "Checking Google for on-topic forums",
+      "Looking for threads",
+      "Checking Google for on-topic forums",
     ]);
     expect(items.at(-1)?.status).toBe("working");
-    expect(items.filter((item) => item.label === "Researching topics")).toHaveLength(2);
+    expect(overviewAction(items, true)).toBe("Checking Google for on-topic forums");
   });
 
   it("follows an explicit start or pause before the server status changes", () => {
@@ -165,16 +162,60 @@ describe("overview feed", () => {
     expect(overviewFrame({ steps: [], tickets: [] })).toBeNull();
   });
 
-  it("keeps the working line on the latest research step", () => {
+  it("prefers the newest sentence and keeps the older lines", () => {
     const items = overviewFeed({
-      steps: [step(0, "Researching topics"), step(1, "Still researching")],
-      lastEvent: "Researching",
+      steps: [
+        step(0, "Checking Google for on-topic forums"),
+        step(1, "Looking for threads"),
+        step(2, "Continuing"),
+        step(3, "Still researching"),
+      ],
+      lastEvent: "Still researching",
       working: true,
       blockers: [],
       hasPlacement: false,
     });
-    expect(items.map((item) => item.label)).toEqual(["Researching topics", "Still researching"]);
-    expect(items.find((item) => item.status === "working")?.label).toBe("Still researching");
+    expect(items.map((item) => item.label)).toEqual([
+      "Checking Google for on-topic forums",
+      "Looking for threads",
+      "Continuing",
+    ]);
+    expect(items.find((item) => item.status === "working")?.label).toBe("Continuing");
+    expect(overviewAction(items, true)).toBe("Continuing");
+  });
+
+  it("adds a found line only for a real name", () => {
+    const named = overviewFeed({
+      steps: [
+        step(0, "Checking Google for on-topic forums"),
+        step(1, "Looking for threads"),
+        step(2, "Continuing"),
+      ],
+      lastEvent: null,
+      working: true,
+      blockers: [],
+      forumName: "gutefrage.net",
+      threadName: "Vitamin D im Winter?",
+    });
+    expect(named.map((item) => item.label)).toEqual([
+      "Checking Google for on-topic forums",
+      "Found forum gutefrage.net",
+      "Looking for threads on gutefrage.net",
+      "Found Vitamin D im Winter?",
+      "Continuing",
+    ]);
+    expect(overviewAction(named, true)).toBe("Continuing");
+    const invented = overviewFeed({
+      steps: [step(0, "Checking Google for on-topic forums"), step(1, "Continuing")],
+      lastEvent: "Found forum forum-a.example",
+      working: true,
+      blockers: [],
+      forumName: "forum-a.example",
+      threadName: "brett-a.example",
+    });
+    expect(invented.map((item) => item.label).join("\n")).not.toContain(".example");
+    expect(invented.some((item) => item.label.startsWith("Found"))).toBe(false);
+    expect(overviewAction(invented, true)).toBe("Continuing");
   });
 
   it("does not verify, or spin on Verify, when nothing was placed", () => {
@@ -198,11 +239,7 @@ describe("overview feed", () => {
       hideExampleCopy: true,
       hasPlacement: false,
     });
-    expect(items.map((item) => item.label)).toEqual([
-      "Researching topics",
-      "Still researching",
-      "Registered",
-    ]);
+    expect(items.map((item) => item.label)).toEqual(["Registered"]);
     expect(items.some((item) => item.label === "Verify")).toBe(false);
     expect(items.find((item) => item.status === "working")?.label).toBe("Registered");
     expect(overviewHasPlacement([], "vitaminexpress")).toBe(false);

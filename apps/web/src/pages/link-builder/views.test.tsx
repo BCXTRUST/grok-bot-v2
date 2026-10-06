@@ -325,9 +325,9 @@ describe("link builder screens", () => {
 
   it("shows the computer working and a growing feed instead of NEW/LIVE rings", () => {
     const discovered = step(0, "research", []);
-    discovered.lastAction = "Researching topics";
+    discovered.lastAction = "Checking Google for on-topic forums";
     const probed = step(1, "research", ["shot-1"]);
-    probed.lastAction = "Reading threads";
+    probed.lastAction = "Looking for threads";
     const html = renderOverview(statusView({ activity: "running", activityLabel: "running" }), [
       discovered,
       probed,
@@ -349,7 +349,12 @@ describe("link builder screens", () => {
     expect(html).toContain('data-status="working"');
     expect(html).toContain('data-frame="artifact"');
     expect(html).not.toContain("forum-a.example");
-    expect(html.indexOf("Researching topics")).toBeLessThan(html.lastIndexOf("Reading threads"));
+    expect(html.indexOf('aria-label="Looking for threads"')).toBeLessThan(
+      html.indexOf("Checking Google for on-topic forums"),
+    );
+    expect(html.indexOf("Checking Google for on-topic forums")).toBeLessThan(
+      html.lastIndexOf("Looking for threads"),
+    );
     expect(html).not.toContain("Why not");
     expect(html).not.toContain("Proxy ok");
     expect(html).not.toContain("Supply");
@@ -359,12 +364,12 @@ describe("link builder screens", () => {
 
   it("shows the stage rail and the current action when no screen exists", () => {
     const reading = step(0, "research", []);
-    reading.lastAction = "Reading threads";
+    reading.lastAction = "Checking Google for on-topic forums";
     const html = renderOverview(
       statusView({
         activity: "running",
         activityLabel: "running",
-        lastEvent: "Reading threads",
+        lastEvent: "Checking Google for on-topic forums",
         run: {
           id: "run-1",
           date: "2026-10-06",
@@ -373,7 +378,7 @@ describe("link builder screens", () => {
           liveToday: 0,
           liveWeek: 0,
           uniqueHosts: 0,
-          lastAction: "Reading threads",
+          lastAction: "Checking Google for on-topic forums",
           lastError: null,
         },
       }),
@@ -387,7 +392,10 @@ describe("link builder screens", () => {
     expect(html).toContain("Warmup");
     expect(html).toContain("Place");
     expect(html).toContain("Verify");
-    expect(html).toContain('aria-label="Reading threads"');
+    expect(html).toContain('aria-label="Checking Google for on-topic forums"');
+    expect(html.indexOf('aria-label="Checking Google for on-topic forums"')).toBeLessThan(
+      html.indexOf("No session"),
+    );
     expect(html).toContain("bui-pixel-on");
     expect(html).toContain("No session");
     expect(html).toContain('data-session="closed"');
@@ -407,14 +415,14 @@ describe("link builder screens", () => {
 
   it("stays on research when Verify has no placement, and still shows a frame", () => {
     const reading = step(0, "research", []);
-    reading.lastAction = "Still researching";
+    reading.lastAction = "Continuing";
     const verify = step(1, "lb_verify", ["shot-9"]);
     verify.lastAction = "Verify";
     const html = renderOverview(
       statusView({
         activity: "running",
         activityLabel: "running",
-        lastEvent: "Verify",
+        lastEvent: "Continuing",
         run: {
           id: "run-1",
           date: "2026-10-06",
@@ -423,7 +431,7 @@ describe("link builder screens", () => {
           liveToday: 0,
           liveWeek: 0,
           uniqueHosts: 0,
-          lastAction: "Verify",
+          lastAction: "Continuing",
           lastError: null,
         },
       }),
@@ -433,7 +441,7 @@ describe("link builder screens", () => {
     expect(html).toContain('data-frame="artifact"');
     const workingAt = html.indexOf('data-status="working"');
     const row = html.slice(workingAt, workingAt + 2500);
-    expect(row).toContain("Still researching");
+    expect(row).toContain("Continuing");
     expect(row).not.toContain("Verify");
     expect(html).not.toContain("I've solved it");
     expect(html).not.toContain("fragen-");
@@ -478,13 +486,13 @@ describe("link builder screens", () => {
       statusView({
         activity: "paused",
         activityLabel: "paused",
-        lastEvent: "Reading threads",
+        lastEvent: "Looking for threads",
       }),
       [],
     );
     expect(html).not.toContain("bui-pixel-on");
     expect(html).toContain('aria-label="Computer"');
-    expect(html).toContain("Reading threads");
+    expect(html).toContain("Looking for threads");
     expect(html).not.toContain(".example");
     expect(html).toContain("New accounts per day");
     expect(html).not.toContain("New links today");

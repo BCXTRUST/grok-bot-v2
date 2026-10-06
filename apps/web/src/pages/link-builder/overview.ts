@@ -1,7 +1,12 @@
 import type { LbOperatorTicketView, LbRunStepView, LbWhyNot } from "@rakazo/contracts";
 import {
+  foundForumLine,
+  foundThreadLine,
+  isStaleResearchLine,
   mentionsExampleDomain,
   mentionsFixtureHost,
+  RESEARCH_OPENING,
+  researchResultName,
   showHostToCustomer,
   stageFromActivity,
   type WorkStage,
@@ -105,12 +110,17 @@ export function overviewFeed(input: {
   hideExampleCopy?: boolean;
   /** Verify runs only after a link is placed. Without one, those lines stay off the feed. */
   hasPlacement?: boolean;
+  /** Real forum. A found line is omitted when this is blank or an example host. */
+  forumName?: string | null;
+  /** Real thread title. A found line is omitted when this is blank or an example host. */
+  threadName?: string | null;
 }): OverviewFeedItem[] {
   const hasPlacement = input.hasPlacement === true;
   const steps = [...input.steps]
     .sort((a, b) => a.stepIndex - b.stepIndex)
     .filter((step) => {
       const label = step.lastAction?.trim() || step.kind;
+      if (isStaleResearchLine(label)) return false;
       if (!hasPlacement && offlineStage(step.kind, label)) return false;
       if (mentionsFixtureHost(label)) return false;
       if (input.hideExampleCopy && (mentionsExampleDomain(label) || leftoverHandoff(label))) {
@@ -122,7 +132,9 @@ export function overviewFeed(input: {
   for (const step of steps) {
     const label = step.lastAction?.trim() || step.kind;
     const at = step.createdAt;
-    const duplicate = items.some((item) => item.label === label && sameMoment(item.at, at));
+    const previous = items.at(-1);
+    const duplicate =
+      previous !== undefined && previous.label === label && sameMoment(previous.at, at);
     if (duplicate) continue;
     items.push({
       id: step.id,
@@ -135,6 +147,7 @@ export function overviewFeed(input: {
   const event = input.lastEvent?.trim() ?? "";
   const researchAlready = items.some((item) => /research/i.test(item.label));
   const hiddenEvent =
+    isStaleResearchLine(event) ||
     mentionsFixtureHost(event) ||
     (!hasPlacement && offlineStage("", event)) ||
     (event.toLowerCase() === "researching" && researchAlready) ||
@@ -142,17 +155,33 @@ export function overviewFeed(input: {
   if (event && !seen.has(event) && !hiddenEvent) {
     items.push({ id: `event:${event}`, label: event, status: "done", at: null });
   }
+  placeFoundLines(items, input.forumName, input.threadName);
   if (input.working) {
     let open = -1;
     for (let index = items.length - 1; index >= 0; index -= 1) {
-      if (items[index]?.status !== "blocked") {
-        open = index;
-        break;
+      const item = items[index];
+      if (!item || item.status === "blocked" || item.id.startsWith("found:")) continue;
+      open = index;
+      break;
+    }
+    if (open < 0) {
+      for (let index = items.length - 1; index >= 0; index -= 1) {
+        if (items[index]?.status !== "blocked") {
+          open = index;
+          break;
+        }
       }
     }
     const current = open >= 0 ? items[open] : undefined;
-    if (current) current.status = "working";
-    else items.push({ id: "researching", label: "Researching", status: "working", at: null });
+    if (current) {
+      current.status = "working";
+      if (open < items.length - 1) {
+        items.splice(open, 1);
+        items.push(current);
+      }
+    } else {
+      items.push({ id: "researching", label: RESEARCH_OPENING, status: "working", at: null });
+    }
   }
   for (const line of input.blockers) {
     items.push({ id: `blocker:${line}`, label: line, status: "blocked", at: null });
@@ -169,7 +198,47 @@ export function overviewAction(items: OverviewFeedItem[], working: boolean): str
   return last?.label ?? "";
 }
 
-/** Identical lines in the same displayed minute are one moment, so they do not stack. */
+function researchRank(label: string): number | null {
+  if (label === RESEARCH_OPENING) return 0;
+  if (label.startsWith("Found forum ")) return 1;
+  if (label === "Looking for threads" || label.startsWith("Looking for threads on ")) return 2;
+  if (label.startsWith("Found ")) return 3;
+  if (label === "Continuing") return 4;
+  return null;
+}
+
+/** Puts a real find in script order. Example hosts never become a line. */
+function placeFoundLines(
+  items: OverviewFeedItem[],
+  forumName: string | null | undefined,
+  threadName: string | null | undefined,
+) {
+  const forum = researchResultName(forumName);
+  if (forum) {
+    for (const item of items) {
+      if (item.label === "Looking for threads") item.label = `Looking for threads on ${forum}`;
+    }
+  }
+  insertRanked(items, foundForumLine(forum));
+  insertRanked(items, foundThreadLine(threadName));
+}
+
+function insertRanked(items: OverviewFeedItem[], line: string | null) {
+  if (!line || items.some((item) => item.label === line)) return;
+  const rank = researchRank(line);
+  if (rank === null) return;
+  let index = items.length;
+  for (let cursor = 0; cursor < items.length; cursor += 1) {
+    const existing = researchRank(items[cursor]?.label ?? "");
+    if (existing !== null && existing > rank) {
+      index = cursor;
+      break;
+    }
+  }
+  items.splice(index, 0, { id: `found:${line}`, label: line, status: "done", at: null });
+}
+
+/** A stuck repeat in the same minute is one moment. A new sentence still lands. */
 function sameMoment(left: string | null, right: string | null): boolean {
   if (left === right) return true;
   if (!left || !right) return false;

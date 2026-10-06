@@ -400,6 +400,14 @@ function ProjectRoute({ projectId }: { projectId: string }) {
   }, [reload]);
 
   useEffect(() => {
+    if (surface !== "dashboard") return;
+    const timer = setInterval(() => {
+      void reload().catch(() => undefined);
+    }, 2000);
+    return () => clearInterval(timer);
+  }, [reload, surface]);
+
+  useEffect(() => {
     const abort = new AbortController();
     let cursor = "";
     void (async () => {

@@ -15,6 +15,7 @@ import {
   linkBuilderTopic,
   planFakeStep,
   type RunCounters,
+  researchResultName,
   transitionRun,
 } from "@rakazo/linkbuilder-core";
 
@@ -35,6 +36,9 @@ export interface FakeRunRecord {
   stepCount: number;
   researchBeats: number;
   stageBeats: number;
+  previousAction: string | null;
+  forumName: string | null;
+  threadName: string | null;
   counters: RunCounters;
   seed: string;
   brandName: string;
@@ -62,6 +66,9 @@ export async function tickLinkBuilderFake(store: LinkBuilderFakeStore, now: Date
         stepIndex: run.stepCount,
         researchBeats: run.researchBeats,
         stageBeats: run.stageBeats,
+        previousAction: run.previousAction,
+        forumName: run.forumName,
+        threadName: run.threadName,
         counters: run.counters,
         now,
         markets: run.markets,
@@ -138,9 +145,22 @@ export function createPrismaFakeStore(
       const runs = await prisma.lbRun.findMany({
         where: { status: { in: ["queued", "running", "overtime"] }, project: { status: "active" } },
         include: {
-          project: true,
+          project: {
+            include: {
+              hosts: {
+                select: { registrableDomain: true },
+                orderBy: { createdAt: "desc" },
+                take: 8,
+              },
+              threadCandidates: {
+                select: { title: true },
+                orderBy: { createdAt: "desc" },
+                take: 8,
+              },
+            },
+          },
           _count: { select: { steps: true } },
-          steps: { select: { kind: true } },
+          steps: { select: { kind: true, stepIndex: true, outcome: true } },
         },
       });
       const records: FakeRunRecord[] = [];
@@ -258,7 +278,7 @@ function mapRun(run: {
   workspaceId: string;
   status: string;
   _count: { steps: number };
-  steps: { kind: string }[];
+  steps: { kind: string; stepIndex: number; outcome: unknown }[];
   newToday: number;
   liveToday: number;
   liveWeek: number;
@@ -272,6 +292,8 @@ function mapRun(run: {
     targets: unknown;
     countNofollow: boolean;
     captchaLowBalanceCredits: number;
+    hosts?: { registrableDomain: string }[];
+    threadCandidates?: { title: string }[];
   };
 }): FakeRunRecord | null {
   const status = LbRunStatusSchema.safeParse(run.status);
@@ -288,6 +310,9 @@ function mapRun(run: {
     stepCount: run._count.steps,
     researchBeats: run.steps.filter((step) => step.kind === "research").length,
     stageBeats: run.steps.filter((step) => isCustomerStageKind(step.kind)).length,
+    previousAction: latestAction(run.steps),
+    forumName: firstRealName((run.project.hosts ?? []).map((host) => host.registrableDomain)),
+    threadName: firstRealName((run.project.threadCandidates ?? []).map((thread) => thread.title)),
     counters: {
       newToday: run.newToday,
       liveToday: run.liveToday,
@@ -302,6 +327,24 @@ function mapRun(run: {
     countNofollow: run.project.countNofollow,
     lowBalanceCredits: run.project.captchaLowBalanceCredits,
   };
+}
+
+function latestAction(steps: { stepIndex: number; outcome: unknown }[]): string | null {
+  let latest: { stepIndex: number; outcome: unknown } | undefined;
+  for (const step of steps) {
+    if (!latest || step.stepIndex >= latest.stepIndex) latest = step;
+  }
+  if (!latest?.outcome || typeof latest.outcome !== "object") return null;
+  const value = (latest.outcome as { lastAction?: unknown }).lastAction;
+  return typeof value === "string" ? value : null;
+}
+
+function firstRealName(names: readonly string[]): string | null {
+  for (const name of names) {
+    const real = researchResultName(name);
+    if (real) return real;
+  }
+  return null;
 }
 
 function zTargets(value: unknown): Array<{ url: string }> {

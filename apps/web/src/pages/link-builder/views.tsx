@@ -619,6 +619,8 @@ function Dashboard({
     blockers: whyNotFeedLines(status?.whyNot),
     hideExampleCopy,
     hasPlacement,
+    forumName: forums[0]?.registrableDomain ?? null,
+    threadName: visibleThreads[0]?.title ?? null,
   });
   const action = overviewAction(items, working);
   const frame = overviewFrame({ steps, tickets });

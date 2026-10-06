@@ -31,12 +31,13 @@ const CHEVRON_DELAYS = Array.from({ length: 9 }, (_, i) => {
   return (column + Math.abs(row - 1)) * 90;
 });
 
-function useElapsed(): string {
+function useElapsed(resetKey: string): string {
   const [deciseconds, setDeciseconds] = useState(0);
   useEffect(() => {
+    setDeciseconds(0);
     const timer = setInterval(() => setDeciseconds((value) => value + 1), 100);
     return () => clearInterval(timer);
-  }, []);
+  }, [resetKey]);
   const total = deciseconds / 10;
   if (total < 60) return `${total.toFixed(1)}s`;
   return `${Math.floor(total / 60)}m ${(total % 60).toFixed(1)}s`;
@@ -51,14 +52,11 @@ export function LoadingState({
   /** Larger type for the computer pane, where this is the whole screen. */
   prominent?: boolean;
 }) {
-  const elapsed = useElapsed();
+  const elapsed = useElapsed(label);
   const cell = prominent ? "h-[5px] w-[5px]" : "h-[4px] w-[4px]";
   return (
     <span className={`flex w-fit items-center ${prominent ? "gap-3.5" : "gap-2.5"}`}>
-      <span
-        aria-hidden
-        className={`grid grid-cols-3 ${prominent ? "gap-[2px]" : "gap-[1.5px]"}`}
-      >
+      <span aria-hidden className={`grid grid-cols-3 ${prominent ? "gap-[2px]" : "gap-[1.5px]"}`}>
         {CHEVRON_DELAYS.map((delay, i) => (
           <span
             key={i}
@@ -71,7 +69,9 @@ export function LoadingState({
           />
         ))}
       </span>
-      <span className={prominent ? "text-[22px] font-medium leading-none" : "text-[13.5px] font-medium"}>
+      <span
+        className={prominent ? "text-[22px] font-medium leading-none" : "text-[13.5px] font-medium"}
+      >
         <Shimmer>{label}</Shimmer>
       </span>
       <span
