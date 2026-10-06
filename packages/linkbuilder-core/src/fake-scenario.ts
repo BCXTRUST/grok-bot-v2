@@ -7,6 +7,7 @@ import type {
   LbRunStatus,
   LbWhyNot,
 } from "@rakazo/contracts";
+import { searchedGoogleLine } from "./problem-queries.js";
 import { type RunCounters, startRunCounters } from "./run-state.js";
 import { initialWorkState, transitionWork } from "./work-stage.js";
 
@@ -69,6 +70,8 @@ export interface FakeScenarioInput {
   quotas: { livePerDay: number; liveWeekCap?: number };
   countNofollow: boolean;
   lowBalanceCredits?: number;
+  /** Problem query already chosen for this project. The shop name is never a query. */
+  searchQuery?: string | null;
 }
 
 export interface FakeHostWrite {
@@ -213,6 +216,19 @@ export function nextResearchLine(
   return nextRealResearchEvent(previous, found) ?? RESEARCH_OPENING;
 }
 
+/** A search line we can store. A shop name or a buy query is not one. */
+export function problemSearchAction(
+  query: string | null | undefined,
+  brandName?: string | null,
+): string | null {
+  const cleaned = query?.replace(/\s+/g, " ").trim() ?? "";
+  if (cleaned.length < 3) return null;
+  if (/\bkaufen\b|vitaminexpress|vitamin express/i.test(cleaned)) return null;
+  const shop = brandName?.trim().toLowerCase() ?? "";
+  if (shop.length > 2 && cleaned.toLowerCase().includes(shop)) return null;
+  return searchedGoogleLine(cleaned);
+}
+
 /** Plans the next real event. Holds when nothing new has happened. No host is invented. */
 export function planFakeStep(input: FakeScenarioInput): FakePlan {
   if (!Number.isInteger(input.stepIndex) || input.stepIndex < 0) {
@@ -228,6 +244,19 @@ export function planFakeStep(input: FakeScenarioInput): FakePlan {
   }
   const counters = input.counters ?? startRunCounters(0);
   transitionWork(initialWorkState(), "research");
+  const searchLine = problemSearchAction(input.searchQuery, input.brandName);
+  const said = input.previousAction?.trim() ?? "";
+  if (searchLine && said !== searchLine && !said.startsWith("Found ")) {
+    return {
+      done: false,
+      stepIndex: input.stepIndex,
+      kind: "research",
+      lastAction: searchLine,
+      runStatus: "running",
+      counters,
+      costs: { credits: 0, tokens: 0, bytes: 0, ms: 400 },
+    };
+  }
   const lastAction = nextRealResearchEvent(input.previousAction, {
     forumName: input.forumName,
     threadName: input.threadName,

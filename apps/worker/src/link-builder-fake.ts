@@ -14,6 +14,7 @@ import {
   isFixtureHostDomain,
   linkBuilderTopic,
   planFakeStep,
+  primaryProblemQueryFromProject,
   type RunCounters,
   researchResultName,
   transitionRun,
@@ -47,6 +48,7 @@ export interface FakeRunRecord {
   quotas: { livePerDay: number; liveWeekCap?: number };
   countNofollow: boolean;
   lowBalanceCredits: number;
+  searchQuery: string | null;
 }
 
 export interface LinkBuilderFakeStore {
@@ -74,6 +76,7 @@ export async function tickLinkBuilderFake(store: LinkBuilderFakeStore, now: Date
         markets: run.markets,
         brandName: run.brandName,
         targetUrl: run.targetUrl,
+        searchQuery: run.searchQuery,
         quotas: run.quotas,
         countNofollow: run.countNofollow,
         lowBalanceCredits: run.lowBalanceCredits,
@@ -288,10 +291,12 @@ function mapRun(run: {
   uniqueHosts: number;
   project: {
     id: string;
+    name: string;
     brandName: string;
     allowedDomains: string[];
     markets: unknown;
     quotas: unknown;
+    topicLanes: unknown;
     targets: unknown;
     countNofollow: boolean;
     captchaLowBalanceCredits: number;
@@ -329,6 +334,12 @@ function mapRun(run: {
     seed: run.project.id,
     brandName: run.project.brandName,
     targetUrl: targets[0]?.url ?? `https://${domain}/`,
+    searchQuery: primaryProblemQueryFromProject({
+      name: run.project.name,
+      brandName: run.project.brandName,
+      topicLanes: run.project.topicLanes,
+      targets: run.project.targets,
+    }),
     markets: markets.data,
     quotas: { livePerDay: quotas.data.livePerDay, liveWeekCap: quotas.data.liveWeekCap },
     countNofollow: run.project.countNofollow,

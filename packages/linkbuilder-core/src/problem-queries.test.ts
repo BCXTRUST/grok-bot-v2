@@ -77,6 +77,12 @@ describe("problem queries", () => {
     expect(advice).toBe("https://www.vitaminexpress.org/de/magnesium");
     expect(buy).toBe("https://www.vitaminexpress.org/de/magnesium-kaufen");
     expect(advice).not.toBe(buy);
+    expect(
+      matchDeepLink({
+        threadText: "Vitamin D Mangel im Winter, welche Dosis?",
+        targets,
+      }),
+    ).toBeNull();
     expect(searchedGoogleLine("Magnesium Krämpfe Forum")).toBe(
       "Searched Google.de for Magnesium Krämpfe Forum",
     );

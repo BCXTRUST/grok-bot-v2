@@ -30,6 +30,7 @@ function run(status: LbRunStatus = "running"): FakeRunRecord {
     quotas: { livePerDay: 1, liveWeekCap: 5 },
     countNofollow: true,
     lowBalanceCredits: 500,
+    searchQuery: null,
   };
 }
 
@@ -108,5 +109,24 @@ describe("link builder fake runner", () => {
     expect(sample.current.status).toBe("running");
     expect(sample.current.counters).toEqual(run().counters);
     vi.unstubAllGlobals();
+  });
+
+  it("records the problem query once and does not register or place a link", async () => {
+    const magnesium = memoryStore(run("running"));
+    magnesium.current.brandName = "Vitaminexpress";
+    magnesium.current.searchQuery = "Magnesium Krämpfe Forum";
+    expect(await tickLinkBuilderFake(magnesium, now)).toBe(1);
+    expect(await tickLinkBuilderFake(magnesium, now)).toBe(0);
+    expect(magnesium.steps.map((step) => step.lastAction)).toEqual([
+      "Searched Google.de for Magnesium Krämpfe Forum",
+    ]);
+    expect(magnesium.steps.every((step) => step.host === undefined)).toBe(true);
+    expect(magnesium.steps.every((step) => step.placement === undefined)).toBe(true);
+    expect(JSON.stringify(magnesium.steps)).not.toMatch(/vitaminexpress|kaufen|register/i);
+    const shop = memoryStore(run("running"));
+    shop.current.brandName = "Vitaminexpress";
+    shop.current.searchQuery = "Vitaminexpress Magnesium kaufen forum";
+    expect(await tickLinkBuilderFake(shop, now)).toBe(0);
+    expect(shop.steps).toEqual([]);
   });
 });

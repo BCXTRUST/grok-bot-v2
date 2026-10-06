@@ -6,6 +6,7 @@ import {
   isCannedResearchLine,
   isFixtureHostDomain,
   planFakeStep,
+  problemSearchAction,
   replayFakeScript,
   researchLogLines,
 } from "./fake-scenario.js";
@@ -57,6 +58,20 @@ describe("fake scenario", () => {
       previousAction: "Checking Google for on-topic forums",
     });
     expect(again).toEqual({ hold: true });
+    expect(problemSearchAction("Vitaminexpress Magnesium kaufen forum", "Vitaminexpress")).toBe(
+      null,
+    );
+    const searched = replayFakeScript({
+      ...input,
+      brandName: "Vitaminexpress",
+      searchQuery: "Magnesium Krämpfe Forum",
+    });
+    expect(searched.map((step) => step.lastAction)).toEqual([
+      "Searched Google.de for Magnesium Krämpfe Forum",
+    ]);
+    expect(searched.every((step) => step.host === undefined && step.placement === undefined)).toBe(
+      true,
+    );
   });
 
   it("writes a found line only when the name is real", () => {

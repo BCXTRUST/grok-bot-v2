@@ -79,9 +79,16 @@ describe("computer desktop window helpers", () => {
     );
     const raised = raiseBrowserWindowCommand(":0");
     expect(raised).toContain("Can't update Chrome");
+    expect(raised).toContain("Reinstall Chrome");
     expect(raised).toContain("Welcome to Google Chrome");
+    expect(raised).toContain("windowclose");
+    expect(raised).not.toContain("key Return");
     expect(raised).toContain("xfce4-panel");
+    expect(raised).toContain("fluxbox");
+    expect(raised).toContain("toolbar.visible: false");
     expect(raised).toContain("FULLSCREEN");
+    expect(command).toContain("fluxbox");
+    expect(command).toContain("--disable-component-update");
     expect(command).not.toContain("nohup");
   });
 

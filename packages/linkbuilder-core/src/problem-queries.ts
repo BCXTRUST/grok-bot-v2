@@ -268,13 +268,13 @@ export function matchDeepLink(input: {
     .filter((url) => /^https?:\/\//i.test(url))
     .map((url) => ({ url, kind: pageKind(url) }));
   if (pages.length === 0) return null;
+  const nutrient = matchedNutrients(input.threadText)[0];
+  if (!nutrient) return null;
+  const related = pages.filter((page) => nutrient.match.test(page.url));
+  if (related.length === 0) return null;
   const buyThread = /kaufen|bestellen|preis|\bshop\b/i.test(input.threadText);
   const wanted = buyThread ? "buy" : "ratgeber";
-  return (
-    pages.find((page) => page.kind === wanted)?.url ??
-    pages.find((page) => page.kind === "ratgeber")?.url ??
-    null
-  );
+  return related.find((page) => page.kind === wanted)?.url ?? null;
 }
 
 export function primaryProblemQueryFromProject(project: {

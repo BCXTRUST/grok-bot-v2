@@ -1089,6 +1089,7 @@ async function ensureRunningToday(
 
 function customerStepVisible(slug: string, lastAction: string | null): boolean {
   if (!lastAction) return true;
+  if (isCannedResearchLine(lastAction) || isStaleResearchLine(lastAction)) return false;
   if (mentionsFixtureHost(lastAction)) return false;
   if (slug !== LB_DEMO_SLUG && mentionsExampleDomain(lastAction)) return false;
   if (slug !== LB_DEMO_SLUG && /live quota met|captcha/i.test(lastAction)) return false;
