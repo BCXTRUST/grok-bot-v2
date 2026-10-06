@@ -9,6 +9,7 @@ import {
   EncryptedSecretStore,
   LocalArtifactStore,
   RecordedTextModel,
+  StaticPlanProvider,
   textModelFixtureKey,
 } from "@rakazo/adapters";
 import {
@@ -91,7 +92,15 @@ async function createHarness(): Promise<Harness> {
   const artifacts = new LocalArtifactStore(root);
   return {
     db,
-    deps: { prisma: db.prisma, secrets, artifacts } as unknown as ApiDeps,
+    deps: {
+      prisma: db.prisma,
+      secrets,
+      artifacts,
+      plan: new StaticPlanProvider({
+        name: "e2e",
+        caps: { projects: 100, live_per_day: 100, personas: 100 },
+      }),
+    } as unknown as ApiDeps,
     root,
     artifacts,
     secrets,
