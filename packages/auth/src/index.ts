@@ -63,6 +63,20 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
         },
       },
     },
+    rateLimit: {
+      window: 60,
+      max: 100,
+      customRules: {
+        // Session reads ride along with every dashboard poll. They are not a flood.
+        "/get-session": false,
+      },
+    },
+    advanced: {
+      ipAddress: {
+        ipAddressHeaders: ["x-forwarded-for", "x-real-ip"],
+        trustedProxies: ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "127.0.0.1"],
+      },
+    },
     plugins: [
       bearer(),
       organization({

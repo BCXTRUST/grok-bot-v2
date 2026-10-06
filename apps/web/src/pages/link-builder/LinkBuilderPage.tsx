@@ -512,16 +512,16 @@ function ProjectRoute({ projectId }: { projectId: string }) {
           if (cancelled) return;
           attempt = 0;
           setStatus(next);
-          timer = window.setTimeout(tick, 2_000);
+          timer = window.setTimeout(tick, 10_000);
         })
         .catch((err: unknown) => {
           if (cancelled) return;
           const limited = isLinkBuilderRateLimit(err);
-          timer = window.setTimeout(tick, limited ? linkBuilderPollBackoffMs(attempt) : 2_000);
+          timer = window.setTimeout(tick, limited ? linkBuilderPollBackoffMs(attempt) : 10_000);
           if (limited) attempt += 1;
         });
     };
-    timer = window.setTimeout(tick, 2_000);
+    timer = window.setTimeout(tick, 10_000);
     return () => {
       cancelled = true;
       window.clearTimeout(timer);
