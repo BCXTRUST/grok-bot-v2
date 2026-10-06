@@ -133,9 +133,11 @@ export function overviewFeed(input: {
   }
   const seen = new Set(items.map((item) => item.label));
   const event = input.lastEvent?.trim() ?? "";
+  const researchAlready = items.some((item) => /research/i.test(item.label));
   const hiddenEvent =
     mentionsFixtureHost(event) ||
     (!hasPlacement && offlineStage("", event)) ||
+    (event.toLowerCase() === "researching" && researchAlready) ||
     (input.hideExampleCopy && (mentionsExampleDomain(event) || leftoverHandoff(event)));
   if (event && !seen.has(event) && !hiddenEvent) {
     items.push({ id: `event:${event}`, label: event, status: "done", at: null });

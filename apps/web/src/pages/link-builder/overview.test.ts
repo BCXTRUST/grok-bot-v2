@@ -165,6 +165,18 @@ describe("overview feed", () => {
     expect(overviewFrame({ steps: [], tickets: [] })).toBeNull();
   });
 
+  it("keeps the working line on the latest research step", () => {
+    const items = overviewFeed({
+      steps: [step(0, "Researching topics"), step(1, "Still researching")],
+      lastEvent: "Researching",
+      working: true,
+      blockers: [],
+      hasPlacement: false,
+    });
+    expect(items.map((item) => item.label)).toEqual(["Researching topics", "Still researching"]);
+    expect(items.find((item) => item.status === "working")?.label).toBe("Still researching");
+  });
+
   it("does not verify, or spin on Verify, when nothing was placed", () => {
     const verify = step(5, "Verify");
     verify.kind = "lb_verify";
