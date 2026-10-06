@@ -17,6 +17,13 @@ The wizard saves a draft at each step. Finish them in this order:
 8. **Start.** **Start building** records `responsibilityAck` (who accepted, and when). There is no checkbox.
 9. **Schedule.** Weekdays only, inside the project's window.
 
+## Models
+
+Customers do not connect a model. The deployment holds `OPENROUTER_API_KEY`. Drafting and
+classification use `google/gemini-3.8-flash`. A refusal falls back to `moonshotai/kimi-k3`.
+Set `LINK_BUILDER_MODEL_DRAFT` to `anthropic/claude-fable-5` when a project needs the higher
+writing tier. The in-app computer still uses `PI_DEFAULT_MODEL` (`x-ai/grok-4.6`).
+
 ## Browser
 
 The persona browser runs inside the computer sandbox. Docker is the local provider. Daytona and E2B

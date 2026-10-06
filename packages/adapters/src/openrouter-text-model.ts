@@ -18,7 +18,9 @@ export const OPENROUTER_CHAT_URL = "https://openrouter.ai/api/v1/chat/completion
 
 /** Product names from plan section 9, as OpenRouter-style ids. Deployments may override them. */
 export const DEFAULT_TEXT_MODEL_LANES = {
-  draft: "anthropic/claude-fable-5",
+  // Gemini 3.8 Flash is the quality/cost default for end-user drafting.
+  // Claude Fable 5 stays available by setting LINK_BUILDER_MODEL_DRAFT.
+  draft: "google/gemini-3.8-flash",
   classify: "google/gemini-3.8-flash",
   fallback: "moonshotai/kimi-k3",
 } as const;
