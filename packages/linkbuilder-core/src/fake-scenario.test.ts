@@ -1,11 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   fakeDomains,
-  fakeScriptLength,
   foundForumLine,
   foundThreadLine,
+  isCannedResearchLine,
   isFixtureHostDomain,
-  nextResearchLine,
   planFakeStep,
   replayFakeScript,
   researchLogLines,
@@ -38,47 +37,26 @@ describe("fake scenario", () => {
     expect(fakeDomains("other")).not.toEqual(fakeDomains(input.seed));
   });
 
-  it("advances past the first research line and does not hold", () => {
-    const steps = replayFakeScript(input);
-    expect(steps).toHaveLength(fakeScriptLength());
-    expect(steps.map((step) => step.lastAction)).toEqual([
-      "Checking Google for on-topic forums",
-      "Looking for threads",
-      "Continuing",
-    ]);
-    expect(steps[1]?.lastAction).not.toBe(steps[0]?.lastAction);
-    expect(steps.map((step) => step.kind)).toEqual(["research", "research", "research"]);
-    expect(steps.every((step) => step.host === undefined)).toBe(true);
-    expect(steps.every((step) => step.placement === undefined)).toBe(true);
-    expect(steps.every((step) => step.captcha === undefined)).toBe(true);
-    expect(steps.every((step) => step.ticket === undefined)).toBe(true);
-    expect(JSON.stringify(steps)).not.toContain(".example");
-    expect(JSON.stringify(steps)).not.toMatch(/captcha|solved it|LIVE quota|Parked|Verify/i);
-    expect(steps.at(-1)?.runStatus).toBe("running");
-    const later = planFakeStep({
+  it("holds instead of replaying the three canned lines", () => {
+    expect(replayFakeScript(input)).toEqual([]);
+    expect(isCannedResearchLine("Checking Google for on-topic forums")).toBe(true);
+    expect(isCannedResearchLine("Looking for threads")).toBe(true);
+    expect(isCannedResearchLine("Continuing")).toBe(true);
+    const held = planFakeStep({
       ...input,
       stepIndex: 3,
       researchBeats: 4,
       stageBeats: 4,
-      previousAction: "Still researching",
+      previousAction: "Continuing",
     });
-    expect(later).toMatchObject({
-      kind: "research",
-      lastAction: "Checking Google for on-topic forums",
-    });
-    expect("hold" in later).toBe(false);
-    const after = planFakeStep({
+    expect(held).toEqual({ hold: true });
+    const again = planFakeStep({
       ...input,
       stepIndex: 20,
       researchBeats: 6,
-      stageBeats: 0,
-      previousAction: steps.at(-1)?.lastAction,
+      previousAction: "Checking Google for on-topic forums",
     });
-    expect(after).toMatchObject({
-      kind: "research",
-      lastAction: "Checking Google for on-topic forums",
-    });
-    expect(nextResearchLine("Continuing")).toBe("Checking Google for on-topic forums");
+    expect(again).toEqual({ hold: true });
   });
 
   it("writes a found line only when the name is real", () => {
@@ -113,6 +91,31 @@ describe("fake scenario", () => {
       forumName: "gutefrage.net",
     });
     expect(named).toMatchObject({ lastAction: "Found forum gutefrage.net" });
+    const looking = planFakeStep({
+      ...input,
+      stepIndex: 2,
+      researchBeats: 2,
+      previousAction: "Found forum gutefrage.net",
+      forumName: "gutefrage.net",
+      threadName: "Vitamin D im Winter?",
+    });
+    expect(looking).toMatchObject({ lastAction: "Looking for threads on gutefrage.net" });
+    const foundThread = planFakeStep({
+      ...input,
+      stepIndex: 3,
+      previousAction: "Looking for threads on gutefrage.net",
+      forumName: "gutefrage.net",
+      threadName: "Vitamin D im Winter?",
+    });
+    expect(foundThread).toMatchObject({ lastAction: "Found Vitamin D im Winter?" });
+    const done = planFakeStep({
+      ...input,
+      stepIndex: 4,
+      previousAction: "Found Vitamin D im Winter?",
+      forumName: "gutefrage.net",
+      threadName: "Vitamin D im Winter?",
+    });
+    expect(done).toEqual({ hold: true });
     const skipped = planFakeStep({
       ...input,
       stepIndex: 1,
@@ -122,7 +125,7 @@ describe("fake scenario", () => {
       threadName: "thread.example",
     });
     expect(JSON.stringify(skipped)).not.toContain(".example");
-    expect(skipped).toMatchObject({ lastAction: "Looking for threads" });
+    expect(skipped).toEqual({ hold: true });
   });
 
   it("treats the offline boards as fixtures and leaves real domains alone", () => {
@@ -135,13 +138,24 @@ describe("fake scenario", () => {
   });
 
   it("plans a single step that matches the replay", () => {
-    const replayed = replayFakeScript(input);
+    const replayed = replayFakeScript({
+      ...input,
+      forumName: "gutefrage.net",
+      threadName: "Vitamin D im Winter?",
+    });
+    expect(replayed.map((step) => step.lastAction)).toEqual([
+      "Found forum gutefrage.net",
+      "Looking for threads on gutefrage.net",
+      "Found Vitamin D im Winter?",
+    ]);
     expect(
       planFakeStep({
         ...input,
         stepIndex: 2,
         researchBeats: 2,
         previousAction: replayed[1]?.lastAction,
+        forumName: "gutefrage.net",
+        threadName: "Vitamin D im Winter?",
       }),
     ).toEqual(replayed[2]);
   });

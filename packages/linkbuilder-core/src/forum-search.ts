@@ -99,8 +99,6 @@ export function desktopShowsForumSearch(titles: readonly string[]): boolean {
     const text = title.trim();
     if (!text || /sorry|unusual traffic|captcha/i.test(text)) continue;
     if (/google (?:search|suche)/i.test(text)) return true;
-    if (/^google$/i.test(text)) return true;
-    if (/^https?:\/\/(?:www\.)?google\./i.test(text)) return true;
   }
   return false;
 }

@@ -38,6 +38,20 @@ describe("computer desktop window helpers", () => {
     expect(command).not.toContain("windowquit");
   });
 
+  it("detaches Chrome so the sandbox command can return", () => {
+    const command = detachedBrowserCommand(
+      ":0",
+      "https://www.google.com/search?q=Vitaminexpress+forum",
+    );
+    expect(command).toContain("RAKAZO_DETACH_BROWSER");
+    expect(command).toContain("/usr/bin/google-chrome");
+    expect(command).toContain("--no-sandbox");
+    expect(command).toContain("--no-first-run");
+    expect(command).toContain("https://www.google.com/search?q=Vitaminexpress+forum");
+    expect(command).toContain(") </dev/null >/tmp/rakazo-browser.log 2>&1 &");
+    expect(command.trimEnd().endsWith("&")).toBe(true);
+  });
+
   it("quotes URLs so query strings stay one argv", () => {
     expect(openHttpUrlCommand(":2", "https://example.test/a?q=hello world")).toContain(
       "'https://example.test/a?q=hello world'",

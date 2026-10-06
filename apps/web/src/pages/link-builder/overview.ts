@@ -2,6 +2,7 @@ import type { LbOperatorTicketView, LbRunStepView, LbWhyNot } from "@rakazo/cont
 import {
   foundForumLine,
   foundThreadLine,
+  isCannedResearchLine,
   isStaleResearchLine,
   mentionsExampleDomain,
   mentionsFixtureHost,
@@ -116,11 +117,16 @@ export function overviewFeed(input: {
   threadName?: string | null;
 }): OverviewFeedItem[] {
   const hasPlacement = input.hasPlacement === true;
+  let keptOpening = false;
   const steps = [...input.steps]
     .sort((a, b) => a.stepIndex - b.stepIndex)
     .filter((step) => {
       const label = step.lastAction?.trim() || step.kind;
-      if (isStaleResearchLine(label)) return false;
+      if (isStaleResearchLine(label) || isCannedResearchLine(label)) return false;
+      if (label === RESEARCH_OPENING) {
+        if (keptOpening) return false;
+        keptOpening = true;
+      }
       if (!visibleFoundLine(label, input.forumName, input.threadName)) return false;
       if (!hasPlacement && offlineStage(step.kind, label)) return false;
       if (mentionsFixtureHost(label)) return false;
@@ -149,6 +155,7 @@ export function overviewFeed(input: {
   const researchAlready = items.some((item) => /research/i.test(item.label));
   const hiddenEvent =
     isStaleResearchLine(event) ||
+    isCannedResearchLine(event) ||
     !visibleFoundLine(event, input.forumName, input.threadName) ||
     mentionsFixtureHost(event) ||
     (!hasPlacement && offlineStage("", event)) ||
@@ -181,8 +188,6 @@ export function overviewFeed(input: {
         items.splice(open, 1);
         items.push(current);
       }
-    } else {
-      items.push({ id: "researching", label: RESEARCH_OPENING, status: "working", at: null });
     }
   }
   for (const line of input.blockers) {

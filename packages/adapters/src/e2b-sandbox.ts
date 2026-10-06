@@ -241,6 +241,17 @@ export class E2BSandboxProvider implements SandboxProvider {
   ): AsyncIterable<ProcessEvent> {
     const desktop = await this.box(computer);
     const cmd = request.argv.map(shellQuote).join(" ");
+    if (cmd.includes("RAKAZO_DETACH_BROWSER")) {
+      const handle = await desktop.commands.run(cmd, {
+        cwd: e2bCwd(request.cwd),
+        background: true,
+        timeoutMs: 0,
+        signal: context.signal,
+      });
+      await handle.disconnect();
+      yield { type: "exit", code: 0 };
+      return;
+    }
     const timeoutMs = boundedSandboxCommandTimeoutMs(request.timeoutMs);
     try {
       const result = await desktop.commands.run(cmd, {

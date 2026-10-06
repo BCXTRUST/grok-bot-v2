@@ -783,7 +783,18 @@ function ComputerPane({
   );
 }
 
-/** noVNC reads autoconnect from the iframe URL. The proxy keeps provider secrets in the path. */
+/**
+ * noVNC joins `wss://host/` with `path`, so a page under `/novnc/.../vnc.html`
+ * must name the websocket or it dials the site root and shows "Failed to connect".
+ */
+export function novncClientPath(pathname: string): string | null {
+  const page = pathname.replace(/\/+$/, "");
+  if (!page.includes("/novnc/")) return null;
+  if (!/\/(?:vnc|embed)\.html$/.test(page)) return null;
+  return `${page.replace(/^\//, "").replace(/\/(?:vnc|embed)\.html$/, "")}/websockify`;
+}
+
+/** noVNC reads autoconnect and path from the iframe URL. The proxy keeps provider secrets in the path. */
 export function watchingFrameSrc(url: string): string {
   try {
     const parsed = new URL(url, "https://app.autoseo.run");
@@ -792,6 +803,9 @@ export function watchingFrameSrc(url: string): string {
     parsed.searchParams.set("autoconnect", "true");
     parsed.searchParams.set("resize", "scale");
     parsed.searchParams.set("view_only", "true");
+    parsed.searchParams.set("reconnect", "true");
+    const wsPath = novncClientPath(parsed.pathname);
+    if (wsPath) parsed.searchParams.set("path", wsPath);
     if (url.startsWith("http://") || url.startsWith("https://")) return parsed.toString();
     return `${parsed.pathname}${parsed.search}`;
   } catch {

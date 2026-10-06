@@ -43,7 +43,8 @@ describe("forum search", () => {
   it("treats a Google search window as the working page", () => {
     expect(desktopShowsForumSearch(["Vitaminexpress forum - Google Search"])).toBe(true);
     expect(desktopShowsForumSearch(["Vitaminexpress Forum - Google Suche"])).toBe(true);
-    expect(desktopShowsForumSearch(["Google"])).toBe(true);
+    expect(desktopShowsForumSearch(["Google"])).toBe(false);
+    expect(desktopShowsForumSearch(["https://www.google.com/"])).toBe(false);
     expect(desktopShowsForumSearch(["New Tab - Google Chrome"])).toBe(false);
     expect(desktopShowsForumSearch(["Unusual traffic from your computer"])).toBe(false);
     expect(desktopShowsForumSearch(["Home", "Trash"])).toBe(false);

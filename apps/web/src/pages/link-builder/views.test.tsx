@@ -12,7 +12,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { emptyDraft, emptyPage, PAGE_BOX_LIMIT } from "./model.js";
 import { LinkBuilderPreview } from "./preview.js";
-import { CreditPackagesView, OperatorView, ProjectView, WizardView } from "./views.js";
+import { CreditPackagesView, OperatorView, ProjectView, watchingFrameSrc, WizardView } from "./views.js";
 
 const noop = () => undefined;
 const loadArtifact = async () => "data:image/png;base64,iVBO";
@@ -135,8 +135,11 @@ describe("link builder screens", () => {
       />,
     );
     expect(html).toContain('data-frame="url"');
-    expect(html).toContain(
-      `src="${stream}?autoconnect=true&amp;resize=scale&amp;view_only=true"`,
+    expect(html).toContain(`src="${watchingFrameSrc(stream).replaceAll("&", "&amp;")}"`);
+    expect(watchingFrameSrc(stream)).toContain("autoconnect=true");
+    expect(watchingFrameSrc(stream)).toContain("reconnect=true");
+    expect(watchingFrameSrc(stream)).toContain(
+      "path=novnc%2Fremote%2Fview%2F9.abc%2Fwebsockify",
     );
     expect(html).toContain('title="Computer"');
     expect(html).toContain("allow-scripts allow-same-origin");
@@ -377,9 +380,9 @@ describe("link builder screens", () => {
 
   it("shows the computer working and a growing feed instead of NEW/LIVE rings", () => {
     const discovered = step(0, "research", []);
-    discovered.lastAction = "Checking Google for on-topic forums";
+    discovered.lastAction = "Opened Google search";
     const probed = step(1, "research", ["shot-1"]);
-    probed.lastAction = "Looking for threads";
+    probed.lastAction = "Opening Vitamin D im Winter?";
     const html = renderOverview(statusView({ activity: "running", activityLabel: "running" }), [
       discovered,
       probed,
@@ -401,11 +404,14 @@ describe("link builder screens", () => {
     expect(html).toContain('data-status="working"');
     expect(html).toContain('data-frame="artifact"');
     expect(html).not.toContain("forum-a.example");
-    expect(html.indexOf('aria-label="Looking for threads"')).toBeLessThan(
-      html.indexOf("Checking Google for on-topic forums"),
+    expect(html).not.toContain("Checking Google for on-topic forums");
+    expect(html).not.toContain("Looking for threads");
+    expect(html).not.toContain("Continuing");
+    expect(html.indexOf('aria-label="Opening Vitamin D im Winter?"')).toBeLessThan(
+      html.indexOf("Opened Google search"),
     );
-    expect(html.indexOf("Checking Google for on-topic forums")).toBeLessThan(
-      html.lastIndexOf("Looking for threads"),
+    expect(html.indexOf("Opened Google search")).toBeLessThan(
+      html.lastIndexOf("Opening Vitamin D im Winter?"),
     );
     expect(html).not.toContain("Why not");
     expect(html).not.toContain("Proxy ok");
@@ -416,12 +422,12 @@ describe("link builder screens", () => {
 
   it("shows the stage rail and the current action when no screen exists", () => {
     const reading = step(0, "research", []);
-    reading.lastAction = "Checking Google for on-topic forums";
+    reading.lastAction = "Opened Google search";
     const html = renderOverview(
       statusView({
         activity: "running",
         activityLabel: "running",
-        lastEvent: "Checking Google for on-topic forums",
+        lastEvent: "Opened Google search",
         run: {
           id: "run-1",
           date: "2026-10-06",
@@ -430,7 +436,7 @@ describe("link builder screens", () => {
           liveToday: 0,
           liveWeek: 0,
           uniqueHosts: 0,
-          lastAction: "Checking Google for on-topic forums",
+          lastAction: "Opened Google search",
           lastError: null,
         },
       }),
@@ -444,8 +450,9 @@ describe("link builder screens", () => {
     expect(html).toContain("Warmup");
     expect(html).toContain("Place");
     expect(html).toContain("Verify");
-    expect(html).toContain('aria-label="Checking Google for on-topic forums"');
-    expect(html.indexOf('aria-label="Checking Google for on-topic forums"')).toBeLessThan(
+    expect(html).toContain('aria-label="Opened Google search"');
+    expect(html).not.toContain("Checking Google for on-topic forums");
+    expect(html.indexOf('aria-label="Opened Google search"')).toBeLessThan(
       html.indexOf("No session"),
     );
     expect(html).toContain("bui-pixel-on");
@@ -467,14 +474,14 @@ describe("link builder screens", () => {
 
   it("stays on research when Verify has no placement, and still shows a frame", () => {
     const reading = step(0, "research", []);
-    reading.lastAction = "Continuing";
+    reading.lastAction = "Opened Google search";
     const verify = step(1, "lb_verify", ["shot-9"]);
     verify.lastAction = "Verify";
     const html = renderOverview(
       statusView({
         activity: "running",
         activityLabel: "running",
-        lastEvent: "Continuing",
+        lastEvent: "Opened Google search",
         run: {
           id: "run-1",
           date: "2026-10-06",
@@ -483,7 +490,7 @@ describe("link builder screens", () => {
           liveToday: 0,
           liveWeek: 0,
           uniqueHosts: 0,
-          lastAction: "Continuing",
+          lastAction: "Opened Google search",
           lastError: null,
         },
       }),
@@ -493,7 +500,8 @@ describe("link builder screens", () => {
     expect(html).toContain('data-frame="artifact"');
     const workingAt = html.indexOf('data-status="working"');
     const row = html.slice(workingAt, workingAt + 2500);
-    expect(row).toContain("Continuing");
+    expect(row).toContain("Opened Google search");
+    expect(html).not.toContain("Continuing");
     expect(row).not.toContain("Verify");
     expect(html).not.toContain("I've solved it");
     expect(html).not.toContain("fragen-");
@@ -544,7 +552,10 @@ describe("link builder screens", () => {
     );
     expect(html).not.toContain("bui-pixel-on");
     expect(html).toContain('aria-label="Computer"');
-    expect(html).toContain("Looking for threads");
+    expect(html).not.toContain("Looking for threads");
+    expect(html).not.toContain("Checking Google for on-topic forums");
+    expect(html).not.toContain(">Continuing<");
+    expect(html).toContain("No events yet");
     expect(html).not.toContain(".example");
     expect(html).toContain("New accounts per day");
     expect(html).not.toContain("New links today");

@@ -56,41 +56,34 @@ describe("overview feed", () => {
 
   it("appends steps in order and marks the latest one working", () => {
     const items = overviewFeed({
-      steps: [step(1, "Looking for threads"), step(0, "Checking Google for on-topic forums")],
-      lastEvent: "Looking for threads",
+      steps: [step(1, "Opening Vitamin D im Winter?"), step(0, "Opened Google search")],
+      lastEvent: "Opening Vitamin D im Winter?",
       working: true,
       blockers: [],
     });
     expect(items.map((item) => item.label)).toEqual([
-      "Checking Google for on-topic forums",
-      "Looking for threads",
+      "Opened Google search",
+      "Opening Vitamin D im Winter?",
     ]);
     expect(items.map((item) => item.status)).toEqual(["done", "working"]);
-    expect(overviewAction(items, true)).toBe("Looking for threads");
+    expect(overviewAction(items, true)).toBe("Opening Vitamin D im Winter?");
   });
 
-  it("drops fixture hosts and starts on research before any step arrives", () => {
+  it("drops fixture hosts and does not invent a research line before any step arrives", () => {
     const starting = overviewFeed({
       steps: [],
       lastEvent: null,
       working: true,
       blockers: [],
     });
-    expect(starting).toEqual([
-      {
-        id: "researching",
-        label: "Checking Google for on-topic forums",
-        status: "working",
-        at: null,
-      },
-    ]);
+    expect(starting).toEqual([]);
     const blocked = overviewFeed({
-      steps: [step(0, "Looking for threads"), step(1, "Discovered forum-a.example")],
+      steps: [step(0, "Opened Google search"), step(1, "Discovered forum-a.example")],
       lastEvent: "Discovered forum-a.example",
       working: false,
       blockers: ["Parked 1"],
     });
-    expect(blocked.map((item) => item.label)).toEqual(["Looking for threads", "Parked 1"]);
+    expect(blocked.map((item) => item.label)).toEqual(["Opened Google search", "Parked 1"]);
     const customer = overviewFeed({
       steps: [step(0, "Looking for threads"), step(1, "LIVE quota met")],
       lastEvent: "Parked the host for an operator",
@@ -98,31 +91,32 @@ describe("overview feed", () => {
       blockers: [],
       hideExampleCopy: true,
     });
-    expect(customer.map((item) => item.label)).toEqual(["Looking for threads"]);
+    expect(customer).toEqual([]);
     expect(blocked[1]?.status).toBe("blocked");
-    expect(overviewAction(blocked, false)).toBe("Looking for threads");
+    expect(overviewAction(blocked, false)).toBe("Opened Google search");
   });
 
-  it("collapses a stuck repeat and keeps the next sentence", () => {
+  it("drops the canned three-line loop even when those steps are stored", () => {
     const repeat = step(1, "Checking Google for on-topic forums");
     repeat.createdAt = "2026-10-06T12:00:20.000Z";
     const later = step(2, "Looking for threads");
     later.createdAt = "2026-10-06T12:00:40.000Z";
-    const again = step(3, "Checking Google for on-topic forums");
+    const again = step(3, "Continuing");
     again.createdAt = "2026-10-06T12:01:10.000Z";
+    const opened = step(4, "Opened Google search");
+    opened.createdAt = "2026-10-06T12:02:10.000Z";
     const items = overviewFeed({
-      steps: [step(0, "Checking Google for on-topic forums"), repeat, later, again],
-      lastEvent: "Checking Google for on-topic forums",
+      steps: [step(0, "Checking Google for on-topic forums"), repeat, later, again, opened],
+      lastEvent: "Continuing",
       working: true,
       blockers: [],
     });
-    expect(items.map((item) => item.label)).toEqual([
-      "Checking Google for on-topic forums",
-      "Looking for threads",
-      "Checking Google for on-topic forums",
-    ]);
+    expect(items.map((item) => item.label)).toEqual(["Opened Google search"]);
     expect(items.at(-1)?.status).toBe("working");
-    expect(overviewAction(items, true)).toBe("Checking Google for on-topic forums");
+    expect(overviewAction(items, true)).toBe("Opened Google search");
+    expect(items.map((item) => item.label).join("\n")).not.toMatch(
+      /Checking Google for on-topic forums|Looking for threads|Continuing/,
+    );
   });
 
   it("follows an explicit start or pause before the server status changes", () => {
@@ -177,8 +171,8 @@ describe("overview feed", () => {
   it("prefers the newest sentence and keeps the older lines", () => {
     const items = overviewFeed({
       steps: [
-        step(0, "Checking Google for on-topic forums"),
-        step(1, "Looking for threads"),
+        step(0, "Opened Google search"),
+        step(1, "Opening Vitamin D im Winter?"),
         step(2, "Continuing"),
         step(3, "Still researching"),
       ],
@@ -188,12 +182,13 @@ describe("overview feed", () => {
       hasPlacement: false,
     });
     expect(items.map((item) => item.label)).toEqual([
-      "Checking Google for on-topic forums",
-      "Looking for threads",
-      "Continuing",
+      "Opened Google search",
+      "Opening Vitamin D im Winter?",
     ]);
-    expect(items.find((item) => item.status === "working")?.label).toBe("Continuing");
-    expect(overviewAction(items, true)).toBe("Continuing");
+    expect(items.find((item) => item.status === "working")?.label).toBe(
+      "Opening Vitamin D im Winter?",
+    );
+    expect(overviewAction(items, true)).toBe("Opening Vitamin D im Winter?");
   });
 
   it("adds a found line only for a real name", () => {
@@ -210,13 +205,10 @@ describe("overview feed", () => {
       threadName: "Vitamin D im Winter?",
     });
     expect(named.map((item) => item.label)).toEqual([
-      "Checking Google for on-topic forums",
       "Found forum gutefrage.net",
-      "Looking for threads on gutefrage.net",
       "Found Vitamin D im Winter?",
-      "Continuing",
     ]);
-    expect(overviewAction(named, true)).toBe("Continuing");
+    expect(overviewAction(named, true)).toBe("Found Vitamin D im Winter?");
     const invented = overviewFeed({
       steps: [step(0, "Checking Google for on-topic forums"), step(1, "Continuing")],
       lastEvent: "Found forum forum-a.example",
@@ -227,7 +219,8 @@ describe("overview feed", () => {
     });
     expect(invented.map((item) => item.label).join("\n")).not.toContain(".example");
     expect(invented.some((item) => item.label.startsWith("Found"))).toBe(false);
-    expect(overviewAction(invented, true)).toBe("Continuing");
+    expect(invented.map((item) => item.label)).not.toContain("Continuing");
+    expect(overviewAction(invented, true)).toBe("Working");
     const brand = overviewFeed({
       steps: [
         step(0, "Checking Google for on-topic forums"),
@@ -239,12 +232,8 @@ describe("overview feed", () => {
       working: true,
       blockers: [],
     });
-    expect(brand.map((item) => item.label)).toEqual([
-      "Checking Google for on-topic forums",
-      "Looking for threads",
-      "Continuing",
-    ]);
-    expect(overviewAction(brand, true)).toBe("Continuing");
+    expect(brand.map((item) => item.label)).toEqual([]);
+    expect(overviewAction(brand, true)).toBe("Working");
   });
 
   it("does not verify, or spin on Verify, when nothing was placed", () => {

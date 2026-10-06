@@ -13,9 +13,10 @@ import {
 } from "@rakazo/adapters";
 import { type Actor, SandboxKind } from "@rakazo/contracts";
 import {
-  exposeBrowserDesktopCommand,
+  detachedBrowserCommand,
   listVisibleWindowsCommand,
   parseVisibleWindows,
+  raiseBrowserWindowCommand,
 } from "@rakazo/core";
 import { ensureComputerRecord, type PrismaClient, type ThreadEvents } from "@rakazo/db";
 import {
@@ -368,90 +369,11 @@ async function showForumSearch(
       titles = [];
     }
     if (desktopShowsForumSearch(titles)) return;
-    await runDesktop(deps, actor, computer, openForumSearchScript(url));
+    await runDesktop(deps, actor, computer, detachedBrowserCommand(DESKTOP_DISPLAY, url));
+    await runDesktop(deps, actor, computer, raiseBrowserWindowCommand(DESKTOP_DISPLAY));
   } catch (error) {
     console.error("link builder screen", "forum search", publicScreenError(error));
   }
-}
-
-function shellQuote(value: string): string {
-  return `'${value.replace(/'/g, `'"'"'`)}'`;
-}
-
-/**
- * Launch Chrome straight onto the search. Skip the first-run dialog, and press
- * Enter if a previous launch left "Welcome to Google Chrome" in front.
- */
-function openForumSearchScript(url: string): string {
-  const quoted = shellQuote(url);
-  const apps = ["google-chrome", "google-chrome-stable", "chromium", "chromium-browser"]
-    .map(shellQuote)
-    .join(" ");
-  return [
-    "opened=0",
-    `for app in ${apps}; do`,
-    '  if command -v "$app" >/dev/null 2>&1; then',
-    `    nohup env DISPLAY=${DESKTOP_DISPLAY} "$app" --no-first-run --disable-fre --no-default-browser-check --start-maximized --new-window ${quoted} >/tmp/rakazo-browser.log 2>&1 &`,
-    "    opened=1",
-    "    break",
-    "  fi",
-    "done",
-    "sleep 2",
-    dismissChromeWelcome(DESKTOP_DISPLAY),
-    openAddress(DESKTOP_DISPLAY, quoted),
-    "sleep 2",
-    exposeBrowserDesktopCommand(DESKTOP_DISPLAY),
-    fillBrowserWindow(DESKTOP_DISPLAY),
-  ].join("\n");
-}
-
-function dismissChromeWelcome(display: string): string {
-  return [
-    "for _ in 1 2 3 4; do",
-    `  id=$(DISPLAY=${display} xdotool search --onlyvisible --name "Welcome to Google Chrome" 2>/dev/null | awk 'NR==1{print; exit}')`,
-    '  if [ -z "$id" ]; then break; fi',
-    `  DISPLAY=${display} xdotool windowactivate --sync "$id" key Return 2>/dev/null || true`,
-    "  sleep 0.5",
-    "done",
-  ].join("\n");
-}
-
-function openAddress(display: string, quotedUrl: string): string {
-  const browsers = ["google-chrome", "Google-chrome", "Chromium", "chromium"]
-    .map(shellQuote)
-    .join(" ");
-  return [
-    "id=",
-    `for class in ${browsers}; do`,
-    `  id=$(DISPLAY=${display} xdotool search --onlyvisible --class "$class" 2>/dev/null | awk 'NR==1{print; exit}')`,
-    '  if [ -n "$id" ]; then break; fi',
-    "done",
-    'if [ -n "$id" ]; then',
-    `  DISPLAY=${display} xdotool windowactivate --sync "$id"`,
-    "  sleep 0.2",
-    `  DISPLAY=${display} xdotool key ctrl+l`,
-    "  sleep 0.15",
-    `  DISPLAY=${display} xdotool type --delay 1 -- ${quotedUrl}`,
-    `  DISPLAY=${display} xdotool key Return`,
-    "fi",
-  ].join("\n");
-}
-
-/** Cover the desktop so the search page is what the pane shows. */
-function fillBrowserWindow(display: string): string {
-  const classes = ["google-chrome", "Google-chrome", "Chromium", "chromium", "firefox", "Firefox"]
-    .map((name) => `'${name}'`)
-    .join(" ");
-  return [
-    "id=",
-    `for class in ${classes}; do`,
-    `  id=$(DISPLAY=${display} xdotool search --onlyvisible --class "$class" 2>/dev/null | awk 'NR==1{print; exit}')`,
-    `  if [ -n "$id" ]; then break; fi`,
-    "done",
-    `if [ -n "$id" ]; then`,
-    `  DISPLAY=${display} xdotool windowmove "$id" 0 0 windowsize --sync "$id" 1280 800 windowactivate "$id" 2>/dev/null || true`,
-    "fi",
-  ].join("\n");
 }
 
 async function runDesktop(

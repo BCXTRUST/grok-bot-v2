@@ -13,10 +13,6 @@ import { initialWorkState, transitionWork } from "./work-stage.js";
 /** What the bot is doing when research has no result yet. */
 export const RESEARCH_OPENING = "Checking Google for on-topic forums";
 
-const RESEARCH_LOOKING = "Looking for threads";
-
-const RESEARCH_CONTINUING = "Continuing";
-
 /** Lines the old offline script left on the screen. They are not a live log. */
 const STALE_RESEARCH_LINES = new Set([
   "researching",
@@ -32,8 +28,15 @@ const STALE_RESEARCH_LINES = new Set([
  */
 const CUSTOMER_STAGE_KINDS = new Set(["lb_register", "lb_warmup", "lb_place", "lb_verify"]);
 
-/** One pass of the live log when nothing has been found. Later ticks keep going. */
-export const CUSTOMER_RESEARCH_BEATS = 3;
+/** One search line. Later ticks hold until a real forum or thread exists. */
+export const CUSTOMER_RESEARCH_BEATS = 1;
+
+/** Filler the offline log used to rotate. They are not events. */
+const CANNED_RESEARCH_LINES = new Set([
+  "Checking Google for on-topic forums",
+  "Looking for threads",
+  "Continuing",
+]);
 
 /** Offline customer runs keep researching. They do not invent hosts, accounts, placements, or a verify check. */
 
@@ -162,7 +165,12 @@ export function isStaleResearchLine(label: string): boolean {
   return STALE_RESEARCH_LINES.has(label.trim().toLowerCase());
 }
 
-/** Sentences for one pass, in order. Found lines exist only when the name is real. */
+/** Rotating filler. A found line is not one of these. */
+export function isCannedResearchLine(label: string): boolean {
+  return CANNED_RESEARCH_LINES.has(label.trim());
+}
+
+/** Sentences for one pass. Found lines exist only when the name is real. */
 export function researchLogLines(found?: {
   forumName?: string | null;
   threadName?: string | null;
@@ -172,26 +180,42 @@ export function researchLogLines(found?: {
   const lines = [RESEARCH_OPENING];
   const forumLine = foundForumLine(forum);
   if (forumLine) lines.push(forumLine);
-  lines.push(forum ? `Looking for threads on ${forum}` : RESEARCH_LOOKING);
+  lines.push(forum ? `Looking for threads on ${forum}` : "Looking for threads");
   const threadLine = foundThreadLine(thread);
   if (threadLine) lines.push(threadLine);
-  lines.push(RESEARCH_CONTINUING);
+  lines.push("Continuing");
   return lines;
 }
 
-/** The sentence after `previous`. A frozen research line starts the log over. */
+/**
+ * The next line worth storing. A found forum or thread is said once.
+ * The canned opening, looking, and continuing lines are never replayed.
+ */
+export function nextRealResearchEvent(
+  previous: string | null | undefined,
+  found?: { forumName?: string | null; threadName?: string | null },
+): string | null {
+  const forum = foundForumLine(found?.forumName);
+  const forumName = researchResultName(found?.forumName);
+  const looking = forum && forumName ? `Looking for threads on ${forumName}` : null;
+  const thread = foundThreadLine(found?.threadName);
+  const sequence = [forum, looking, thread].filter((line): line is string => Boolean(line));
+  if (sequence.length === 0) return null;
+  const said = previous?.trim() ?? "";
+  const index = sequence.indexOf(said);
+  if (index >= 0) return sequence[index + 1] ?? null;
+  return sequence[0] ?? null;
+}
+
+/** @deprecated The live runner no longer cycles these lines. */
 export function nextResearchLine(
   previous: string | null | undefined,
   found?: { forumName?: string | null; threadName?: string | null },
 ): string {
-  const lines = researchLogLines(found);
-  const current = previous?.trim() ?? "";
-  const index = current ? lines.indexOf(current) : -1;
-  if (index < 0) return lines[0]!;
-  return lines[(index + 1) % lines.length]!;
+  return nextRealResearchEvent(previous, found) ?? RESEARCH_OPENING;
 }
 
-/** Plans the next research sentence. Later ticks keep moving. No host is invented. */
+/** Plans the next real event. Holds when nothing new has happened. No host is invented. */
 export function planFakeStep(input: FakeScenarioInput): FakePlan {
   if (!Number.isInteger(input.stepIndex) || input.stepIndex < 0) {
     throw new RangeError("stepIndex must be a non-negative integer");
@@ -206,26 +230,28 @@ export function planFakeStep(input: FakeScenarioInput): FakePlan {
   }
   const counters = input.counters ?? startRunCounters(0);
   transitionWork(initialWorkState(), "research");
+  const lastAction = nextRealResearchEvent(input.previousAction, {
+    forumName: input.forumName,
+    threadName: input.threadName,
+  });
+  if (!lastAction) return { hold: true };
   return {
     done: false,
     stepIndex: input.stepIndex,
     kind: "research",
-    lastAction: nextResearchLine(input.previousAction, {
-      forumName: input.forumName,
-      threadName: input.threadName,
-    }),
+    lastAction,
     runStatus: "running",
     counters,
     costs: { credits: 0, tokens: 0, bytes: 0, ms: 400 },
   };
 }
 
-/** Replays one pass. The following tick writes the next sentence, it does not hold. */
+/** Replays until the log holds. A project with no find stores the search line once. */
 export function replayFakeScript(input: Omit<FakeScenarioInput, "stepIndex">): FakeStepPlan[] {
   const steps: FakeStepPlan[] = [];
   let researchBeats = 0;
   let previousAction: string | null = input.previousAction ?? null;
-  for (let index = 0; index < fakeScriptLength(); index += 1) {
+  for (let index = 0; index < 8; index += 1) {
     const plan = planFakeStep({
       ...input,
       stepIndex: index,
