@@ -1,4 +1,10 @@
-import type { LbOperatorTicketView, LbProjectDetail, LbRunStepView } from "@rakazo/contracts";
+import type {
+  LbOperatorTicketView,
+  LbProjectDetail,
+  LbProjectStatusView,
+  LbRunStepView,
+  LbWhyNot,
+} from "@rakazo/contracts";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { emptyDraft, emptyPage, PAGE_BOX_LIMIT } from "./model.js";
@@ -212,4 +218,139 @@ describe("link builder screens", () => {
     expect(html).toContain('aria-current="step"');
     expect(html).toContain("Step 5 of 5: Review");
   });
+
+  it("shows the computer working and a growing feed instead of NEW/LIVE rings", () => {
+    const discovered = step(0, "discover", []);
+    discovered.lastAction = "Discovered forum-a.example";
+    const probed = step(1, "probe", ["shot-1"]);
+    probed.lastAction = "Probed brett-1ej2xe.example";
+    const html = renderOverview(statusView({ activity: "running", activityLabel: "running" }), [
+      discovered,
+      probed,
+    ]);
+    expect(html).toContain("New links today");
+    expect(html).toContain("Live links today");
+    expect(html).toContain(">0/2</span>");
+    expect(html).toContain(">0/1</span>");
+    expect(html).not.toContain("New accounts per day");
+    expect(html).not.toContain("NEW ");
+    expect(html).not.toContain("LIVE ");
+    expect(html).toContain('aria-label="Computer"');
+    expect(html).toContain("bui-pixel-on");
+    expect(html).toContain('data-status="working"');
+    expect(html).toContain('data-frame="artifact"');
+    expect(html.indexOf("Discovered forum-a.example")).toBeLessThan(
+      html.lastIndexOf("Probed brett-1ej2xe.example"),
+    );
+    expect(html).not.toContain("Why not");
+    expect(html).not.toContain("Proxy ok");
+    expect(html).not.toContain("Supply");
+    expect(html).not.toContain("Live screen");
+    expect(html.indexOf('aria-label="Computer"')).toBeLessThan(html.indexOf("12 tokens"));
+  });
+
+  it("keeps a calm computer when the run is paused and hides an all-zero why-not list", () => {
+    const html = renderOverview(
+      statusView({
+        activity: "paused",
+        activityLabel: "paused",
+        lastEvent: "Probed brett-1ej2xe.example",
+      }),
+      [],
+    );
+    expect(html).not.toContain("bui-pixel-on");
+    expect(html).toContain('aria-label="Computer"');
+    expect(html).toContain("Probed brett-1ej2xe.example");
+    expect(html).toContain("New links today");
+    expect(html).not.toContain("Why not");
+    expect(html).not.toContain("Parked 0");
+    expect(html).not.toContain("Proxy ok");
+  });
+
+  it("puts real blockers in the feed after the computer", () => {
+    const html = renderToStaticMarkup(<LinkBuilderPreview screen="overview" />);
+    expect(html).toContain("New links today");
+    expect(html).toContain("Live links today");
+    expect(html).toContain("Parked 1");
+    expect(html).toContain("Pending email 2");
+    expect(html).toContain("Spam blocked 1");
+    expect(html).not.toContain("Why not");
+    expect(html).not.toContain("Proxy ok");
+    expect(html).not.toContain("Unsupported captcha 0");
+    expect(html.indexOf('aria-label="Computer"')).toBeLessThan(html.indexOf("Parked 1"));
+    expect(html.indexOf("New links today")).toBeLessThan(html.indexOf("40 tokens"));
+  });
 });
+
+const zeroWhy: LbWhyNot = {
+  supply: { qualified: 0, ready: 0 },
+  parked: 0,
+  spamBlocked: 0,
+  unsupportedCaptcha: 0,
+  pendingEmail: 0,
+  pendingAdmin: 0,
+  modelErrors: 0,
+  modelRefusals: 0,
+  captchaBalance: null,
+  proxy: "ok",
+  reasons: ["host_supply_exhausted"],
+};
+
+function statusView(overrides: Partial<LbProjectStatusView> = {}): LbProjectStatusView {
+  return {
+    projectId: "demo",
+    projectStatus: "active",
+    activity: "running",
+    activityLabel: "running",
+    run: {
+      id: "run-1",
+      date: "2026-10-06",
+      status: "running",
+      newToday: 0,
+      liveToday: 0,
+      liveWeek: 0,
+      uniqueHosts: 1,
+      lastAction: "Probed brett-1ej2xe.example",
+      lastError: null,
+    },
+    whyNot: zeroWhy,
+    operatorQueue: 0,
+    scheduleActive: true,
+    scheduleReason: "in_window",
+    newPerDay: 2,
+    livePerDay: 1,
+    liveWeekCap: 8,
+    lastEvent: "Probed brett-1ej2xe.example",
+    costs: {
+      day: { captellCredits: 0, modelTokens: 12, searchQueries: 1, proxyLeaseDays: 0 },
+      week: { captellCredits: 0, modelTokens: 12, searchQueries: 1, proxyLeaseDays: 0 },
+    },
+    ...overrides,
+  };
+}
+
+function renderOverview(status: LbProjectStatusView, steps: LbRunStepView[]) {
+  return renderToStaticMarkup(
+    <ProjectView
+      project={{ name: "Vitaminexpress" } as LbProjectDetail}
+      status={status}
+      hosts={[]}
+      placements={[]}
+      runs={[]}
+      steps={steps}
+      threads={[]}
+      drafts={[]}
+      captchas={[]}
+      tickets={[]}
+      tab="Overview"
+      onTab={noop}
+      onStart={noop}
+      onPause={noop}
+      onStop={noop}
+      onVerify={noop}
+      onOpenTicket={noop}
+      loadArtifact={loadArtifact}
+      busy={false}
+    />,
+  );
+}

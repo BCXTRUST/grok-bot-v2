@@ -59,3 +59,8 @@
     transform: translateY(0);
   }
 }
+@keyframes bui-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

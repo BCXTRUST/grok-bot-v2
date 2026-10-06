@@ -126,6 +126,99 @@ export function BuiCard({
   );
 }
 
+function TaskMark({ status }: { status: "working" | "done" | "blocked" }) {
+  if (status === "working") {
+    const size = 22;
+    const stroke = 2;
+    const radius = (size - stroke) / 2;
+    const turn = 2 * Math.PI * radius;
+    return (
+      <span
+        className="relative inline-flex shrink-0 items-center justify-center"
+        style={{ width: size, height: size }}
+        aria-hidden
+      >
+        <svg
+          width={size}
+          height={size}
+          className="absolute inset-0"
+          style={{ animation: "bui-spin 1.1s linear infinite", transformOrigin: "center" }}
+        >
+          <circle
+            cx={size / 2}
+            cy={size / 2}
+            r={radius}
+            fill="none"
+            stroke="var(--bui-line)"
+            strokeWidth={stroke}
+          />
+          <circle
+            cx={size / 2}
+            cy={size / 2}
+            r={radius}
+            fill="none"
+            stroke="var(--bui-ink-3)"
+            strokeWidth={stroke}
+            strokeLinecap="round"
+            strokeDasharray={`${turn * 0.28} ${turn * 0.72}`}
+          />
+        </svg>
+      </span>
+    );
+  }
+  const blocked = status === "blocked";
+  return (
+    <span
+      className="flex h-5 w-5 items-center justify-center rounded-full text-white"
+      style={{
+        background: blocked ? "#e5484d" : "var(--bui-green)",
+        animation: "bui-pop-in 300ms cubic-bezier(0.23,1,0.32,1) both",
+      }}
+      aria-hidden
+    >
+      <svg
+        width="12"
+        height="12"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="3"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d={blocked ? "M18 6 6 18M6 6l12 12" : "M20 6 9 17l-5-5"} />
+      </svg>
+    </span>
+  );
+}
+
+/** Task list row. Working rows shimmer; finished rows keep a check or a block mark. */
+export function TaskRow({
+  status,
+  label,
+  meta,
+}: {
+  status: "working" | "done" | "blocked";
+  label: string;
+  meta?: string;
+}) {
+  return (
+    <div
+      className="flex h-11 items-center gap-2.5 border-b border-[var(--bui-line)] px-2.5 last:border-b-0"
+      data-status={status}
+      style={{ animation: "bui-fade-up 450ms cubic-bezier(0.23,1,0.32,1) both" }}
+    >
+      <TaskMark status={status} />
+      <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-[var(--bui-ink)]">
+        {status === "working" ? <Shimmer>{label}</Shimmer> : label}
+      </span>
+      {meta ? (
+        <span className="font-mono text-[11.5px] tabular-nums text-[var(--bui-ink-3)]">{meta}</span>
+      ) : null}
+    </div>
+  );
+}
+
 /** Primary pill button in the Beautiful UI control style. */
 export function BuiButton({
   children,

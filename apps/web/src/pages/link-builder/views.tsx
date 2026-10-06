@@ -17,6 +17,7 @@ import {
   BuiCard,
   LoadingState,
   SuccessPop,
+  TaskRow,
 } from "../../components/beautiful-ui/primitives";
 import {
   addWizardPage,
@@ -34,6 +35,17 @@ import {
   type WizardDraft,
   warmupNote,
 } from "./model.js";
+import {
+  OVERVIEW_COUNTS,
+  type OverviewFeedItem,
+  type OverviewIntent,
+  overviewAction,
+  overviewFeed,
+  overviewFrame,
+  overviewPill,
+  overviewWorking,
+  whyNotFeedLines,
+} from "./overview.js";
 
 const inputClass =
   "w-full rounded-xl border border-[#2A2A31] bg-[#141416] px-3 py-2 text-[14px] text-[#ECECEE] outline-none";
@@ -274,6 +286,22 @@ export function ProjectView({
   loadArtifact?: ArtifactLoader;
   busy: boolean;
 }) {
+  const [intent, setIntent] = useState<OverviewIntent>(null);
+  const serverWorking = status?.activity === "running" || status?.activity === "overtime";
+  useEffect(() => {
+    if (!intent) return;
+    if (intent === "working" && serverWorking) setIntent(null);
+    if ((intent === "paused" || intent === "stopped") && !serverWorking && !busy) setIntent(null);
+  }, [intent, serverWorking, busy]);
+  const working = overviewWorking({ activity: status?.activity ?? null, intent });
+  const pill = overviewPill({ activityLabel: status?.activityLabel ?? null, intent });
+  function request(kind: "start" | "pause" | "stop") {
+    const next: OverviewIntent =
+      kind === "start" ? "working" : kind === "pause" ? "paused" : "stopped";
+    setIntent(next);
+    const run = kind === "start" ? onStart() : kind === "pause" ? onPause() : onStop();
+    void Promise.resolve(run).catch(() => setIntent(null));
+  }
   const tabs = [
     "Overview",
     "Targets",
@@ -284,11 +312,18 @@ export function ProjectView({
     "Captchas",
     "Settings",
   ];
+  const wide = tab === "Overview";
   return (
-    <main className="mx-auto flex w-full max-w-5xl flex-col gap-4 px-4 py-8">
+    <main
+      className={
+        wide
+          ? "mx-auto flex min-h-dvh w-full max-w-[1400px] flex-col gap-3 px-4 py-4"
+          : "mx-auto flex w-full max-w-5xl flex-col gap-4 px-4 py-8"
+      }
+    >
       <header className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-[22px] font-medium text-[#ECECEE]">{project.name}</h1>
-        {status ? <Pill label={status.activityLabel} /> : null}
+        {pill ? <Pill label={pill} /> : null}
       </header>
       <div className="flex flex-wrap gap-2" role="tablist" aria-label="Project">
         {tabs.map((name) => (
@@ -308,10 +343,14 @@ export function ProjectView({
         <Overview
           project={project}
           status={status}
+          steps={steps}
+          tickets={tickets}
+          working={working}
           busy={busy}
-          onStart={onStart}
-          onPause={onPause}
-          onStop={onStop}
+          loadArtifact={loadArtifact}
+          onStart={() => request("start")}
+          onPause={() => request("pause")}
+          onStop={() => request("stop")}
         />
       ) : null}
       {tab === "Targets" ? <TargetList project={project} /> : null}
@@ -420,82 +459,177 @@ export function OperatorView({
 function Overview({
   project,
   status,
+  steps,
+  tickets,
+  working,
   busy,
+  loadArtifact,
   onStart,
   onPause,
   onStop,
 }: {
   project: LbProjectDetail;
   status: LbProjectStatusView | null;
+  steps: LbRunStepView[];
+  tickets: LbOperatorTicketView[];
+  working: boolean;
   busy: boolean;
+  loadArtifact?: ArtifactLoader;
   onStart: () => void;
   onPause: () => void;
   onStop: () => void;
 }) {
+  const newToday = status?.run?.newToday ?? 0;
+  const liveToday = status?.run?.liveToday ?? 0;
+  const newPerDay = status?.newPerDay ?? project.quotas?.newPerDay ?? 0;
+  const livePerDay = status?.livePerDay ?? project.quotas?.livePerDay ?? 0;
+  const items = overviewFeed({
+    steps,
+    lastEvent: status?.lastEvent ?? null,
+    working,
+    blockers: whyNotFeedLines(status?.whyNot),
+  });
+  const action = overviewAction(items, working);
+  const frame = overviewFrame({ steps, tickets });
   return (
-    <BuiCard className="flex flex-col gap-4 p-4">
-      <div className="flex flex-wrap gap-2">
-        <BuiButton tone="accent" label="Start" onClick={onStart} disabled={busy}>
-          Start
-        </BuiButton>
-        <BuiButton label="Pause" onClick={onPause} disabled={busy}>
-          Pause
-        </BuiButton>
-        <BuiButton label="Stop" onClick={onStop} disabled={busy}>
-          Stop
-        </BuiButton>
+    <section className="flex min-h-0 flex-1 flex-col gap-3" aria-label="Overview">
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div className="flex flex-wrap gap-2">
+          <BuiButton tone="accent" label="Start" onClick={onStart} disabled={busy}>
+            Start
+          </BuiButton>
+          <BuiButton label="Pause" onClick={onPause} disabled={busy}>
+            Pause
+          </BuiButton>
+          <BuiButton label="Stop" onClick={onStop} disabled={busy}>
+            Stop
+          </BuiButton>
+        </div>
+        <div className="flex flex-wrap gap-6">
+          <TodayCount label={OVERVIEW_COUNTS.newToday} value={newToday} max={newPerDay} />
+          <TodayCount label={OVERVIEW_COUNTS.liveToday} value={liveToday} max={livePerDay} />
+        </div>
       </div>
-      <div className="flex flex-wrap gap-4">
-        <Ring
-          label={QUOTA_LABELS.newPerDay}
-          value={status?.run?.newToday ?? 0}
-          max={status?.newPerDay ?? project.quotas?.newPerDay ?? 0}
+      <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-[minmax(0,1.5fr)_minmax(280px,380px)]">
+        <ComputerPane working={working} action={action} frame={frame} loadArtifact={loadArtifact} />
+        <div className="flex min-h-[520px] flex-col gap-3 lg:max-h-[calc(100dvh-9rem)]">
+          <ActivityFeed items={items} />
+          {status?.costs ? <CostNote costs={status.costs} /> : null}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function TodayCount({ label, value, max }: { label: string; value: number; max: number }) {
+  return (
+    <p className="text-[15px] text-[#ECECEE]">
+      <span className="text-[#A6A6AD]">{label} </span>
+      <span className="tabular-nums">{`${value}/${max}`}</span>
+    </p>
+  );
+}
+
+function ComputerPane({
+  working,
+  action,
+  frame,
+  loadArtifact,
+}: {
+  working: boolean;
+  action: string;
+  frame: ReturnType<typeof overviewFrame>;
+  loadArtifact?: ArtifactLoader;
+}) {
+  const showFrame = frame?.kind === "url" || (frame?.kind === "artifact" && loadArtifact);
+  return (
+    <section
+      aria-label="Computer"
+      data-frame={frame?.kind ?? "pending"}
+      className="relative flex min-h-[520px] flex-col overflow-hidden rounded-[16px] bg-[#101012]"
+      style={{ boxShadow: "var(--bui-shadow-card)" }}
+    >
+      <div className="relative z-10 flex h-9 items-center gap-2 border-b border-[#2A2A31] bg-[#101012] px-3">
+        <span
+          className="h-2 w-2 rounded-full"
+          style={{ background: working ? "var(--bui-green)" : "#3a3a40" }}
         />
-        <Ring
-          label={QUOTA_LABELS.livePerDay}
-          value={status?.run?.liveToday ?? 0}
-          max={status?.livePerDay ?? project.quotas?.livePerDay ?? 0}
+      </div>
+      <div className="grid min-h-[480px] flex-1 place-items-center px-6">
+        {working && !showFrame ? <LoadingState label={action || "Working"} /> : null}
+        {!working && !showFrame && action ? (
+          <p className="max-w-md text-center text-[13px] text-[#85858A]">{action}</p>
+        ) : null}
+      </div>
+      {frame?.kind === "url" ? (
+        <iframe title="Computer" src={frame.url} className="absolute inset-0 z-[1] h-full w-full" />
+      ) : null}
+      {frame?.kind === "artifact" && loadArtifact ? (
+        <ArtifactShot
+          artifactId={frame.artifactId}
+          load={loadArtifact}
+          label="Computer"
+          untilReady="blank"
+          className="absolute inset-0 z-[1] h-full w-full object-contain"
         />
-      </div>
-      <div className="text-[13px] text-[#A6A6AD]">{status?.lastEvent ?? project.status}</div>
-      {status?.whyNot && (status.run?.liveToday ?? 0) < (status.livePerDay ?? 0) ? (
-        <section aria-label="Why not">
-          <div className="text-[12px] text-[#85858A]">Why not</div>
-          <ul className="mt-1 text-[13px] text-[#ECECEE]">
-            <li>
-              Supply {status.whyNot.supply.qualified} qualified, {status.whyNot.supply.ready} ready
-            </li>
-            <li>Parked {status.whyNot.parked}</li>
-            <li>Spam blocked {status.whyNot.spamBlocked}</li>
-            <li>Unsupported captcha {status.whyNot.unsupportedCaptcha}</li>
-            <li>Pending email {status.whyNot.pendingEmail}</li>
-            <li>Pending admin {status.whyNot.pendingAdmin}</li>
-            <li>Model errors {status.whyNot.modelErrors}</li>
-            <li>Proxy {status.whyNot.proxy}</li>
-          </ul>
-        </section>
       ) : null}
-      {status?.costs ? (
-        <section aria-label="Costs">
-          <div className="text-[12px] text-[#85858A]">Costs</div>
-          <p className="mt-1 text-[13px] text-[#ECECEE]">
-            Today {status.costs.day.modelTokens} tokens · {status.costs.day.searchQueries} searches
-            · {status.costs.day.proxyLeaseDays} proxy days
-          </p>
-          <p className="text-[13px] text-[#A6A6AD]">
-            Week {status.costs.week.modelTokens} tokens · {status.costs.week.searchQueries} searches
-            · {status.costs.week.proxyLeaseDays} proxy days
-          </p>
-        </section>
+      {working && showFrame ? (
+        <div className="absolute bottom-4 left-4 z-20">
+          <LoadingState label={action || "Working"} />
+        </div>
       ) : null}
-      <div
-        role="img"
-        className="grid h-28 place-items-center rounded-xl border border-dashed border-[#2A2A31] text-[12.5px] text-[#85858A]"
-        aria-label="Live screen thumbnail"
-      >
-        Live screen
-      </div>
-    </BuiCard>
+    </section>
+  );
+}
+
+function ActivityFeed({ items }: { items: OverviewFeedItem[] }) {
+  const scroller = useRef<HTMLElement>(null);
+  const tail = `${items.length}:${items[items.length - 1]?.id ?? ""}`;
+  useEffect(() => {
+    const node = scroller.current;
+    if (node) node.scrollTop = node.scrollHeight;
+  }, [tail]);
+  return (
+    <section
+      ref={scroller}
+      className="rk-scroll min-h-0 flex-1 overflow-y-auto"
+      aria-label="Activity"
+      aria-live="polite"
+    >
+      <BuiCard className="overflow-hidden">
+        {items.length === 0 ? (
+          <p className="px-3 py-4 text-[13px] text-[#85858A]">No events yet</p>
+        ) : (
+          items.map((item) => (
+            <TaskRow
+              key={item.id}
+              status={item.status}
+              label={item.label}
+              meta={feedMeta(item.at)}
+            />
+          ))
+        )}
+      </BuiCard>
+    </section>
+  );
+}
+
+function feedMeta(at: string | null): string | undefined {
+  if (!at) return undefined;
+  const date = new Date(at);
+  if (Number.isNaN(date.getTime())) return undefined;
+  return new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit" }).format(date);
+}
+
+function CostNote({ costs }: { costs: NonNullable<LbProjectStatusView["costs"]> }) {
+  const line = (label: string, row: LbProjectStatusView["costs"]["day"]) =>
+    `${label} ${row.modelTokens} tokens · ${row.searchQueries} searches · ${row.proxyLeaseDays} proxy days`;
+  return (
+    <p className="text-[12px] text-[#6C6C70]">
+      {line("Today", costs.day)}
+      <span className="mx-2">·</span>
+      {line("Week", costs.week)}
+    </p>
   );
 }
 
@@ -651,10 +785,15 @@ export function ArtifactShot({
   artifactId,
   load,
   label,
+  className = "w-full rounded-[12px] border border-[#2A2A31]",
+  untilReady = "loader",
 }: {
   artifactId: string;
   load: ArtifactLoader;
   label: string;
+  className?: string;
+  /** `blank` keeps the surrounding pane visible until the image arrives. */
+  untilReady?: "loader" | "blank";
 }) {
   const [src, setSrc] = useState<string | null | undefined>(undefined);
   useEffect(() => {
@@ -671,9 +810,9 @@ export function ArtifactShot({
       live = false;
     };
   }, [artifactId, load]);
-  if (src === undefined) return <LoadingState label={label} />;
+  if (src === undefined) return untilReady === "blank" ? null : <LoadingState label={label} />;
   if (src === null) return null;
-  return <img src={src} alt={label} className="w-full rounded-[12px] border border-[#2A2A31]" />;
+  return <img src={src} alt={label} className={className} />;
 }
 
 function RunTimeline({

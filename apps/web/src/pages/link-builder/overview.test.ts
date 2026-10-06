@@ -1,0 +1,125 @@
+import type { LbRunStepView, LbWhyNot } from "@rakazo/contracts";
+import { describe, expect, it } from "vitest";
+import {
+  overviewAction,
+  overviewFeed,
+  overviewFrame,
+  overviewWorking,
+  whyNotFeedLines,
+} from "./overview.js";
+
+const zeroWhy: LbWhyNot = {
+  supply: { qualified: 0, ready: 0 },
+  parked: 0,
+  spamBlocked: 0,
+  unsupportedCaptcha: 0,
+  pendingEmail: 0,
+  pendingAdmin: 0,
+  modelErrors: 0,
+  modelRefusals: 0,
+  captchaBalance: null,
+  proxy: "ok",
+  reasons: ["host_supply_exhausted"],
+};
+
+function step(index: number, lastAction: string, artifactIds: string[] = []): LbRunStepView {
+  return {
+    id: `step-${index}`,
+    stepIndex: index,
+    kind: "probe",
+    hostId: null,
+    lastAction,
+    error: null,
+    costs: { credits: 0, tokens: 0, bytes: 0, ms: 0 },
+    artifactIds,
+    createdAt: "2026-10-06T12:00:00.000Z",
+  };
+}
+
+describe("overview feed", () => {
+  it("hides an all-zero why-not report and keeps real blockers", () => {
+    expect(whyNotFeedLines(zeroWhy)).toEqual([]);
+    expect(whyNotFeedLines(null)).toEqual([]);
+    expect(
+      whyNotFeedLines({
+        ...zeroWhy,
+        parked: 1,
+        pendingEmail: 2,
+        spamBlocked: 1,
+        proxy: "degraded",
+        reasons: ["operator_parked", "pending_email", "spam_filtered", "proxy_degraded"],
+      }),
+    ).toEqual(["Parked 1", "Spam blocked 1", "Pending email 2", "Proxy degraded"]);
+  });
+
+  it("appends steps in order and marks the latest one working", () => {
+    const items = overviewFeed({
+      steps: [step(1, "Probed brett-1ej2xe.example"), step(0, "Discovered forum-a.example")],
+      lastEvent: "Probed brett-1ej2xe.example",
+      working: true,
+      blockers: [],
+    });
+    expect(items.map((item) => item.label)).toEqual([
+      "Discovered forum-a.example",
+      "Probed brett-1ej2xe.example",
+    ]);
+    expect(items.map((item) => item.status)).toEqual(["done", "working"]);
+    expect(overviewAction(items, true)).toBe("Probed brett-1ej2xe.example");
+  });
+
+  it("shows Starting before any step arrives, and puts blockers after the work", () => {
+    const starting = overviewFeed({
+      steps: [],
+      lastEvent: null,
+      working: true,
+      blockers: [],
+    });
+    expect(starting).toEqual([{ id: "starting", label: "Starting", status: "working", at: null }]);
+    const blocked = overviewFeed({
+      steps: [step(0, "Discovered forum-a.example")],
+      lastEvent: "Discovered forum-a.example",
+      working: false,
+      blockers: ["Parked 1"],
+    });
+    expect(blocked.map((item) => item.label)).toEqual(["Discovered forum-a.example", "Parked 1"]);
+    expect(blocked[1]?.status).toBe("blocked");
+    expect(overviewAction(blocked, false)).toBe("Discovered forum-a.example");
+  });
+
+  it("follows an explicit start or pause before the server status changes", () => {
+    expect(overviewWorking({ activity: "paused", intent: "working" })).toBe(true);
+    expect(overviewWorking({ activity: "running", intent: "paused" })).toBe(false);
+    expect(overviewWorking({ activity: "running", intent: null })).toBe(true);
+    expect(overviewWorking({ activity: "paused", intent: null })).toBe(false);
+  });
+
+  it("prefers a live screen, then the newest screenshot", () => {
+    const steps = [step(0, "Open", ["older"]), step(1, "Post", ["newer"])];
+    expect(
+      overviewFrame({
+        steps,
+        tickets: [
+          {
+            id: "ticket-1",
+            projectId: "demo",
+            hostId: "host-1",
+            domain: "brett.example",
+            runId: "run-1",
+            reason: "captcha_unsolved",
+            screenUrl: "https://screens.example/live",
+            screenshotArtifactId: "shot",
+            note: null,
+            status: "open",
+            expiresAt: null,
+            createdAt: "2026-10-06T12:00:00.000Z",
+          },
+        ],
+      }),
+    ).toEqual({ kind: "url", url: "https://screens.example/live" });
+    expect(overviewFrame({ steps, tickets: [] })).toEqual({
+      kind: "artifact",
+      artifactId: "newer",
+    });
+    expect(overviewFrame({ steps: [], tickets: [] })).toBeNull();
+  });
+});
