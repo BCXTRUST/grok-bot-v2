@@ -229,6 +229,7 @@ describe("link builder week", () => {
       },
       allowPrivateVerify: true,
       webhookFetch: async (_url, init) => {
+        expect(init?.redirect).toBe("error");
         const headers = new Headers(init?.headers);
         const body = String(init?.body ?? "");
         const pause = body.includes('"kind":"project.paused"');

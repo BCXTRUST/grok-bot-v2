@@ -525,7 +525,7 @@ M8 deviations (as built):
 - Link-builder RPC is limited per workspace by an in-memory window in the API process (120 requests / 60 s). There is no shared limiter in the repo and no Redis.
 - Plan caps live in `@rakazo/linkbuilder-core` (`projects`, `live_per_day`, `personas`). A start checks them first. A placement is counted only while that project's `liveToday` is under `live_per_day` (per project, not summed across the workspace, because each project has its own local day). `PlanProvider` is in adapter-kit. `StaticPlanProvider` returns the `starter` plan (3 / 10 / 3). `StripePlanStub` returns the same plan and refuses every webhook. No Stripe SDK, no live key, and no billing route.
 - Scheduled work stays on the existing runner tick. It was not moved onto a Graphile task.
-- `proxyResolverFor` records a revealed proxy string once. `webhookUrlAllowed` stays syntactic outside production; in production it also resolves the hostname through an injected resolver and refuses when any answer is private, loopback, link-local, CGNAT, or metadata. Tests inject the resolver. Validation does not fetch the URL.
+- `proxyResolverFor` records a revealed proxy string once. `webhookUrlAllowed` stays syntactic outside production; in production it also resolves the hostname through an injected resolver and refuses when any answer is private, loopback, link-local, CGNAT, or metadata. Tests inject the resolver. Validation does not fetch the URL. Delivery uses `redirect: "error"`, so a 3xx cannot retarget the POST at a private address after the DNS check.
 
 ---
 

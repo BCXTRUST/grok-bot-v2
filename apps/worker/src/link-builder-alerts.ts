@@ -168,6 +168,7 @@ export async function deliverDueWebhooks(deps: {
     try {
       const response = await (deps.fetchImpl ?? fetch)(url, {
         method: "POST",
+        redirect: "error",
         headers: {
           "content-type": "application/json",
           "X-Rakazo-Signature": header,
