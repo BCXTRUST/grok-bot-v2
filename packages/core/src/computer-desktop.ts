@@ -63,10 +63,21 @@ function posixShellQuote(value: string): string {
 export const DETACHED_BROWSER_MARKER = "RAKAZO_DETACH_BROWSER";
 
 /**
- * Start Chrome and return. `exec` would hold the sandbox command open until Chrome
- * exits, and a bare `cmd &` keeps E2B's stdout pipe open. The same detach noVNC
- * uses lets the URL return while the browser stays on the search page.
+ * Drop the desktop shell and any Chrome that was started without kiosk flags.
+ * An already-running Chrome ignores `--kiosk` and `--no-first-run` on a second launch.
+ * `exec` inside the detached command replaces the shell so E2B can disconnect
+ * without reaping the browser.
  */
+export function prepareKioskDesktopCommand(display: string): string {
+  const quotedDisplay = posixShellQuote(display);
+  return [
+    `export DISPLAY=${quotedDisplay}`,
+    "killall -q chrome chromium chromium-browser google-chrome google-chrome-stable >/dev/null 2>&1 || true",
+    "killall -q xfce4-panel xfdesktop pcmanfm lxpanel tint2 plank >/dev/null 2>&1 || true",
+    "sleep 0.3",
+  ].join("\n");
+}
+
 export function detachedBrowserCommand(display: string, url: string): string {
   const quotedUrl = posixShellQuote(url.trim());
   const quotedDisplay = posixShellQuote(display);
@@ -74,21 +85,24 @@ export function detachedBrowserCommand(display: string, url: string): string {
     `export DISPLAY=${quotedDisplay}`,
     `url=${quotedUrl}`,
     "dir=/tmp/rakazo-linkbuilder-chrome",
-    'mkdir -p "$dir"',
-    'flags="--user-data-dir=$dir --no-first-run --no-default-browser-check --disable-dev-shm-usage --no-sandbox --new-window --start-maximized --window-position=0,0 --window-size=1280,800"',
+    'rm -rf "$dir"',
+    'mkdir -p "$dir/Default"',
+    'touch "$dir/First Run"',
+    `printf '%s\\n' '{"browser":{"check_default_browser":false},"distribution":{"skip_first_run_ui":true,"suppress_first_run_default_browser_prompt":true,"make_chrome_default_for_user":false}}' > "$dir/Default/Preferences"`,
+    'flags="--user-data-dir=$dir --kiosk --start-fullscreen --no-first-run --disable-fre --no-default-browser-check --disable-infobars --noerrdialogs --disable-session-crashed-bubble --hide-crash-restore-bubble --disable-features=Translate,InfiniteSessionRestore,ChromeWhatsNewUI --password-store=basic --disable-sync --disable-dev-shm-usage --no-sandbox --window-position=0,0 --window-size=1280,800"',
     'if [ -x /usr/bin/google-chrome ]; then exec /usr/bin/google-chrome $flags "$url"; fi',
     'if [ -x /usr/bin/google-chrome-stable ]; then exec /usr/bin/google-chrome-stable $flags "$url"; fi',
     'if [ -x /usr/bin/chromium ]; then exec /usr/bin/chromium $flags "$url"; fi',
     'if [ -x /usr/bin/chromium-browser ]; then exec /usr/bin/chromium-browser $flags "$url"; fi',
     'if command -v google-chrome >/dev/null 2>&1; then exec google-chrome $flags "$url"; fi',
     'if command -v chromium >/dev/null 2>&1; then exec chromium $flags "$url"; fi',
-    'if command -v firefox >/dev/null 2>&1; then exec firefox --new-window "$url"; fi',
+    'if command -v firefox >/dev/null 2>&1; then exec firefox --kiosk "$url"; fi',
     'exec xdg-open "$url"',
-  ].join("; ");
-  return `# ${DETACHED_BROWSER_MARKER}\n( ${launch} ) </dev/null >/tmp/rakazo-browser.log 2>&1 &`;
+  ];
+  return [`# ${DETACHED_BROWSER_MARKER}`, ...launch].join("\n");
 }
 
-/** Wait until a browser window exists, then cover the desktop with it. */
+/** Wait until a browser window exists, then make it the only thing on the screen. */
 export function raiseBrowserWindowCommand(display: string): string {
   const quotedDisplay = posixShellQuote(display);
   const classes = ["google-chrome", "Google-chrome", "Chromium", "chromium", "firefox", "Firefox"]
@@ -96,19 +110,31 @@ export function raiseBrowserWindowCommand(display: string): string {
     .join(" ");
   return [
     `export DISPLAY=${quotedDisplay}`,
+    "killall -q xfce4-panel xfdesktop pcmanfm lxpanel tint2 plank >/dev/null 2>&1 || true",
     "id=",
     "for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do",
+    "  welcome=$(xdotool search --onlyvisible --name \"Welcome to Google Chrome\" 2>/dev/null | awk 'NR==1{print; exit}')",
+    '  if [ -n "$welcome" ]; then',
+    '    xdotool windowactivate --sync "$welcome" key Return 2>/dev/null || true',
+    "    sleep 0.3",
+    "  fi",
     `  for class in ${classes}; do`,
     "    id=$(xdotool search --onlyvisible --class \"$class\" 2>/dev/null | awk 'NR==1{print; exit}')",
     '    if [ -n "$id" ]; then break; fi',
     "  done",
     '  if [ -n "$id" ]; then',
+    "    name=$(xdotool getwindowname \"$id\" 2>/dev/null || true)",
+    '    case "$name" in',
+    '      *"Welcome to Google Chrome"*) id=; sleep 0.3; continue ;;',
+    "    esac",
     "    read -r width height <<EOF",
     "$(xdotool getdisplaygeometry 2>/dev/null || echo 1280 800)",
     "EOF",
     '    width=${width:-1280}',
     '    height=${height:-800}',
-    '    xdotool windowmove "$id" 0 0 windowsize --sync "$id" "$width" "$height" windowactivate "$id" windowraise "$id"',
+    '    xdotool windowmove "$id" 0 0 windowsize --sync "$id" "$width" "$height" windowactivate "$id" windowraise "$id" || true',
+    '    xdotool windowstate --add FULLSCREEN "$id" 2>/dev/null || true',
+    '    if command -v wmctrl >/dev/null 2>&1; then wmctrl -i -r "$id" -b add,fullscreen,above 2>/dev/null || true; fi',
     "    exit 0",
     "  fi",
     "  sleep 0.4",

@@ -173,8 +173,15 @@ describe("project computer screen", () => {
     expect(opened).toContain("forum");
     expect(opened).toContain("RAKAZO_DETACH_BROWSER");
     expect(opened).toContain("exec /usr/bin/google-chrome");
+    expect(opened).toContain("--kiosk");
+    expect(opened).toContain("--start-fullscreen");
+    expect(opened).toContain("--no-first-run");
+    expect(opened).toContain("--disable-fre");
+    expect(opened).toContain("--no-default-browser-check");
     expect(opened).not.toContain("nohup");
     expect(opened).not.toContain(".example");
+    expect(scripts.some((script) => script.includes("FULLSCREEN"))).toBe(true);
+    expect(scripts.some((script) => script.includes("xfce4-panel"))).toBe(true);
     expect(scripts.join("\n")).not.toMatch(/register|signup|post/i);
   });
 
@@ -213,7 +220,10 @@ describe("project computer screen", () => {
       actor,
       "project-searching",
     );
-    expect(scripts).toHaveLength(1);
-    expect(scripts[0]).not.toContain("google.com/search");
+    expect(scripts.some((script) => script.includes("google.com/search"))).toBe(false);
+    expect(scripts.join("\n")).not.toContain("killall -q chrome");
+    expect(scripts.some((script) => script.includes("FULLSCREEN"))).toBe(true);
+    expect(scripts.some((script) => script.includes("xfce4-panel"))).toBe(true);
+    expect(scripts.join("\n")).not.toMatch(/register|signup|post/i);
   });
 });

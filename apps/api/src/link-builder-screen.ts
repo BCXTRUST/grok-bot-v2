@@ -14,6 +14,7 @@ import {
 import { type Actor, SandboxKind } from "@rakazo/contracts";
 import {
   detachedBrowserCommand,
+  prepareKioskDesktopCommand,
   listVisibleWindowsCommand,
   parseVisibleWindows,
   raiseBrowserWindowCommand,
@@ -22,6 +23,8 @@ import { ensureComputerRecord, type PrismaClient, type ThreadEvents } from "@rak
 import {
   desktopShowsForumSearch,
   forumSearchUrlFromProject,
+  isCannedResearchLine,
+  isStaleResearchLine,
 } from "@rakazo/linkbuilder-core";
 import { addScreenProxyCapability, shouldProxyComputerScreen } from "./screen-proxy.js";
 
@@ -99,6 +102,7 @@ export function publicScreenError(error: unknown): string {
 }
 
 type ScreenProject = {
+  id: string;
   name: string | null;
   brandName: string | null;
   topicLanes: unknown;
@@ -368,12 +372,99 @@ async function showForumSearch(
     } catch {
       titles = [];
     }
-    if (desktopShowsForumSearch(titles)) return;
-    await runDesktop(deps, actor, computer, detachedBrowserCommand(DESKTOP_DISPLAY, url));
-    await runDesktop(deps, actor, computer, raiseBrowserWindowCommand(DESKTOP_DISPLAY));
+    if (!desktopShowsForumSearch(titles)) {
+      await runDesktop(deps, actor, computer, prepareKioskDesktopCommand(DESKTOP_DISPLAY));
+      await runDesktop(deps, actor, computer, detachedBrowserCommand(DESKTOP_DISPLAY, url));
+      titles = await visibleTitles(deps, actor, computer);
+      if (!desktopShowsForumSearch(titles)) {
+        await runDesktop(deps, actor, computer, typeSearchUrlCommand(DESKTOP_DISPLAY, url));
+        titles = await visibleTitles(deps, actor, computer);
+      }
+    }
+    try {
+      await runDesktop(deps, actor, computer, raiseBrowserWindowCommand(DESKTOP_DISPLAY));
+    } catch {
+      // The kiosk window can still be opening. The next screen open tries again.
+    }
+    if (desktopShowsForumSearch(titles)) await noteDesktopSearch(deps, actor, project.id);
   } catch (error) {
     console.error("link builder screen", "forum search", publicScreenError(error));
   }
+}
+
+async function visibleTitles(
+  deps: ProjectScreenDeps,
+  actor: Actor,
+  computer: TeamComputer,
+): Promise<string[]> {
+  try {
+    const listed = await runDesktop(
+      deps,
+      actor,
+      computer,
+      listVisibleWindowsCommand(DESKTOP_DISPLAY),
+    );
+    return parseVisibleWindows(listed).flatMap((window) => (window.title ? [window.title] : []));
+  } catch {
+    return [];
+  }
+}
+
+/** Put the search URL in the address bar when Chrome opened on a welcome or blank tab. */
+function typeSearchUrlCommand(display: string, url: string): string {
+  const quotedDisplay = `'${display.replace(/'/g, `'"'"'`)}'`;
+  const quotedUrl = `'${url.replace(/'/g, `'"'"'`)}'`;
+  return [
+    `export DISPLAY=${quotedDisplay}`,
+    "id=$(xdotool search --onlyvisible --class google-chrome 2>/dev/null | awk 'NR==1{print; exit}')",
+    'if [ -z "$id" ]; then id=$(xdotool search --onlyvisible --class Chromium 2>/dev/null | awk \'NR==1{print; exit}\'); fi',
+    'if [ -z "$id" ]; then exit 0; fi',
+    'xdotool windowactivate --sync "$id"',
+    "sleep 0.2",
+    "xdotool key ctrl+l",
+    "sleep 0.15",
+    `xdotool type --delay 1 -- ${quotedUrl}`,
+    "xdotool key Return",
+    "sleep 2",
+  ].join("\n");
+}
+
+/** Count the search once the Google results page is actually on the computer. */
+async function noteDesktopSearch(
+  deps: ProjectScreenDeps,
+  actor: Actor,
+  projectId: string,
+): Promise<void> {
+  const create = deps.prisma.lbCostEntry?.create;
+  if (!create) return;
+  const now = new Date();
+  const day = now.toISOString().slice(0, 10);
+  try {
+    await create({
+      data: {
+        workspaceId: actor.workspaceId,
+        projectId,
+        kind: "search_query",
+        quantity: 1,
+        sourceKey: `desktop-google:${projectId}:${day}`,
+        occurredAt: now,
+      },
+    });
+  } catch (error) {
+    const code = typeof error === "object" && error && "code" in error ? error.code : "";
+    if (code !== "P2002") throw error;
+  }
+  const run = await deps.prisma.lbRun?.findFirst?.({
+    where: { projectId, workspaceId: actor.workspaceId },
+    orderBy: { date: "desc" },
+    select: { id: true, lastAction: true },
+  });
+  const current = run?.lastAction ?? "";
+  if (!run || (current && !isCannedResearchLine(current) && !isStaleResearchLine(current))) return;
+  await deps.prisma.lbRun.update({
+    where: { id: run.id },
+    data: { lastAction: "Opened Google search" },
+  });
 }
 
 async function runDesktop(

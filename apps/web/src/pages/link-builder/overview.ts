@@ -115,6 +115,8 @@ export function overviewFeed(input: {
   forumName?: string | null;
   /** Real thread title. A found line is omitted when this is blank or an example host. */
   threadName?: string | null;
+  /** Recorded search queries. Zero means a Google line has not happened. */
+  searches?: number;
 }): OverviewFeedItem[] {
   const hasPlacement = input.hasPlacement === true;
   let keptOpening = false;
@@ -122,7 +124,11 @@ export function overviewFeed(input: {
     .sort((a, b) => a.stepIndex - b.stepIndex)
     .filter((step) => {
       const label = step.lastAction?.trim() || step.kind;
-      if (isStaleResearchLine(label) || isCannedResearchLine(label)) return false;
+      if (isStaleResearchLine(label)) return false;
+      if (isCannedResearchLine(label) && !(label === RESEARCH_OPENING && (input.searches ?? 0) > 0)) {
+        return false;
+      }
+      if (input.searches === 0 && claimsGoogleSearch(label)) return false;
       if (label === RESEARCH_OPENING) {
         if (keptOpening) return false;
         keptOpening = true;
@@ -155,7 +161,8 @@ export function overviewFeed(input: {
   const researchAlready = items.some((item) => /research/i.test(item.label));
   const hiddenEvent =
     isStaleResearchLine(event) ||
-    isCannedResearchLine(event) ||
+    (isCannedResearchLine(event) && !(event === RESEARCH_OPENING && (input.searches ?? 0) > 0)) ||
+    (input.searches === 0 && claimsGoogleSearch(event)) ||
     !visibleFoundLine(event, input.forumName, input.threadName) ||
     mentionsFixtureHost(event) ||
     (!hasPlacement && offlineStage("", event)) ||
@@ -203,6 +210,11 @@ export function overviewAction(items: OverviewFeedItem[], working: boolean): str
   }
   const last = [...items].reverse().find((item) => item.status !== "blocked");
   return last?.label ?? "";
+}
+
+/** A sentence that says Google was searched. Hidden while the search count is still zero. */
+function claimsGoogleSearch(label: string): boolean {
+  return /google/i.test(label) && /(check|search|opened|opening)/i.test(label);
 }
 
 /** A stored "Found …" line stays only when that forum or thread is on the project. */

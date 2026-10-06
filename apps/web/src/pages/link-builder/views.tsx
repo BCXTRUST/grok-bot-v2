@@ -627,6 +627,7 @@ function Dashboard({
     showHostToCustomer(thread.domain, project.slug),
   );
   const visibleDrafts = drafts.filter((draft) => customerDraft(draft, hideExampleCopy));
+  const searches = status?.costs?.day.searchQueries ?? 0;
   const items = overviewFeed({
     steps,
     lastEvent: status?.lastEvent ?? null,
@@ -636,6 +637,7 @@ function Dashboard({
     hasPlacement,
     forumName: forums[0]?.registrableDomain ?? null,
     threadName: visibleThreads[0]?.title ?? null,
+    searches,
   });
   const action = overviewAction(items, working);
   const frame = overviewFrame({ steps, tickets, screenUrl });

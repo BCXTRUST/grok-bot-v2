@@ -49,14 +49,21 @@ describe("computer desktop window helpers", () => {
     expect(command).toContain("--no-sandbox");
     expect(command).toContain("--no-first-run");
     expect(command).toContain("https://www.google.com/search?q=Vitaminexpress+forum");
-    expect(command).toContain(") </dev/null >/tmp/rakazo-browser.log 2>&1 &");
-    expect(command.trimEnd().endsWith("&")).toBe(true);
+    expect(command).toContain("--kiosk");
+    expect(command).toContain("exec /usr/bin/google-chrome");
+    expect(command).not.toContain(">/tmp/rakazo-browser.log");
+    expect(command.trimEnd().endsWith("&")).toBe(false);
   });
 
   it("replaces the shell with Chrome so the sandbox cannot reap it", () => {
     const command = detachedBrowserCommand(":0", "https://www.google.com/search?q=Vitaminexpress+forum");
     expect(command).toContain("RAKAZO_DETACH_BROWSER");
     expect(command).toContain("exec /usr/bin/google-chrome");
+    expect(command).toContain("--kiosk");
+    expect(command).toContain("--disable-fre");
+    expect(command).toContain("--no-first-run");
+    expect(command).toContain("--no-default-browser-check");
+    expect(command).toContain("First Run");
     expect(command).toContain("https://www.google.com/search?q=Vitaminexpress+forum");
     expect(command).not.toContain("nohup");
   });

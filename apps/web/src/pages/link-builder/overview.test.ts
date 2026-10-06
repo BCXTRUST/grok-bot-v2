@@ -96,6 +96,32 @@ describe("overview feed", () => {
     expect(overviewAction(blocked, false)).toBe("Opened Google search");
   });
 
+  it("shows the Google line only after a search is counted", () => {
+    const steps = [
+      step(0, "Checking Google for on-topic forums"),
+      step(1, "Looking for threads"),
+      step(2, "Continuing"),
+    ];
+    const quiet = overviewFeed({
+      steps,
+      lastEvent: "Checking Google for on-topic forums",
+      working: true,
+      blockers: [],
+      searches: 0,
+    });
+    expect(quiet.map((item) => item.label)).toEqual([]);
+    expect(overviewAction(quiet, true)).toBe("Working");
+    const counted = overviewFeed({
+      steps,
+      lastEvent: "Checking Google for on-topic forums",
+      working: true,
+      blockers: [],
+      searches: 1,
+    });
+    expect(counted.map((item) => item.label)).toEqual(["Checking Google for on-topic forums"]);
+    expect(counted.map((item) => item.label).join("\n")).not.toMatch(/Looking for threads|Continuing/);
+  });
+
   it("drops the canned three-line loop even when those steps are stored", () => {
     const repeat = step(1, "Checking Google for on-topic forums");
     repeat.createdAt = "2026-10-06T12:00:20.000Z";
@@ -117,6 +143,15 @@ describe("overview feed", () => {
     expect(items.map((item) => item.label).join("\n")).not.toMatch(
       /Checking Google for on-topic forums|Looking for threads|Continuing/,
     );
+    const quiet = overviewFeed({
+      steps: [step(0, "Checking Google for on-topic forums"), opened],
+      lastEvent: "Opened Google search",
+      working: true,
+      blockers: [],
+      searches: 0,
+    });
+    expect(quiet).toEqual([]);
+    expect(quiet.some((item) => item.status === "done")).toBe(false);
   });
 
   it("follows an explicit start or pause before the server status changes", () => {
