@@ -21,6 +21,15 @@ export type OverviewFrame = { kind: "url"; url: string } | { kind: "artifact"; a
 
 const BLOCKED_KINDS = new Set(["coherence_refused", "edge_block"]);
 
+/** Old offline runs wrote a captcha park and a met quota. Customer projects no longer show that. */
+function leftoverHandoff(label: string): boolean {
+  return (
+    /live quota met/i.test(label) ||
+    /captcha/i.test(label) ||
+    (/parked/i.test(label) && /operator/i.test(label))
+  );
+}
+
 /** Start paints a working screen before the server answers. Pause and Stop paint calm. */
 export function overviewWorking(input: {
   activity: string | null;
@@ -73,7 +82,9 @@ export function overviewFeed(input: {
     .filter((step) => {
       const label = step.lastAction?.trim() || step.kind;
       if (mentionsFixtureHost(label)) return false;
-      if (input.hideExampleCopy && mentionsExampleDomain(label)) return false;
+      if (input.hideExampleCopy && (mentionsExampleDomain(label) || leftoverHandoff(label))) {
+        return false;
+      }
       return true;
     });
   const items: OverviewFeedItem[] = steps.map((step) => ({
@@ -85,7 +96,8 @@ export function overviewFeed(input: {
   const seen = new Set(items.map((item) => item.label));
   const event = input.lastEvent?.trim() ?? "";
   const hiddenEvent =
-    mentionsFixtureHost(event) || (input.hideExampleCopy && mentionsExampleDomain(event));
+    mentionsFixtureHost(event) ||
+    (input.hideExampleCopy && (mentionsExampleDomain(event) || leftoverHandoff(event)));
   if (event && !seen.has(event) && !hiddenEvent) {
     items.push({ id: `event:${event}`, label: event, status: "done", at: null });
   }

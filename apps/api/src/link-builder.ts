@@ -94,6 +94,7 @@ function customerFacingEvent(text: string | null): string | null {
     .replace(/\s{2,}/g, " ")
     .trim();
   if (/parked/i.test(cleaned) && /operator/i.test(cleaned)) return null;
+  if (/live quota met/i.test(cleaned) || /captcha/i.test(cleaned)) return null;
   return cleaned || null;
 }
 
@@ -452,8 +453,7 @@ export async function statusLbProject(deps: RouterDeps, actor: Actor, projectId:
       }
     : null;
   const credits = await readCreditBalance(deps.prisma, actor.workspaceId);
-  const liveMet =
-    (todayRun?.liveToday ?? 0) >= (quotas?.livePerDay ?? 0) && (quotas?.livePerDay ?? 0) > 0;
+  const liveMet = faced.liveToday >= (quotas?.livePerDay ?? 0) && (quotas?.livePerDay ?? 0) > 0;
   const scheduleView = scheduleState(schedule, now, liveMet);
   const activity = projectActivity({
     projectStatus: readProjectStatus(row.status),
@@ -462,7 +462,10 @@ export async function statusLbProject(deps: RouterDeps, actor: Actor, projectId:
     schedule: scheduleView,
   });
   const storedWhy = todayRun ? LbWhyNotSchema.safeParse(todayRun.whyNot) : null;
-  const whyNot =
+  const visibleParked = hosts.filter(
+    (host) => host.status === "parked_operator" && shownToCustomer(host, row.slug),
+  ).length;
+  const whyNotBase =
     storedWhy?.success === true
       ? storedWhy.data
       : liveMet
@@ -475,6 +478,9 @@ export async function statusLbProject(deps: RouterDeps, actor: Actor, projectId:
             lowBalanceCredits: row.captchaLowBalanceCredits,
             proxy: "ok",
           });
+  const whyNot = whyNotBase
+    ? { ...whyNotBase, parked: Math.min(whyNotBase.parked, visibleParked) }
+    : null;
   return {
     projectId: row.id,
     projectStatus: readProjectStatus(row.status),
@@ -1070,6 +1076,9 @@ function customerStepVisible(slug: string, lastAction: string | null): boolean {
   if (!lastAction) return true;
   if (mentionsFixtureHost(lastAction)) return false;
   if (slug !== LB_DEMO_SLUG && mentionsExampleDomain(lastAction)) return false;
+  if (slug !== LB_DEMO_SLUG && /live quota met|captcha/i.test(lastAction)) return false;
+  if (slug !== LB_DEMO_SLUG && /parked/i.test(lastAction) && /operator/i.test(lastAction))
+    return false;
   return true;
 }
 

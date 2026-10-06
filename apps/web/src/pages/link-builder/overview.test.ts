@@ -81,6 +81,14 @@ describe("overview feed", () => {
       blockers: ["Parked 1"],
     });
     expect(blocked.map((item) => item.label)).toEqual(["Reading threads", "Parked 1"]);
+    const customer = overviewFeed({
+      steps: [step(0, "Reading threads"), step(1, "LIVE quota met")],
+      lastEvent: "Parked the host for an operator",
+      working: true,
+      blockers: [],
+      hideExampleCopy: true,
+    });
+    expect(customer.map((item) => item.label)).toEqual(["Reading threads"]);
     expect(blocked[1]?.status).toBe("blocked");
     expect(overviewAction(blocked, false)).toBe("Reading threads");
   });
