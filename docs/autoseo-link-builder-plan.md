@@ -506,6 +506,17 @@ M6 deviations (as built):
 - Pacing constants gained `MAX_REGISTRATIONS_PER_HOST_PER_DAY = 1` and `HOST_IDLE_GAP`. The idle wait runs only when the runner was given a `sleep`. Verification, Captell and DataForSEO fetches are unchanged and still take no proxy.
 - Mobile has no Settings tab. Leases are on the web project Settings tab only.
 
+M7 deviations (as built):
+
+- Scheduled work stays on the existing runner tick. There is still no Graphile task. Pure `due(now)` functions in `@rakazo/linkbuilder-core` decide re-verification, nightly discovery, proxy renewal, the Captell balance check, window and overtime, ticket expiry and webhook backoff. The tick steps only the run whose date is the local date of that clock.
+- Re-verification offsets are T+0 (2 minutes), T+1d, T+3d, T+7d and T+30d from `placement.createdAt`. `verifyCount` stores how many checks have finished. `LINK_BUILDER` tests can still set `verifyDelayMs` to 0 for the first check. A removed or dead outcome clears `counted` and frees the partial unique slot. The host stays `used`, because that status is terminal; a later placement on the host can count again. LIVE counters move with `createdAt`'s local day, not the latest `verifiedAt`.
+- `operator.ticketTtlHours` defaults to 24 and `operator.onExpire` defaults to `skip` (`parked_operator` → `dead`). `requalify` returns the host to `qualified` (`park_requalified`). `parkedHostTtlHours` is unchanged and is no longer the ticket clock.
+- Alerts are `LbAlert` rows (`project.paused`, `captcha.needs_operator`, `placement.live`, `run.finished`) with a per-project dedupe key, so a condition notifies once. Push uses the existing Expo provider with `data.url` `/link-builder-ticket`. Outbound webhooks are HMAC-SHA256 over the raw body (`X-Rakazo-Signature: sha256=<hex>`), three attempts (0s, 60s, 5m), logged on `LbWebhookDelivery`. The URL must be https; production refuses private and loopback hosts. The signing secret is `whsec_…` in the encrypted store (`lb_webhook`).
+- Costs are `LbCostEntry` rows: Captell credits from captcha events, model tokens from run steps (lane in the step outcome), one row per search query, one proxy-lease day per successful renewal. `linkBuilder.costs.summary` is the project total for the local day or ISO week. The ledger stores quantities only.
+- Mailbox provisioning calls `MailboxProvider.ensureInbox`. Without `AGENTMAIL_API_KEY` the address is `lb-<projectId>@inbox.example`, so persona names no longer collide. With the key, `AgentMailMailbox` posts to AgentMail. Inbound `POST /api/link-builder/mail` checks `X-AgentMail-Signature` with `AGENTMAIL_WEBHOOK_SECRET` and stores the message on `LbInboundMail` after verification-link extraction. `AgentMailEmulator` remains the test double. The live check is a deployment with those two secrets and a public https webhook URL; CI does not call AgentMail.
+- The subscribe cursor now includes the latest placement and alert as well as the step and ticket.
+- A low Captell balance, a proxy lease past `renewsAt`, or a project with no mailbox pauses the project and emits one `project.paused` alert.
+
 ---
 
 ## 17. Decisions needed from Harold
