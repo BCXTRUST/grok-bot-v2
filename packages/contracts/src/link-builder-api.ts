@@ -347,6 +347,16 @@ const ticketAction = z.object({
 });
 
 export const linkBuilderContract = {
+  pages: {
+    suggest: oc
+      .input(
+        z.object({
+          url: z.string().trim().min(1).max(500),
+          allowedDomains: z.array(LbRegistrableDomainSchema).min(1).max(20),
+        }),
+      )
+      .output(z.object({ keyword: z.string().max(80), rule: z.string().max(300) })),
+  },
   projects: {
     list: oc.output(z.array(LbProjectCardSchema)),
     get: oc.input(projectId).output(LbProjectDetailSchema),

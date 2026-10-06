@@ -11,7 +11,7 @@ import type {
   LbRunView,
   LbThreadView,
 } from "@rakazo/contracts";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   BuiButton,
   BuiCard,
@@ -20,13 +20,18 @@ import {
 } from "../../components/beautiful-ui/primitives";
 import {
   addMarket,
+  addWizardPage,
   disclosureLabel,
   FUNNEL_COLUMNS,
   funnelColumnId,
   LB_WIZARD_COUNTRIES,
+  normalizePageUrl,
+  PAGE_BOX_LIMIT,
+  pageDomains,
   QUOTA_LABELS,
   RESPONSIBILITY_SENTENCE,
   removeMarket,
+  removeWizardPage,
   WIZARD_STEP_HINTS,
   WIZARD_STEPS,
   type WizardDraft,
@@ -103,17 +108,22 @@ export function WizardView({
   onNext,
   onStart,
   onGoTo,
+  onSuggestPage,
 }: {
   step: number;
   draft: WizardDraft;
   issues: string[];
   busy: boolean;
   started: boolean;
-  onChange: (draft: WizardDraft) => void;
+  onChange: (next: WizardDraft | ((current: WizardDraft) => WizardDraft)) => void;
   onBack: () => void;
   onNext: () => void;
   onStart: () => void;
   onGoTo: (step: number) => void;
+  onSuggestPage?: (input: {
+    url: string;
+    allowedDomains: string[];
+  }) => Promise<{ keyword: string; rule: string }>;
 }) {
   const title = WIZARD_STEPS[step] ?? "Review";
   const last = WIZARD_STEPS.length - 1;
@@ -157,21 +167,24 @@ export function WizardView({
         <div className="mx-auto flex w-full max-w-xl flex-col gap-4 px-6 py-8">
           <h1 className="text-[22px] font-medium text-[#ECECEE]">{title}</h1>
           <p className="text-[13px] text-[#A6A6AD]">{WIZARD_STEP_HINTS[step]}</p>
-          <BuiCard className="flex flex-col gap-3 p-4">
-            {step === 0 ? <BrandFields draft={draft} onChange={onChange} /> : null}
-            {step === 1 ? <PersonaFields draft={draft} onChange={onChange} /> : null}
-            {step === 2 ? <QuotaFields draft={draft} onChange={onChange} /> : null}
-            {step === 3 ? <TopicFields draft={draft} onChange={onChange} /> : null}
-            {step === 4 ? <PolicyFields draft={draft} onChange={onChange} /> : null}
-            {step === last ? <ReviewFields draft={draft} /> : null}
-            {issues.length > 0 ? (
-              <ul className="flex flex-col gap-1 text-[13px] text-[#FF8B8B]" role="alert">
-                {issues.map((issue) => (
-                  <li key={issue}>{issue}</li>
-                ))}
-              </ul>
-            ) : null}
-          </BuiCard>
+          {step === 3 ? (
+            <TopicFields draft={draft} onChange={onChange} onSuggestPage={onSuggestPage} />
+          ) : (
+            <BuiCard className="flex flex-col gap-3 p-4">
+              {step === 0 ? <BrandFields draft={draft} onChange={onChange} /> : null}
+              {step === 1 ? <PersonaFields draft={draft} onChange={onChange} /> : null}
+              {step === 2 ? <QuotaFields draft={draft} onChange={onChange} /> : null}
+              {step === 4 ? <PolicyFields draft={draft} onChange={onChange} /> : null}
+              {step === last ? <ReviewFields draft={draft} /> : null}
+            </BuiCard>
+          )}
+          {issues.length > 0 ? (
+            <ul className="flex flex-col gap-1 text-[13px] text-[#FF8B8B]" role="alert">
+              {issues.map((issue) => (
+                <li key={issue}>{issue}</li>
+              ))}
+            </ul>
+          ) : null}
           <div className="flex items-center justify-between gap-3">
             <BuiButton label="Back" onClick={onBack} disabled={step === 0 || busy}>
               Back
@@ -498,7 +511,10 @@ function TargetList({ project }: { project: LbProjectDetail }) {
     <ul className="flex flex-col gap-2">
       {project.targets.map((target) => (
         <li key={target.url} className="text-[14px] text-[#ECECEE]">
-          {target.url}
+          <div>{target.url}</div>
+          {target.keywordClusters[0] ? (
+            <div className="text-[12.5px] text-[#A6A6AD]">Keyword {target.keywordClusters[0]}</div>
+          ) : null}
         </li>
       ))}
     </ul>
@@ -936,52 +952,121 @@ function QuotaFields({
 function TopicFields({
   draft,
   onChange,
+  onSuggestPage,
 }: {
   draft: WizardDraft;
-  onChange: (draft: WizardDraft) => void;
+  onChange: (next: WizardDraft | ((current: WizardDraft) => WizardDraft)) => void;
+  onSuggestPage?: (input: {
+    url: string;
+    allowedDomains: string[];
+  }) => Promise<{ keyword: string; rule: string }>;
 }) {
-  const lane = draft.lanes[0];
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
+  const asked = useRef(new Set<string>());
+  const pending = draft.pages
+    .map((page) => {
+      const url = normalizePageUrl(page.url);
+      if (!url || (page.keyword.trim() && page.rules.trim())) return "";
+      return `${page.id}:${url}`;
+    })
+    .filter(Boolean)
+    .join("|");
+  useEffect(() => {
+    if (!onSuggestPage || !pending) return;
+    const domains = pageDomains(draftRef.current);
+    for (const page of draftRef.current.pages) {
+      const url = normalizePageUrl(page.url);
+      if (!url || asked.current.has(url)) continue;
+      if (page.keyword.trim() && page.rules.trim()) continue;
+      asked.current.add(url);
+      void onSuggestPage({ url, allowedDomains: domains }).then((suggestion) => {
+        onChange((current) => ({
+          ...current,
+          pages: current.pages.map((item) => {
+            if (item.id !== page.id || normalizePageUrl(item.url) !== url) return item;
+            return {
+              ...item,
+              keyword: item.keyword.trim() ? item.keyword : suggestion.keyword,
+              rules: item.rules.trim() ? item.rules : suggestion.rule,
+            };
+          }),
+        }));
+      });
+    }
+  }, [pending, onChange, onSuggestPage]);
+  const atLimit = draft.pages.length >= PAGE_BOX_LIMIT;
   return (
-    <>
-      <Field label="Topic to write about">
-        <input
-          aria-label="Topic to write about"
-          className={inputClass}
-          value={lane?.tag ?? ""}
-          onChange={(event) =>
-            onChange({
-              ...draft,
-              lanes: [
-                {
-                  id: lane?.id ?? "lane",
-                  tag: event.target.value,
-                  description: lane?.description ?? "",
-                },
-              ],
-            })
-          }
-        />
-      </Field>
-      <Field label="Page to link">
-        <input
-          aria-label="Page to link"
-          className={inputClass}
-          value={draft.targets[0]?.url ?? ""}
-          onChange={(event) =>
-            onChange({ ...draft, targets: [{ url: event.target.value, keywords: "" }] })
-          }
-        />
-      </Field>
-      <Field label="Facts the posts can use">
-        <textarea
-          aria-label="Facts the posts can use"
-          className={`${inputClass} min-h-20`}
-          value={draft.facts}
-          onChange={(event) => onChange({ ...draft, facts: event.target.value })}
-        />
-      </Field>
-    </>
+    <div className="flex flex-col gap-3">
+      {draft.pages.map((page, index) => (
+        <BuiCard key={page.id} className="flex flex-col gap-3 p-4">
+          {draft.pages.length > 1 ? (
+            <div className="flex justify-end">
+              <button
+                type="button"
+                aria-label={`Remove page ${index + 1}`}
+                className="text-[13px] text-[#A6A6AD]"
+                onClick={() => onChange(removeWizardPage(draft, index))}
+              >
+                Remove
+              </button>
+            </div>
+          ) : null}
+          <Field label="Page">
+            <input
+              aria-label={`Page ${index + 1}`}
+              className={inputClass}
+              inputMode="url"
+              value={page.url}
+              onChange={(event) => onChange(updatePage(draft, index, { url: event.target.value }))}
+            />
+          </Field>
+          <Field label="Keyword">
+            <input
+              aria-label={`Keyword ${index + 1}`}
+              className={inputClass}
+              value={page.keyword}
+              maxLength={80}
+              onChange={(event) =>
+                onChange(updatePage(draft, index, { keyword: event.target.value }))
+              }
+            />
+          </Field>
+          <Field label="Rules">
+            <textarea
+              aria-label={`Rules ${index + 1}`}
+              className={`${inputClass} min-h-20`}
+              value={page.rules}
+              maxLength={500}
+              onChange={(event) =>
+                onChange(updatePage(draft, index, { rules: event.target.value }))
+              }
+            />
+          </Field>
+        </BuiCard>
+      ))}
+      <button
+        type="button"
+        aria-label="Add a page"
+        disabled={atLimit}
+        className="h-10 rounded-xl border border-[#2A2A31] text-[18px] text-[#ECECEE] disabled:cursor-not-allowed disabled:text-[#4A4A50]"
+        onClick={() => onChange(addWizardPage(draft))}
+      >
+        +
+      </button>
+    </div>
   );
+}
+
+function updatePage(
+  draft: WizardDraft,
+  index: number,
+  patch: Partial<Pick<WizardDraft["pages"][number], "url" | "keyword" | "rules">>,
+): WizardDraft {
+  return {
+    ...draft,
+    pages: draft.pages.map((page, item) => (item === index ? { ...page, ...patch } : page)),
+  };
 }
 
 function PolicyFields({
@@ -1091,6 +1176,13 @@ function ReviewFields({ draft }: { draft: WizardDraft }) {
           ["Countries", draft.markets.map((market) => market.country).join(", ")],
           ["Name on forums", draft.displayName || "—"],
           ["Inbox", draft.mailboxAddress ?? "—"],
+          ...draft.pages
+            .filter((page) => page.url.trim() || page.keyword.trim())
+            .flatMap((page, index) => [
+              [`Page ${index + 1}`, page.url || "—"],
+              [`Keyword ${index + 1}`, page.keyword || "—"],
+              [`Rules ${index + 1}`, page.rules || "—"],
+            ]),
           [QUOTA_LABELS.newPerDay, draft.newPerDay],
           [QUOTA_LABELS.livePerDay, draft.livePerDay],
           [QUOTA_LABELS.liveWeek, draft.liveWeekCap || "—"],

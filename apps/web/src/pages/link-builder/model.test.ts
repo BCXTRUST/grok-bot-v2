@@ -1,13 +1,18 @@
 import { describe, expect, it } from "vitest";
 import {
   addMarket,
+  addWizardPage,
   artifactImageSrc,
   canStart,
   emptyDraft,
+  emptyPage,
+  PAGE_BOX_LIMIT,
   parseAllowedSite,
   patchFromDraft,
   RESPONSIBILITY_SENTENCE,
+  removeWizardPage,
   warmupNote,
+  withPagePrefill,
   withPersonaPrefill,
   wizardStepIssues,
 } from "./model.js";
@@ -54,7 +59,9 @@ describe("link builder wizard", () => {
     draft.displayName = "Mira";
     expect(wizardStepIssues(1, draft)).toEqual([]);
     expect(wizardStepIssues(2, draft)).toEqual([]);
-    draft.lanes = [{ id: "lane-schlaf", tag: "Schlaf", description: "Abend" }];
+    draft.pages = [
+      { id: "page-schlaf", url: "https://nordlicht.example/schlaf", keyword: "Schlaf", rules: "" },
+    ];
     expect(wizardStepIssues(3, draft)).toEqual([]);
     expect(canStart(draft)).toBe(false);
     draft.mailboxId = "mbx-1";
@@ -89,6 +96,41 @@ describe("link builder wizard", () => {
     expect(patch.targets.map((target) => target.url)).toEqual([
       "https://www.vitaminexpress.org/de",
     ]);
+    draft.pages = [
+      {
+        id: "page-mag",
+        url: "https://www.vitaminexpress.org/de/magnesium-kaufen",
+        keyword: "Magnesium kaufen",
+        rules: "Use the page's own wording.",
+      },
+    ];
+    const saved = patchFromDraft(draft);
+    expect(saved.targets[0]).toMatchObject({
+      url: "https://www.vitaminexpress.org/de/magnesium-kaufen",
+      description: "Use the page's own wording.",
+      keywordClusters: ["Magnesium kaufen"],
+    });
+    expect(saved.topicLanes[0]).toMatchObject({ tag: "Magnesium kaufen" });
+    expect(saved.facts).toEqual(["Use the page's own wording."]);
+  });
+
+  it("prefills the first page from the brand site and stops at 10 boxes", () => {
+    const draft = emptyDraft();
+    draft.allowedDomains = "https://www.vitaminexpress.org/de";
+    const filled = withPagePrefill(draft);
+    expect(filled.pages[0]?.url).toBe("https://www.vitaminexpress.org/de");
+    expect(filled.pages[0]?.keyword).toBe("");
+    filled.pages[0] = {
+      ...filled.pages[0]!,
+      url: "https://vitaminexpress.org/other",
+      keyword: "Other",
+    };
+    expect(withPagePrefill(filled).pages[0]?.url).toBe("https://vitaminexpress.org/other");
+    let many = filled;
+    for (let index = 0; index < 12; index += 1) many = addWizardPage(many);
+    expect(many.pages).toHaveLength(PAGE_BOX_LIMIT);
+    expect(removeWizardPage(many, 1).pages).toHaveLength(PAGE_BOX_LIMIT - 1);
+    expect(removeWizardPage({ ...draft, pages: [emptyPage()] }, 0).pages).toHaveLength(1);
   });
 
   it("prefills an empty bio from the brand and path", () => {

@@ -11,12 +11,12 @@ import {
   LbQuotasSchema,
   LbRegistrableDomainSchema,
   LbScheduleSchema,
-  LbTopicLaneSchema,
 } from "@rakazo/contracts";
 import {
   defaultMarketForCountry,
   LB_WIZARD_COUNTRIES,
   registrableDomain,
+  validateTargetUrl,
 } from "@rakazo/linkbuilder-core";
 
 export const RESPONSIBILITY_SENTENCE = LB_RESPONSIBILITY_ACK_SENTENCE;
@@ -35,7 +35,7 @@ export const WIZARD_STEP_HINTS = [
   "Name the project, the brand, and the sites posts may link to.",
   "The person who writes, and where forum mail goes.",
   "How many accounts to open, and how many links to publish.",
-  "What to write about, and which page to link.",
+  "Each page posts may link to, and what to say about it.",
   "Where to post, and which forums to skip.",
   "Check this, then start.",
 ] as const;
@@ -71,6 +71,15 @@ export function funnelColumnId(status: LbHostStatus): (typeof FUNNEL_COLUMNS)[nu
   );
 }
 
+export const PAGE_BOX_LIMIT = 10;
+
+export interface WizardPage {
+  id: string;
+  url: string;
+  keyword: string;
+  rules: string;
+}
+
 export interface WizardDraft {
   name: string;
   slug: string;
@@ -93,9 +102,7 @@ export interface WizardDraft {
   windowEnd: string;
   overtime: boolean;
   hardStopHour: string;
-  lanes: Array<{ id: string; tag: string; description: string }>;
-  targets: Array<{ url: string; keywords: string }>;
-  facts: string;
+  pages: WizardPage[];
   markets: LbMarket[];
   marketPolicy: LbMarketPolicy;
   denyHosts: string;
@@ -128,9 +135,7 @@ export function emptyDraft(): WizardDraft {
     windowEnd: "22:00",
     overtime: false,
     hardStopHour: "24",
-    lanes: [{ id: newLaneId(), tag: "", description: "" }],
-    targets: [{ url: "", keywords: "" }],
-    facts: "",
+    pages: [emptyPage()],
     markets: [market],
     marketPolicy: "primary_first",
     denyHosts: "",
@@ -165,22 +170,7 @@ export function draftFromProject(project: LbProjectDetail): WizardDraft {
     windowEnd: project.schedule.window.end,
     overtime: project.schedule.overtimeUntilLiveMet,
     hardStopHour: String(project.schedule.hardStopHour),
-    lanes:
-      project.topicLanes.length > 0
-        ? project.topicLanes.map((lane) => ({
-            id: lane.id,
-            tag: lane.tag,
-            description: lane.description,
-          }))
-        : base.lanes,
-    targets:
-      project.targets.length > 0
-        ? project.targets.map((target) => ({
-            url: target.url,
-            keywords: target.keywordClusters.join(", "),
-          }))
-        : base.targets,
-    facts: project.facts.join("\n"),
+    pages: pagesFromProject(project),
     markets: project.markets,
     marketPolicy: project.marketPolicy,
     denyHosts: project.denyHosts.join(", "),
@@ -392,30 +382,25 @@ function quotaIssues(draft: WizardDraft): string[] {
 
 function topicIssues(draft: WizardDraft): string[] {
   const issues: string[] = [];
-  const lanes = draft.lanes.filter((lane) => lane.tag.trim());
-  if (lanes.length === 0) issues.push("Add a topic");
-  for (const lane of lanes) {
-    const parsed = LbTopicLaneSchema.safeParse({
-      id: lane.id,
-      tag: lane.tag,
-      description: lane.description,
-      exampleQuestions: [],
-    });
-    if (!parsed.success) issues.push(parsed.error.issues[0]?.message ?? "Topic looks wrong");
-  }
-  const domains = parsedSites(draft.allowedDomains).flatMap((site) =>
-    site.ok ? [site.domain] : [],
+  const domains = pageDomains(draft);
+  const pages = draft.pages.slice(0, PAGE_BOX_LIMIT);
+  const filled = pages.filter(
+    (page) => page.url.trim() || page.keyword.trim() || page.rules.trim(),
   );
-  for (const target of draft.targets) {
-    if (!target.url.trim()) continue;
-    try {
-      const url = new URL(target.url);
-      const host = url.hostname.toLowerCase();
-      const allowed = domains.some((domain) => host === domain || host.endsWith(`.${domain}`));
-      if (!allowed) issues.push("Target must use an allowed domain");
-    } catch {
-      issues.push("Target URL looks wrong");
+  if (filled.length === 0) return ["Add a page"];
+  for (const page of filled) {
+    const number = pages.indexOf(page) + 1;
+    const url = normalizePageUrl(page.url);
+    if (!url) {
+      issues.push(
+        page.url.trim() ? `Page ${number} looks wrong` : `Add the address for page ${number}`,
+      );
+      continue;
     }
+    const checked = validateTargetUrl(url, domains);
+    if (!checked.ok) issues.push(`Page ${number} must be on a site you added`);
+    if (!page.keyword.trim()) issues.push(`Add a keyword for page ${number}`);
+    else if (page.keyword.trim().length > 80) issues.push(`Keyword for page ${number} is too long`);
   }
   return issues;
 }
@@ -435,42 +420,113 @@ function policyIssues(draft: WizardDraft): string[] {
   return issues;
 }
 
-function newLaneId(): string {
-  return `lane-${Math.random().toString(36).slice(2, 10)}`;
+function newPageId(): string {
+  return `page-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+export function emptyPage(): WizardPage {
+  return { id: newPageId(), url: "", keyword: "", rules: "" };
+}
+
+export function normalizePageUrl(raw: string): string | null {
+  const parsed = parseAllowedSite(raw);
+  if (!parsed.ok) return null;
+  return parsed.targetUrl ?? `https://${parsed.domain}`;
+}
+
+export function pageDomains(draft: WizardDraft): string[] {
+  return [
+    ...new Set(parsedSites(draft.allowedDomains).flatMap((site) => (site.ok ? [site.domain] : []))),
+  ];
+}
+
+export function firstSiteUrl(draft: WizardDraft): string | null {
+  for (const site of parsedSites(draft.allowedDomains)) {
+    if (!site.ok) continue;
+    return site.targetUrl ?? `https://${site.domain}`;
+  }
+  return null;
+}
+
+/** Copy the brand site into the first page when no page address is set yet. */
+export function withPagePrefill(draft: WizardDraft): WizardDraft {
+  const site = firstSiteUrl(draft);
+  const pages = draft.pages.length > 0 ? draft.pages.slice(0, PAGE_BOX_LIMIT) : [emptyPage()];
+  if (!site || pages.some((page) => page.url.trim())) return { ...draft, pages };
+  const [first, ...rest] = pages;
+  if (!first) return { ...draft, pages };
+  return { ...draft, pages: [{ ...first, url: site }, ...rest] };
+}
+
+export function dropBlankPages(draft: WizardDraft): WizardDraft {
+  const pages = draft.pages.filter(
+    (page) => page.url.trim() || page.keyword.trim() || page.rules.trim(),
+  );
+  if (pages.length === 0) return { ...draft, pages: draft.pages.slice(0, 1) };
+  return { ...draft, pages: pages.slice(0, PAGE_BOX_LIMIT) };
+}
+
+export function addWizardPage(draft: WizardDraft): WizardDraft {
+  if (draft.pages.length >= PAGE_BOX_LIMIT) return draft;
+  return { ...draft, pages: [...draft.pages, emptyPage()] };
+}
+
+export function removeWizardPage(draft: WizardDraft, index: number): WizardDraft {
+  if (draft.pages.length <= 1) return draft;
+  return { ...draft, pages: draft.pages.filter((_, item) => item !== index) };
+}
+
+function pagesFromProject(project: LbProjectDetail): WizardPage[] {
+  const facts = project.facts.join("\n");
+  const lanes = project.topicLanes;
+  if (project.targets.length === 0) {
+    if (lanes.length === 0) return [emptyPage()];
+    return lanes.slice(0, PAGE_BOX_LIMIT).map((lane) => ({
+      id: lane.id,
+      url: "",
+      keyword: lane.tag,
+      rules: lane.description || facts,
+    }));
+  }
+  return project.targets.slice(0, PAGE_BOX_LIMIT).map((target, index) => {
+    const lane = lanes[index] ?? (project.targets.length === 1 ? lanes[0] : undefined);
+    return {
+      id: lane?.id ?? `page-${index + 1}`,
+      url: target.url,
+      keyword: target.keywordClusters.join(", ") || lane?.tag || "",
+      rules: target.description || lane?.description || (project.targets.length === 1 ? facts : ""),
+    };
+  });
 }
 
 export function patchFromDraft(draft: WizardDraft) {
-  const sites = parsedSites(draft.allowedDomains).filter(
+  const prepared = withPagePrefill(dropBlankPages(draft));
+  const sites = parsedSites(prepared.allowedDomains).filter(
     (site): site is Extract<ParsedSite, { ok: true }> => site.ok,
   );
   const domains = [...new Set(sites.map((site) => site.domain))];
-  const siteTargets = sites.flatMap((site) => (site.targetUrl ? [site.targetUrl] : []));
-  const lanes = draft.lanes
-    .filter((lane) => lane.tag.trim())
-    .map((lane) => ({
-      id: lane.id,
-      tag: lane.tag.trim(),
-      description: lane.description,
-      exampleQuestions: [],
+  const pages = prepared.pages.slice(0, PAGE_BOX_LIMIT);
+  const lanes = pages
+    .filter((page) => page.keyword.trim())
+    .map((page) => ({
+      id: page.id,
+      tag: page.keyword.trim().slice(0, 40),
+      description: page.rules.trim().slice(0, 500),
+      exampleQuestions: [] as string[],
     }));
-  const typedTargets = draft.targets.filter((target) => target.url.trim());
-  const seen = new Set(typedTargets.map((target) => target.url.trim()));
-  const targets = [
-    ...typedTargets.map((target) => ({
-      url: target.url.trim(),
-      priority: 50,
-      description: "",
-      keywordClusters: splitList(target.keywords),
-    })),
-    ...siteTargets
-      .filter((url) => !seen.has(url))
-      .map((url) => ({
+  const targets = pages.flatMap((page) => {
+    const url = normalizePageUrl(page.url);
+    if (!url) return [];
+    const keyword = page.keyword.trim().slice(0, 80);
+    return [
+      {
         url,
         priority: 50,
-        description: "",
-        keywordClusters: [] as string[],
-      })),
-  ];
+        description: page.rules.trim().slice(0, 300),
+        keywordClusters: keyword ? [keyword] : [],
+      },
+    ];
+  });
   return {
     name: draft.name.trim(),
     slug: draft.slug.trim() || slugifyProjectName(draft.name),
@@ -497,10 +553,10 @@ export function patchFromDraft(draft: WizardDraft) {
     },
     topicLanes: lanes,
     targets,
-    facts: draft.facts
-      .split("\n")
-      .map((line) => line.trim())
-      .filter(Boolean),
+    facts: pages
+      .map((page) => page.rules.trim())
+      .filter(Boolean)
+      .map((rule) => rule.slice(0, 500)),
     markets: draft.markets,
     marketPolicy: draft.marketPolicy,
     denyHosts: splitList(draft.denyHosts),

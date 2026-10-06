@@ -20,11 +20,13 @@ import {
   artifactImageSrc,
   canStart,
   draftFromProject,
+  dropBlankPages,
   emptyDraft,
   patchFromDraft,
   slugifyProjectName,
   WIZARD_STEPS,
   type WizardDraft,
+  withPagePrefill,
   withPersonaPrefill,
   wizardStepIssues,
 } from "./model.js";
@@ -96,6 +98,14 @@ function DashboardRoute() {
   );
 }
 
+async function suggestPage(input: { url: string; allowedDomains: string[] }) {
+  try {
+    return await rpc.linkBuilder.pages.suggest(input);
+  } catch {
+    return { keyword: "", rule: "" };
+  }
+}
+
 function WizardRoute({ projectId }: { projectId?: string }) {
   const navigate = useNavigate();
   const [step, setStep] = useState(0);
@@ -143,7 +153,14 @@ function WizardRoute({ projectId }: { projectId?: string }) {
   );
 
   async function nextStep() {
-    const next = step === 0 ? withPersonaPrefill(draft) : draft;
+    const next =
+      step === 0
+        ? withPersonaPrefill(draft)
+        : step === 2
+          ? withPagePrefill(draft)
+          : step === 3
+            ? dropBlankPages(draft)
+            : draft;
     if (next !== draft) setDraft(next);
     const found = wizardStepIssues(step, next);
     setIssues(found);
@@ -198,6 +215,7 @@ function WizardRoute({ projectId }: { projectId?: string }) {
       }}
       onNext={() => void nextStep()}
       onStart={() => void start()}
+      onSuggestPage={suggestPage}
       onGoTo={(index) => {
         if (index > step) return;
         setIssues([]);

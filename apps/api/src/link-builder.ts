@@ -63,10 +63,12 @@ import {
   PlanLimitError,
   projectActivity,
   type ScheduleState,
+  suggestFromPublicPage,
   transitionHost,
   transitionPlacement,
   transitionProject,
   transitionRun,
+  validateTargetUrl,
   webhookUrlAllowed,
 } from "@rakazo/linkbuilder-core";
 import type { RouterDeps } from "./router.js";
@@ -77,6 +79,22 @@ const productionHostnameResolver: HostnameResolver = async (hostname) => {
   const records = await lookup(hostname, { all: true, verbatim: true });
   return records.map((record) => ({ address: record.address }));
 };
+
+/** Read a public page on one of the project's sites and suggest a keyword and a short rule. */
+export async function suggestLbPage(input: {
+  url: string;
+  allowedDomains: string[];
+}): Promise<{ keyword: string; rule: string }> {
+  const trimmed = input.url.trim();
+  const withScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  const checked = validateTargetUrl(withScheme, input.allowedDomains);
+  if (!checked.ok) return { keyword: "", rule: "" };
+  try {
+    return await suggestFromPublicPage(checked.url, { resolve: productionHostnameResolver });
+  } catch {
+    return { keyword: "", rule: "" };
+  }
+}
 
 export async function listLbProjects(deps: RouterDeps, actor: Actor) {
   const projects = await deps.prisma.lbProject.findMany({

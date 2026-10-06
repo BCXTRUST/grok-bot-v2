@@ -134,6 +134,7 @@ import {
   startLbProject,
   statusLbProject,
   stopLbProject,
+  suggestLbPage,
   summarizeLbCosts,
   updateLbProject,
   verifyLbPlacement,
@@ -2962,6 +2963,11 @@ export function createRouter(deps: RouterDeps) {
       ),
     },
     linkBuilder: {
+      pages: {
+        suggest: authed.linkBuilder.pages.suggest.handler(async ({ input }) =>
+          suggestLbPage(input),
+        ),
+      },
       projects: {
         list: authed.linkBuilder.projects.list.handler(async ({ context }) =>
           listLbProjects(deps, context.actor),

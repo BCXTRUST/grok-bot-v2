@@ -79,7 +79,14 @@ export function LinkBuilderPreview({ screen }: { screen: string }) {
     draft.mailboxAddress = "mira.sol@inbox.example";
     draft.mailboxId = "mbx-nordlicht-demo";
     draft.captchaConfigured = true;
-    draft.lanes = [{ id: "lane-schlaf", tag: "Schlaf", description: "Abend" }];
+    draft.pages = [
+      {
+        id: "page-schlaf",
+        url: "https://nordlicht.example/schlaf",
+        keyword: "Schlaf",
+        rules: "Abend",
+      },
+    ];
     return (
       <div className="min-h-screen bg-[#050506]">
         <WizardView

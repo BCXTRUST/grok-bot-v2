@@ -1,9 +1,9 @@
 import type { LbOperatorTicketView, LbProjectDetail, LbRunStepView } from "@rakazo/contracts";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { emptyDraft } from "./model.js";
+import { emptyDraft, emptyPage, PAGE_BOX_LIMIT } from "./model.js";
 import { LinkBuilderPreview } from "./preview.js";
-import { OperatorView, ProjectView } from "./views.js";
+import { OperatorView, ProjectView, WizardView } from "./views.js";
 
 const noop = () => undefined;
 const loadArtifact = async () => "data:image/png;base64,iVBO";
@@ -133,6 +133,56 @@ describe("link builder screens", () => {
     const html = renderToStaticMarkup(<LinkBuilderPreview screen="captchas" />);
     expect(html).toContain("placed_submitted");
     expect(html).toContain("Sandbox answer. The solver is not production-configured.");
+  });
+
+  it("gives each page its own box and stops the plus at 10", () => {
+    const draft = emptyDraft();
+    draft.allowedDomains = "nordlicht.example";
+    const one = renderToStaticMarkup(
+      <WizardView
+        step={3}
+        draft={draft}
+        issues={[]}
+        busy={false}
+        started={false}
+        onChange={noop}
+        onBack={noop}
+        onNext={noop}
+        onStart={noop}
+        onGoTo={noop}
+      />,
+    );
+    expect(one).toContain("Keyword");
+    expect(one).toContain("Rules");
+    expect(one).toContain('aria-label="Page 1"');
+    expect(one).toContain('aria-label="Add a page"');
+    expect(one).not.toContain("Remove page");
+    expect(one).not.toContain("Topic to write about");
+    const full = {
+      ...draft,
+      pages: Array.from({ length: PAGE_BOX_LIMIT }, (_, index) => ({
+        ...emptyPage(),
+        id: `page-${index}`,
+        url: index === 0 ? "https://nordlicht.example/schlaf" : "",
+      })),
+    };
+    const ten = renderToStaticMarkup(
+      <WizardView
+        step={3}
+        draft={full}
+        issues={[]}
+        busy={false}
+        started={false}
+        onChange={noop}
+        onBack={noop}
+        onNext={noop}
+        onStart={noop}
+        onGoTo={noop}
+      />,
+    );
+    expect(ten).toContain('aria-label="Add a page" disabled');
+    expect(ten).toContain('aria-label="Remove page 2"');
+    expect(ten).not.toContain("Topic to write about");
   });
 
   it("renders the brand step", () => {
