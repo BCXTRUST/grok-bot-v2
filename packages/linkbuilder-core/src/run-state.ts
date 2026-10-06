@@ -82,6 +82,18 @@ export function recordCountedLive(counters: RunCounters): RunCounters {
   });
 }
 
+/**
+ * A counted link left the inventory. `countedToday` also drops today's LIVE ring.
+ * `liveWeek` never falls below `liveToday`.
+ */
+export function releaseCountedLive(counters: RunCounters, countedToday: boolean): RunCounters {
+  checked(counters);
+  const liveToday = countedToday ? Math.max(0, counters.liveToday - 1) : counters.liveToday;
+  const liveWeek = Math.max(liveToday, counters.liveWeek - 1);
+  const uniqueHosts = countedToday ? Math.max(0, counters.uniqueHosts - 1) : counters.uniqueHosts;
+  return checked({ ...counters, liveToday, liveWeek, uniqueHosts });
+}
+
 /** Counts each host worked on today once. */
 export function recordHostVisited(
   counters: RunCounters,

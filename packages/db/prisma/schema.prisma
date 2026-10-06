@@ -125,6 +125,10 @@ model Organization {
   lbRunSteps  LbRunStep[]
   lbCaptchaEvents LbCaptchaEvent[]
   lbOperatorTickets LbOperatorTicket[]
+  lbAlerts    LbAlert[]
+  lbWebhookDeliveries LbWebhookDelivery[]
+  lbCostEntries LbCostEntry[]
+  lbInboundMail LbInboundMail[]
 
   @@unique([slug])
   @@map("organization")
@@ -814,6 +818,7 @@ model Secret {
   siteLogins  SiteLogin[] @relation("SiteLoginSecret")
   lbCaptchaProjects LbProject[] @relation("LbProjectCaptchaSecret")
   lbProxyLeases LbProxyLease[] @relation("LbProxyLeaseEndpointSecret")
+  lbWebhookProjects LbProject[] @relation("LbProjectWebhookSecret")
 
   @@index([userId, workspaceId])
   @@map("secrets")
@@ -918,7 +923,12 @@ model LbProject {
   warmup                   Json                @default("{\"minPostsBeforeLink\":2,\"minAccountAgeHours\":24}")
   spamRetry                Json                @default("{\"maxRetries\":1,\"sentences\":[\"Die Registrierung ist wegen Spamschutzmaßnahmen fehlgeschlagen.\",\"No soup for you!\"]}")
   content                  Json                @default("{\"toneNotes\":\"\",\"bannedClaims\":[],\"maxReplyChars\":1200}")
-  operator                 Json                @default("{\"parkedHostTtlHours\":48,\"channels\":[\"push\",\"email\"]}")
+  operator                 Json                @default("{\"parkedHostTtlHours\":48,\"ticketTtlHours\":24,\"onExpire\":\"skip\",\"channels\":[\"push\",\"email\"]}")
+  webhookUrl               String?
+  webhookSecretId          String?
+  webhookSecret            Secret?             @relation("LbProjectWebhookSecret", fields: [webhookSecretId], references: [id], onDelete: SetNull)
+  /// Last Captell balance read by the scheduled check. Not a secret.
+  lastCaptchaBalance       Int?
   /// Set by the discovery pass. Null until the first run after the project starts.
   lastDiscoveredAt         DateTime?
   archivedAt               DateTime?
@@ -933,10 +943,15 @@ model LbProject {
   runs                     LbRun[]
   captchaEvents            LbCaptchaEvent[]
   operatorTickets          LbOperatorTicket[]
+  alerts                   LbAlert[]
+  webhookDeliveries        LbWebhookDelivery[]
+  costEntries              LbCostEntry[]
+  inboundMail              LbInboundMail[]
 
   @@unique([workspaceId, slug])
   @@index([workspaceId, status])
   @@index([captchaSecretId])
+  @@index([webhookSecretId])
   @@map("lb_projects")
 }
 
@@ -1121,6 +1136,8 @@ model LbPlacement {
   verifyMethod       String?
   snapshotArtifactId String?
   nextVerifyAt       DateTime?
+  /// How many scheduled checks have completed. The next deadline is offset `verifyCount`.
+  verifyCount        Int           @default(0)
   createdAt          DateTime      @default(now())
   updatedAt          DateTime      @updatedAt
 
@@ -1249,4 +1266,79 @@ model LbOperatorTicket {
   @@index([runId])
   @@index([status, expiresAt])
   @@map("lb_operator_tickets")
+}
+
+model LbAlert {
+  id          String       @id @default(cuid())
+  workspaceId String
+  workspace   Organization @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  projectId   String
+  project     LbProject    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  kind        String
+  dedupeKey   String
+  message     String
+  payload     Json         @default("{}")
+  createdAt   DateTime     @default(now())
+  deliveries  LbWebhookDelivery[]
+
+  @@unique([projectId, dedupeKey])
+  @@index([workspaceId, projectId, createdAt])
+  @@map("lb_alerts")
+}
+
+model LbWebhookDelivery {
+  id            String    @id @default(cuid())
+  workspaceId   String
+  workspace     Organization @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  projectId     String
+  project       LbProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  alertId       String
+  alert         LbAlert   @relation(fields: [alertId], references: [id], onDelete: Cascade)
+  attempt       Int
+  status        String
+  statusCode    Int?
+  nextAttemptAt DateTime?
+  createdAt     DateTime  @default(now())
+
+  @@index([projectId, createdAt])
+  @@index([status, nextAttemptAt])
+  @@map("lb_webhook_deliveries")
+}
+
+model LbCostEntry {
+  id          String       @id @default(cuid())
+  workspaceId String
+  workspace   Organization @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  projectId   String
+  project     LbProject    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  runId       String?
+  kind        String
+  lane        String?
+  quantity    Int
+  sourceKey   String       @unique
+  occurredAt  DateTime
+  createdAt   DateTime     @default(now())
+
+  @@index([workspaceId, projectId, occurredAt])
+  @@map("lb_cost_entries")
+}
+
+model LbInboundMail {
+  id          String       @id @default(cuid())
+  workspaceId String
+  workspace   Organization @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  projectId   String
+  project     LbProject    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  inboxId     String
+  eventId     String?
+  fromAddress String
+  subject     String
+  textBody    String
+  htmlBody    String?
+  receivedAt  DateTime
+  createdAt   DateTime     @default(now())
+
+  @@unique([projectId, eventId])
+  @@index([inboxId, receivedAt])
+  @@map("lb_inbound_mail")
 }

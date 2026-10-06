@@ -4,6 +4,7 @@ import type {
   LbOperatorTicketView,
   LbProjectCard,
   LbProjectDetail,
+  LbProjectStatusView,
   LbThreadView,
 } from "@rakazo/contracts";
 import { emptyDraft } from "./model.js";
@@ -39,8 +40,11 @@ const ticket: LbOperatorTicketView = {
   screenshotArtifactId: null,
   note: null,
   status: "open",
+  expiresAt: "2026-10-05T17:12:00.000Z",
   createdAt: "2026-10-05T12:00:00.000Z",
 };
+
+const PREVIEW_NOW = Date.parse("2026-10-05T12:00:00.000Z");
 
 /** Dev-only fixture screens for visual checks. Not linked from the product. */
 export function LinkBuilderPreview({ screen }: { screen: string }) {
@@ -344,6 +348,73 @@ export function LinkBuilderPreview({ screen }: { screen: string }) {
       </div>
     );
   }
+  if (screen === "overview") {
+    const status: LbProjectStatusView = {
+      projectId: "demo",
+      projectStatus: "active",
+      activity: "out_of_window",
+      activityLabel: "out of window",
+      run: {
+        id: "run-1",
+        date: "2026-10-05",
+        status: "partial",
+        newToday: 1,
+        liveToday: 1,
+        liveWeek: 1,
+        uniqueHosts: 2,
+        lastAction: "Day closed",
+        lastError: null,
+      },
+      whyNot: {
+        supply: { qualified: 3, ready: 0 },
+        parked: 1,
+        spamBlocked: 1,
+        unsupportedCaptcha: 0,
+        pendingEmail: 2,
+        pendingAdmin: 0,
+        modelErrors: 0,
+        modelRefusals: 0,
+        captchaBalance: 120,
+        proxy: "ok",
+        reasons: ["host_supply_exhausted", "pending_email", "operator_parked", "spam_filtered"],
+      },
+      operatorQueue: 1,
+      scheduleActive: false,
+      scheduleReason: "after_window",
+      newPerDay: 2,
+      livePerDay: 2,
+      liveWeekCap: 8,
+      lastEvent: "Paused, Captell balance is low",
+      costs: {
+        day: { captellCredits: 12, modelTokens: 40, searchQueries: 1, proxyLeaseDays: 1 },
+        week: { captellCredits: 28, modelTokens: 90, searchQueries: 4, proxyLeaseDays: 2 },
+      },
+    };
+    return (
+      <div className="min-h-screen bg-[#050506]">
+        <ProjectView
+          project={{ name: "Nordlicht", disclosureMode: "undisclosed_persona" } as LbProjectDetail}
+          status={status}
+          hosts={[]}
+          placements={[]}
+          runs={[]}
+          steps={[]}
+          threads={[]}
+          drafts={[]}
+          captchas={[]}
+          tickets={[]}
+          tab="Overview"
+          onTab={() => undefined}
+          onStart={() => undefined}
+          onPause={() => undefined}
+          onStop={() => undefined}
+          onVerify={() => undefined}
+          onOpenTicket={() => undefined}
+          busy={false}
+        />
+      </div>
+    );
+  }
   if (screen === "operator") {
     return (
       <div className="min-h-screen bg-[#050506]">
@@ -355,6 +426,7 @@ export function LinkBuilderPreview({ screen }: { screen: string }) {
           onNote={() => undefined}
           onContinue={() => undefined}
           onSkip={() => undefined}
+          now={PREVIEW_NOW}
         />
       </div>
     );

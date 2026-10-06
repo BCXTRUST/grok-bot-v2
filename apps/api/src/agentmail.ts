@@ -3,6 +3,7 @@ export type AgentMailInbox = {
   email: string;
   displayName: string | null;
   assignedBotId: string | null;
+  projectId: string | null;
 };
 
 type AgentMailListResponse = {
@@ -28,13 +29,39 @@ export async function listAgentMailInboxes(apiKey: string): Promise<AgentMailInb
     const inboxId = String(inbox.inbox_id ?? inbox.inboxId ?? "");
     const metadata = inbox.metadata ?? {};
     const assigned = metadata.rakazoBotId;
+    const projectId = metadata.rakazoProjectId;
     return {
       inboxId,
       email: String(inbox.email ?? inboxId),
       displayName: inbox.display_name ?? inbox.displayName ?? null,
       assignedBotId: typeof assigned === "string" && assigned ? assigned : null,
+      projectId: typeof projectId === "string" && projectId ? projectId : null,
     };
   });
+}
+
+export async function createAgentMailInbox(
+  apiKey: string,
+  input: { username: string; displayName?: string; projectId: string; workspaceId: string },
+): Promise<{ inboxId: string; email: string }> {
+  const response = await fetch("https://api.agentmail.to/v0/inboxes", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      username: input.username,
+      display_name: input.displayName,
+      metadata: { rakazoProjectId: input.projectId, workspaceId: input.workspaceId },
+    }),
+  });
+  if (!response.ok) throw new Error(await agentMailError(response));
+  const body = (await response.json()) as { inbox_id?: string; inboxId?: string; email?: string };
+  const inboxId = String(body.inbox_id ?? body.inboxId ?? "");
+  if (!inboxId) throw new Error("AgentMail did not return an inbox");
+  return { inboxId, email: String(body.email ?? inboxId) };
 }
 
 export async function assignAgentMailInbox(

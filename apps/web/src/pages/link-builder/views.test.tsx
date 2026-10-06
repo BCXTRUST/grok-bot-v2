@@ -107,6 +107,7 @@ describe("link builder screens", () => {
       screenshotArtifactId: "shot-1",
       note: null,
       status: "open",
+      expiresAt: "2026-10-05T18:00:00.000Z",
       createdAt: "2026-10-05T12:00:00.000Z",
     } satisfies LbOperatorTicketView;
     const props = {

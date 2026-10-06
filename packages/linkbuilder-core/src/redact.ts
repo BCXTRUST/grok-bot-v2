@@ -5,6 +5,7 @@ const MIN_SECRET_LENGTH = 6;
 
 const SECRET_PATTERNS: readonly RegExp[] = [
   /ct_live_[A-Za-z0-9_-]{8,}/g,
+  /whsec_[A-Za-z0-9+/=_-]{8,}/g,
   // Proxy userinfo (`user:pass@host`) including when it sits inside a URL.
   /[^\s'"`<>:/]+:[^\s'"`<>@/]+@[^\s'"`<>/]+/g,
 ];

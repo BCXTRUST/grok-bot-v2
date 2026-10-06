@@ -2,10 +2,15 @@ import type { AdapterContext, ProxyEndpoint, ProxyProvider, SecretRef } from "@r
 import type { EncryptedSecretStore } from "@rakazo/adapters";
 import { EndpointTemplateProxyProvider } from "@rakazo/adapters";
 import type { PrismaClient } from "@rakazo/db";
-import { nextProxyStickyKey, proxyStickyKey } from "@rakazo/linkbuilder-core";
+import {
+  nextProxyStickyKey,
+  PROXY_RENEW_LEAD_MS,
+  proxyRenewalDue,
+  proxyStickyKey,
+} from "@rakazo/linkbuilder-core";
+import { recordCost } from "./link-builder-costs.js";
 
-/** Renew a sticky lease this long before it expires. */
-export const PROXY_RENEW_LEAD_MS = 10 * 60 * 1000;
+export { PROXY_RENEW_LEAD_MS };
 
 const USERNAME_SECRET_KIND = "lb_proxy_username";
 
@@ -138,16 +143,24 @@ export async function ensureProxyLease(
 /** Extends every active lease that is inside the renewal window. */
 export async function renewDueLeases(deps: LeaseDeps): Promise<number> {
   const lead = deps.renewLeadMs ?? PROXY_RENEW_LEAD_MS;
-  const due = await deps.prisma.lbProxyLease.findMany({
-    where: { status: "active", renewsAt: { lte: new Date(deps.now.getTime() + lead) } },
-  });
+  const active = await deps.prisma.lbProxyLease.findMany({ where: { status: "active" } });
+  const due = active.filter((row) => proxyRenewalDue(row.renewsAt, deps.now, lead));
   let renewed = 0;
   for (const row of due) {
     try {
       const next = await deps.provider.renew(row.providerLeaseId, deps.context);
+      const renewsAt = next.renewsAt ? new Date(next.renewsAt) : row.renewsAt;
       await deps.prisma.lbProxyLease.update({
         where: { id: row.id },
-        data: { renewsAt: next.renewsAt ? new Date(next.renewsAt) : row.renewsAt },
+        data: { renewsAt },
+      });
+      await recordCost(deps.prisma, {
+        workspaceId: row.workspaceId,
+        projectId: row.projectId,
+        kind: "proxy_lease_day",
+        quantity: 1,
+        sourceKey: `proxy:${row.id}:${(renewsAt ?? deps.now).toISOString()}`,
+        occurredAt: deps.now,
       });
       renewed += 1;
     } catch {

@@ -54,6 +54,7 @@ const LEGAL: Array<[HostStatus, HostEvent, HostStatus]> = [
   ),
   ["parked_operator", "operator_skipped", "dead"],
   ["parked_operator", "park_expired", "dead"],
+  ["parked_operator", "park_requalified", "qualified"],
 ];
 
 const FIXED_EVENTS = HOST_EVENTS.filter((event) => event !== "parked" && event !== "resumed");

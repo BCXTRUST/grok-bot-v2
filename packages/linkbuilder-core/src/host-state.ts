@@ -35,6 +35,7 @@ export const HOST_EVENTS = [
   "resumed",
   "operator_skipped",
   "park_expired",
+  "park_requalified",
   "failed",
 ] as const;
 export type HostEvent = (typeof HOST_EVENTS)[number];
@@ -70,6 +71,7 @@ const TRANSITIONS: Record<
   },
   operator_skipped: { from: ["parked_operator"], to: "dead" },
   park_expired: { from: ["parked_operator"], to: "dead" },
+  park_requalified: { from: ["parked_operator"], to: "qualified" },
   failed: { from: NON_TERMINAL, to: "dead" },
 };
 

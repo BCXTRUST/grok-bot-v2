@@ -8,10 +8,12 @@ import {
 import type { PrismaClient } from "@rakazo/db";
 import {
   discoverHosts,
+  discoveryDue,
   localDateKey,
   marketKey,
   registrableDomain,
 } from "@rakazo/linkbuilder-core";
+import { recordCost } from "./link-builder-costs.js";
 
 const adapter: AdapterContext = {
   operationId: "lb-discover",
@@ -23,16 +25,7 @@ const adapter: AdapterContext = {
 
 /** True on the first pass after start, then once per local day from 03:00. */
 export function shouldDiscover(last: Date | null, now: Date, timeZone: string): boolean {
-  if (!last) return true;
-  try {
-    if (localDateKey(last, timeZone) === localDateKey(now, timeZone)) return false;
-    const hour = Number(
-      new Intl.DateTimeFormat("en-GB", { timeZone, hour: "2-digit", hourCycle: "h23" }).format(now),
-    );
-    return hour >= 3;
-  } catch {
-    return now.getTime() - last.getTime() > 20 * 3_600_000;
-  }
+  return discoveryDue(last, now, timeZone);
 }
 
 /**
@@ -89,8 +82,21 @@ export async function discoverDueProjects(input: {
         .filter((host) => host.status === "used")
         .map((host) => host.registrableDomain),
       depth: 100,
-      search: (request) =>
-        input.search.search(request, { ...adapter, workspaceId: project.workspaceId }),
+      search: async (request) => {
+        const results = await input.search.search(request, {
+          ...adapter,
+          workspaceId: project.workspaceId,
+        });
+        await recordCost(input.prisma, {
+          workspaceId: project.workspaceId,
+          projectId: project.id,
+          kind: "search_query",
+          quantity: 1,
+          sourceKey: `search:${project.id}:${localDateKey(input.now, timeZone)}:${request.query}`,
+          occurredAt: input.now,
+        });
+        return results;
+      },
       fetchText: (url) =>
         fetchProbeText(url, {
           fetchImpl: input.fetchImpl ?? fetch,

@@ -25,13 +25,14 @@ describe("agentmail helper", () => {
         email: "link.b@faircroft.us",
         displayName: "Link Builder",
         assignedBotId: "bot-1",
+        projectId: null,
       },
     ]);
     vi.unstubAllGlobals();
   });
 
   it("assigns an inbox and clears the previous bot mapping", async () => {
-    const fetchMock = vi.fn(async (url: string, init?: { method?: string }) => {
+    const fetchMock = vi.fn(async (_url: string, init?: { method?: string }) => {
       if (!init?.method) {
         return {
           ok: true,

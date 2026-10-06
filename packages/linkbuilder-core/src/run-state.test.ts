@@ -12,6 +12,7 @@ import {
   recordCountedLive,
   recordHostVisited,
   recordRegistration,
+  releaseCountedLive,
   startRunCounters,
   TERMINAL_RUN_STATUSES,
   transitionRun,
@@ -78,6 +79,15 @@ describe("run counters", () => {
     counters = recordHostVisited(counters, { firstVisitToday: false });
     counters = recordCountedLive(counters);
     expect(counters).toEqual({ newToday: 1, liveToday: 1, liveWeek: 3, uniqueHosts: 1 });
+    expect(releaseCountedLive(counters, true)).toEqual({
+      newToday: 1,
+      liveToday: 0,
+      liveWeek: 2,
+      uniqueHosts: 0,
+    });
+    expect(
+      releaseCountedLive({ newToday: 0, liveToday: 0, liveWeek: 2, uniqueHosts: 1 }, false),
+    ).toEqual({ newToday: 0, liveToday: 0, liveWeek: 1, uniqueHosts: 1 });
   });
 
   it("rejects invalid counter states", () => {

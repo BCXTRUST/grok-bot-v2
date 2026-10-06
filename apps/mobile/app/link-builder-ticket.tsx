@@ -15,6 +15,7 @@ import {
   type MobileLbArtifact,
   type MobileLbTicket,
   ticketActionBody,
+  ticketCountdown,
 } from "../lib/link-builder";
 
 export default function LinkBuilderTicket() {
@@ -97,6 +98,11 @@ export default function LinkBuilderTicket() {
       {ticket ? (
         <>
           <Text style={styles.domain}>{ticket.domain}</Text>
+          {ticketCountdown(ticket.expiresAt) ? (
+            <Text accessibilityLabel="Ticket countdown" style={styles.muted}>
+              {ticketCountdown(ticket.expiresAt)}
+            </Text>
+          ) : null}
           <View style={styles.screenBox} accessibilityLabel="Live screen">
             {screenUri ? (
               <Image

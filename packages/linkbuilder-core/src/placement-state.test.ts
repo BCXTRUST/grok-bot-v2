@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   canTransitionPlacement,
+  countedAfterReverify,
   evaluateVerification,
   IllegalTransition,
   normalizeRel,
@@ -93,5 +94,32 @@ describe("verification", () => {
     }
     expect(shouldCount(evaluateVerification({ ...live, rel: "ugc" }), true)).toBe(true);
     expect(shouldCount(evaluateVerification({ ...live, rel: "ugc" }), false)).toBe(false);
+  });
+
+  it("uncounts a removed or dead link and keeps the first live on a host", () => {
+    expect(
+      countedAfterReverify({
+        wasCounted: true,
+        status: "removed",
+        countNofollow: true,
+        anotherCountedOnHost: false,
+      }),
+    ).toBe(false);
+    expect(
+      countedAfterReverify({
+        wasCounted: false,
+        status: "live",
+        countNofollow: true,
+        anotherCountedOnHost: true,
+      }),
+    ).toBe(false);
+    expect(
+      countedAfterReverify({
+        wasCounted: false,
+        status: "live",
+        countNofollow: true,
+        anotherCountedOnHost: false,
+      }),
+    ).toBe(true);
   });
 });

@@ -133,6 +133,7 @@ import {
   startLbProject,
   statusLbProject,
   stopLbProject,
+  summarizeLbCosts,
   updateLbProject,
   verifyLbPlacement,
 } from "./link-builder.js";
@@ -331,6 +332,7 @@ export interface RouterDeps {
   realtime?: RealtimeFanout;
   /** Offline tests inject the Captell emulator. Production uses global fetch. */
   captellFetch?: typeof fetch;
+  mailbox?: import("@rakazo/adapter-kit").MailboxProvider;
   dataDir: string;
   env: {
     defaultProvider: string;
@@ -3055,6 +3057,11 @@ export function createRouter(deps: RouterDeps) {
       captell: {
         checkBalance: authed.linkBuilder.captell.checkBalance.handler(async ({ context, input }) =>
           checkLbCaptchaBalance(deps, context.actor, input),
+        ),
+      },
+      costs: {
+        summary: authed.linkBuilder.costs.summary.handler(async ({ context, input }) =>
+          summarizeLbCosts(deps, context.actor, input),
         ),
       },
       subscribe: authed.linkBuilder.subscribe.handler(async function* ({ context, input }) {

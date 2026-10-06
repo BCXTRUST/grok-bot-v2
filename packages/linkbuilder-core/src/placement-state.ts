@@ -61,6 +61,21 @@ export function evaluateVerification(facts: VerificationFacts): VerificationOutc
   return { status: followable ? "live" : "nofollow_live", rel, followable, indexable };
 }
 
+/**
+ * Counted flag after a re-verification. Removed and dead free the host slot.
+ * A later live link can count only when no other placement on the host is counted.
+ */
+export function countedAfterReverify(input: {
+  wasCounted: boolean;
+  status: PlacementStatus;
+  countNofollow: boolean;
+  anotherCountedOnHost: boolean;
+}): boolean {
+  if (!shouldCount(input.status, input.countNofollow)) return false;
+  if (input.wasCounted) return true;
+  return !input.anotherCountedOnHost;
+}
+
 /** Whether an outcome counts toward the LIVE quota; the DB still allows one counted per host. */
 export function shouldCount(
   outcome: PlacementStatus | Pick<VerificationOutcome, "status">,

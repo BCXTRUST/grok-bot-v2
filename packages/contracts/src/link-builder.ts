@@ -408,6 +408,9 @@ export type LbContent = z.infer<typeof LbContentSchema>;
 export const LbNotificationChannelSchema = z.enum(["push", "email"]);
 export type LbNotificationChannel = z.infer<typeof LbNotificationChannelSchema>;
 
+export const LbOperatorOnExpireSchema = z.enum(["skip", "requalify"]);
+export type LbOperatorOnExpire = z.infer<typeof LbOperatorOnExpireSchema>;
+
 export const LbOperatorSettingsSchema = z.object({
   parkedHostTtlHours: z
     .number()
@@ -415,6 +418,15 @@ export const LbOperatorSettingsSchema = z.object({
     .min(1)
     .max(24 * 14)
     .default(48),
+  /** Open operator tickets close after this many hours. */
+  ticketTtlHours: z
+    .number()
+    .int()
+    .min(1)
+    .max(24 * 14)
+    .default(24),
+  /** `skip` marks the host dead. `requalify` returns it to the qualified supply. */
+  onExpire: LbOperatorOnExpireSchema.default("skip"),
   channels: z.array(LbNotificationChannelSchema).default(["push", "email"]),
 });
 export type LbOperatorSettings = z.infer<typeof LbOperatorSettingsSchema>;
@@ -470,6 +482,8 @@ export const LbProjectConfigSchema = z.object({
   })),
   operator: LbOperatorSettingsSchema.default({
     parkedHostTtlHours: 48,
+    ticketTtlHours: 24,
+    onExpire: "skip",
     channels: ["push", "email"],
   }),
 });
@@ -518,6 +532,37 @@ export const LbFitCheckSchema = z.object({
   issues: z.array(z.string().max(300)).max(20),
 });
 export type LbFitCheck = z.infer<typeof LbFitCheckSchema>;
+
+export const LbAlertKindSchema = z.enum([
+  "project.paused",
+  "captcha.needs_operator",
+  "placement.live",
+  "run.finished",
+]);
+export type LbAlertKind = z.infer<typeof LbAlertKindSchema>;
+
+export const LbCostKindSchema = z.enum([
+  "captell_credits",
+  "model_tokens",
+  "search_query",
+  "proxy_lease_day",
+]);
+export type LbCostKind = z.infer<typeof LbCostKindSchema>;
+
+export const LbCostSummarySchema = z.object({
+  captellCredits: z.number().int().min(0),
+  modelTokens: z.number().int().min(0),
+  searchQueries: z.number().int().min(0),
+  proxyLeaseDays: z.number().int().min(0),
+});
+export type LbCostSummary = z.infer<typeof LbCostSummarySchema>;
+
+export const EMPTY_COST_SUMMARY: LbCostSummary = {
+  captellCredits: 0,
+  modelTokens: 0,
+  searchQueries: 0,
+  proxyLeaseDays: 0,
+};
 
 export const LbRunStepCostsSchema = z.object({
   credits: z.number().int().min(0).default(0),

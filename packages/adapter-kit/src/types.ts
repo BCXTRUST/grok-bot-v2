@@ -440,9 +440,11 @@ export interface ArtifactPut {
 }
 
 export interface NotificationMessage {
-  kind: "completion" | "failure" | "help" | "takeover";
+  kind: "completion" | "failure" | "help" | "takeover" | "link_builder";
   title: string;
   body: string;
   botId: string;
   threadId: string;
+  /** In-app route, for example `/link-builder-ticket`. */
+  url?: string;
 }
