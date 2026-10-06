@@ -1,5 +1,5 @@
 import { RPCHandler } from "@orpc/server/fetch";
-import { CaptellEmulator, captellCues } from "@rakazo/adapters";
+import { CaptellEmulator, captellCues, StaticPlanProvider } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import { LB_RESPONSIBILITY_ACK_TEXT_VERSION } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
@@ -113,6 +113,7 @@ describe("link builder routes", () => {
     const prisma = {
       lbProject: {
         findFirst: vi.fn(async () => row),
+        count: vi.fn(async () => 0),
         update: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
           updates.push(data);
           Object.assign(row, data);
@@ -190,6 +191,31 @@ describe("link builder routes", () => {
         },
       }),
     );
+  });
+
+  it("refuses to start when the plan cap is already full", async () => {
+    const row = projectRow();
+    const prisma = {
+      lbProject: {
+        findFirst: vi.fn(async () => row),
+        count: vi.fn(async () => 1),
+        update: vi.fn(),
+      },
+    } as unknown as PrismaClient;
+    const { response } = await call(
+      {
+        ...deps(prisma),
+        plan: new StaticPlanProvider({
+          name: "starter",
+          caps: { projects: 1, live_per_day: 1, personas: 3 },
+        }),
+      },
+      actor,
+      "linkBuilder/projects/start",
+      { projectId: "project-1" },
+    );
+    expect(response.status).toBe(403);
+    expect(prisma.lbProject.update).not.toHaveBeenCalled();
   });
 
   it("refuses to start a project that is missing a mailbox or Captell seat", async () => {

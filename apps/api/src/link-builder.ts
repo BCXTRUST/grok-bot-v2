@@ -1,6 +1,7 @@
+import { lookup } from "node:dns/promises";
 import { ORPCError } from "@orpc/server";
 import { CaptchaSolverError } from "@rakazo/adapter-kit";
-import { CaptellHttpSolver } from "@rakazo/adapters";
+import { CaptellHttpSolver, StaticPlanProvider } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import {
   EMPTY_COST_SUMMARY,
@@ -52,11 +53,14 @@ import {
 } from "@rakazo/contracts";
 import { Prisma, type PrismaClient, seedLinkBuilderDemo } from "@rakazo/db";
 import {
+  assertStartWithinPlan,
   buildWhyNot,
+  type HostnameResolver,
   isWithinWindow,
   linkBuilderTopic,
   localDateKey,
   PAGE_HELPER_VERSION,
+  PlanLimitError,
   projectActivity,
   type ScheduleState,
   transitionHost,
@@ -68,6 +72,11 @@ import {
 import type { RouterDeps } from "./router.js";
 
 const DEFAULT_SCHEDULE = LbScheduleSchema.parse({ timezone: "Europe/Berlin" });
+
+const productionHostnameResolver: HostnameResolver = async (hostname) => {
+  const records = await lookup(hostname, { all: true, verbatim: true });
+  return records.map((record) => ({ address: record.address }));
+};
 
 export async function listLbProjects(deps: RouterDeps, actor: Actor) {
   const projects = await deps.prisma.lbProject.findMany({
@@ -215,8 +224,10 @@ export async function updateLbProject(
     if (!input.webhookUrl) {
       data.webhookUrl = null;
     } else {
-      const allowed = webhookUrlAllowed(input.webhookUrl, {
-        production: process.env.NODE_ENV === "production",
+      const production = process.env.NODE_ENV === "production";
+      const allowed = await webhookUrlAllowed(input.webhookUrl, {
+        production,
+        resolve: production ? productionHostnameResolver : undefined,
       });
       if (!allowed.ok)
         throw new ORPCError("BAD_REQUEST", { message: "Webhook URL is not allowed" });
@@ -268,6 +279,29 @@ export async function startLbProject(deps: RouterDeps, actor: Actor, projectId: 
     });
   }
   const current = readProjectStatus(row.status);
+  const others = await deps.prisma.lbProject.count({
+    where: {
+      workspaceId: actor.workspaceId,
+      archivedAt: null,
+      status: { in: ["active", "paused", "stopped"] },
+      id: { not: row.id },
+    },
+  });
+  const plan = await (deps.plan ?? new StaticPlanProvider()).current(actor.workspaceId, {
+    operationId: "lb-plan",
+    traceId: "lb-plan",
+    workspaceId: actor.workspaceId,
+    userId: actor.userId,
+    signal: new AbortController().signal,
+  });
+  try {
+    assertStartWithinPlan({ otherStartedProjects: others, caps: plan.caps });
+  } catch (error) {
+    if (error instanceof PlanLimitError) {
+      throw new ORPCError("FORBIDDEN", { message: error.message });
+    }
+    throw error;
+  }
   const status = current === "active" ? current : transitionOrBad(current, "active");
   const ack = LbResponsibilityAckSchema.parse({
     acceptedAt: new Date().toISOString(),

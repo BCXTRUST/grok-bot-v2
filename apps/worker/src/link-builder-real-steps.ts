@@ -44,6 +44,7 @@ import {
   CoherenceRefused,
   canRegisterHost,
   closingRunStatus,
+  countedWithinPlan,
   decideEdgeBlock,
   extractVerificationLink,
   generateForumPassword,
@@ -56,6 +57,7 @@ import {
   marketForHost,
   PAGE_HELPER_EXTENSION_ID,
   PAGE_HELPER_VERSION,
+  type PlanCaps,
   pacedDelayMs,
   proxyStickyKey,
   type RealStepKind,
@@ -120,6 +122,7 @@ export interface RealWorkerServices {
   sleep?: (ms: number) => Promise<void>;
   /** Recorded harness in tests, OpenRouter when a deployment key is configured. */
   textModel?: TextModel;
+  planCaps: PlanCaps;
 }
 
 /** Facts about the open persona browser; they live with the worker, never in the database. */
@@ -2124,10 +2127,15 @@ async function verify(ctx: StepContext): Promise<StepResult> {
     checked.outcome.status,
   );
   // The partial unique index still rejects a second counted link if another step races this one.
-  const counted =
+  const wantCounted =
     shouldCount(checked.outcome, ctx.project.countNofollow) &&
     (await ctx.services.prisma.lbPlacement.count({ where: { hostId: host.id, counted: true } })) ===
       0;
+  const counted = countedWithinPlan({
+    wantCounted,
+    countedToday: ctx.run.counters.liveToday,
+    livePerDay: ctx.services.planCaps.live_per_day,
+  });
   return {
     kind: "step",
     lastAction:

@@ -7,7 +7,7 @@ import type {
   SearchProvider,
 } from "@rakazo/adapter-kit";
 import { CaptchaSolverError } from "@rakazo/adapter-kit";
-import type { EncryptedSecretStore } from "@rakazo/adapters";
+import { type EncryptedSecretStore, STARTER_PLAN } from "@rakazo/adapters";
 import {
   type LbHostStatus,
   LbOperatorSettingsSchema,
@@ -23,9 +23,12 @@ import {
   buildWhyNot,
   closingRunStatus,
   countedAfterReverify,
+  countedWithinPlan,
+  type HostnameResolver,
   isRunTerminal,
   linkBuilderTopic,
   localDateKey,
+  type PlanCaps,
   pauseDedupeKey,
   recordCountedLive,
   releaseCountedLive,
@@ -51,6 +54,9 @@ export interface DueWorkDeps {
   notifications?: NotificationProvider;
   webhookFetch?: typeof fetch;
   productionWebhooks?: boolean;
+  resolveHostname?: HostnameResolver;
+  /** Plan ceiling for counted LIVE links. Absent means the starter stub. */
+  planCaps?: PlanCaps;
   verifyFetch?: typeof fetch;
   allowPrivateVerify?: boolean;
   artifacts?: ArtifactStore;
@@ -65,12 +71,14 @@ export interface DueWorkDeps {
 
 export async function runDueWork(deps: DueWorkDeps): Promise<void> {
   const productionWebhooks = deps.productionWebhooks ?? process.env.NODE_ENV === "production";
+  const resolveHostname = productionWebhooks ? deps.resolveHostname : undefined;
   const alerts = createAlertSink({
     prisma: deps.prisma,
     secrets: deps.secrets,
     notifications: deps.notifications,
     now: deps.now,
     productionWebhooks,
+    resolveHostname,
   });
   await expireTickets(deps);
   await openAndCloseRuns(deps, alerts);
@@ -109,6 +117,7 @@ export async function runDueWork(deps: DueWorkDeps): Promise<void> {
     now: deps.now,
     fetchImpl: deps.webhookFetch,
     productionWebhooks,
+    resolveHostname,
   });
 }
 
@@ -276,12 +285,24 @@ async function verifyDuePlacements(
     const others = await deps.prisma.lbPlacement.count({
       where: { hostId: placement.hostId, counted: true, id: { not: placement.id } },
     });
-    const counted = countedAfterReverify({
+    let counted = countedAfterReverify({
       wasCounted: placement.counted,
       status,
       countNofollow: placement.project.countNofollow,
       anotherCountedOnHost: others > 0,
     });
+    if (!placement.counted && counted) {
+      const date = localDateKey(placement.createdAt, timezone);
+      const day = await deps.prisma.lbRun.findFirst({
+        where: { projectId: placement.projectId, date },
+        select: { liveToday: true },
+      });
+      counted = countedWithinPlan({
+        wantCounted: true,
+        countedToday: day?.liveToday ?? 0,
+        livePerDay: (deps.planCaps ?? STARTER_PLAN.caps).live_per_day,
+      });
+    }
     const snapshotArtifactId = await storeSnapshot(deps, placement, checked.html);
     const completed = placement.verifyCount + 1;
     await deps.prisma.$transaction(async (tx) => {

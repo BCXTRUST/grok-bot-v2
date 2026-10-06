@@ -10,6 +10,7 @@ import {
   proxyResolverFor,
   searchProviderFromEnv,
 } from "./link-builder-real-wiring.js";
+import { dnsHostnameResolver } from "./webhook-dns.js";
 
 loadRootEnv();
 
@@ -183,6 +184,7 @@ async function main() {
           ? new AgentMailMailbox(agentMailLiveClient(process.env.AGENTMAIL_API_KEY), prisma)
           : new AgentMailEmulator(),
         notifications: new ExpoPushProvider(dataDir),
+        resolveHostname: dnsHostnameResolver,
         workerId: `worker-${process.pid}`,
         search: searchProviderFromEnv({ env: process.env, prisma, secrets }),
         textModel: process.env.OPENROUTER_API_KEY

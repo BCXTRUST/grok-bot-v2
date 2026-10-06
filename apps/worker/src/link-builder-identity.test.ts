@@ -10,6 +10,7 @@ import {
   EndpointTemplateProxyProvider,
   iproyalPreset,
   readLeaseId,
+  StaticPlanProvider,
 } from "@rakazo/adapters";
 import { createLbProject, startLbProject, updateLbProject } from "@rakazo/api/link-builder";
 import { type Actor, LbProjectPatchSchema } from "@rakazo/contracts";
@@ -64,7 +65,14 @@ describe("link builder identity", () => {
   });
 
   async function startedProject(name: string) {
-    const deps = { prisma: db.prisma, secrets };
+    const deps = {
+      prisma: db.prisma,
+      secrets,
+      plan: new StaticPlanProvider({
+        name: "starter",
+        caps: { projects: 8, live_per_day: 10, personas: 8 },
+      }),
+    };
     const created = await createLbProject(deps as never, actor, {
       name,
       brandName: "Nordlicht",

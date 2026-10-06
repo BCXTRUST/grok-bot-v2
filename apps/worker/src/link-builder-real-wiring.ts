@@ -213,7 +213,7 @@ export function proxyResolverFor(input: {
     }
     const userinfo = username && password ? `${username}:${password}@${endpoint.server}` : "";
     for (const value of [password, userinfo]) {
-      if (value) input.revealed.push(value);
+      if (value && !input.revealed.includes(value)) input.revealed.push(value);
     }
     return {
       server: `${protocol}://${endpoint.server}`,

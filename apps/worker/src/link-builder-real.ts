@@ -14,7 +14,7 @@ import {
   type SearchProvider,
   type TextModel,
 } from "@rakazo/adapter-kit";
-import type { EncryptedSecretStore } from "@rakazo/adapters";
+import { type EncryptedSecretStore, STARTER_PLAN } from "@rakazo/adapters";
 import {
   LB_DEFAULT_SPAM_SENTENCES,
   LbContentSchema,
@@ -36,6 +36,7 @@ import {
 } from "@rakazo/contracts";
 import type { Prisma, PrismaClient } from "@rakazo/db";
 import {
+  type HostnameResolver,
   isHostTerminal,
   isLiveMet,
   isRunActive,
@@ -45,6 +46,7 @@ import {
   localDateKey,
   marketKey,
   PAGE_HELPER_BUTTON_SELECTOR,
+  type PlanCaps,
   planRealStep,
   type RealPlan,
   redactSecrets,
@@ -113,6 +115,10 @@ export interface LinkBuilderRealDeps {
   webhookFetch?: typeof fetch;
   /** When true, webhook URLs may not target private or loopback addresses. */
   productionWebhooks?: boolean;
+  /** Injected DNS lookup for production webhook URLs. Tests pass a fixture. */
+  resolveHostname?: HostnameResolver;
+  /** Plan ceiling. Absent means the starter stub. */
+  planCaps?: PlanCaps;
   /** Passwords the proxy resolver has loaded. Shared with step redaction. */
   revealedSecrets?: string[];
   /** False when the Camoufox executable is not installed. The host then goes dead on a second edge block. */
@@ -181,6 +187,7 @@ export class LinkBuilderRealRunner {
       nowMs: () => (deps.now ? deps.now().getTime() : Date.now()),
       sleep: deps.sleep,
       textModel: deps.textModel,
+      planCaps: deps.planCaps ?? STARTER_PLAN.caps,
     };
   }
 
@@ -198,6 +205,7 @@ export class LinkBuilderRealRunner {
       notifications: this.deps.notifications,
       webhookFetch: this.deps.webhookFetch,
       productionWebhooks: this.deps.productionWebhooks,
+      resolveHostname: this.deps.resolveHostname,
       verifyFetch: this.deps.verifyFetch,
       allowPrivateVerify: this.deps.allowPrivateVerify,
       artifacts: this.deps.artifacts,

@@ -1,3 +1,4 @@
+import type { AdapterContext, ProxyEndpoint } from "@rakazo/adapter-kit";
 import { FakeSandboxProvider } from "@rakazo/adapters";
 import type { PrismaClient } from "@rakazo/db";
 import { LocalBrowserRefused } from "@rakazo/linkbuilder-browser";
@@ -5,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import { isLinkBuilderFakeEnabled } from "./link-builder-fake.js";
 import { isLinkBuilderRealEnabled } from "./link-builder-real.js";
 import { templateReply } from "./link-builder-real-steps.js";
-import { browserFactoryFromEnv } from "./link-builder-real-wiring.js";
+import { browserFactoryFromEnv, proxyResolverFor } from "./link-builder-real-wiring.js";
 
 const prisma = {} as PrismaClient;
 const sandbox = new FakeSandboxProvider();
@@ -42,6 +43,44 @@ describe("link builder real driver wiring", () => {
         LINK_BUILDER_ALLOW_LOCAL_BROWSER: "true",
       }).mode,
     ).toBe("local");
+  });
+});
+
+describe("proxy resolver", () => {
+  it("records each revealed proxy secret once", async () => {
+    const revealed: string[] = [];
+    const prisma = {
+      secret: {
+        findFirst: async ({ where }: { where: { id: string } }) => ({ ciphertext: where.id }),
+      },
+    } as unknown as PrismaClient;
+    const resolve = proxyResolverFor({
+      prisma,
+      secrets: {
+        load: (ciphertext: string) => (ciphertext === "user" ? "persona-user" : "persona-secret"),
+      } as never,
+      revealed,
+    });
+    const endpoint = {
+      id: "lease-1",
+      country: "DE",
+      stickyKey: "persona:DE",
+      server: "proxy.example:8080",
+      protocol: "http",
+      username: { secretId: "user" },
+      password: { secretId: "pass" },
+      kind: "static_isp",
+    } as ProxyEndpoint;
+    const context = {
+      operationId: "op",
+      traceId: "tr",
+      workspaceId: "ws",
+      userId: "user",
+      signal: new AbortController().signal,
+    } satisfies AdapterContext;
+    await resolve(endpoint, context);
+    await resolve(endpoint, context);
+    expect(revealed).toEqual(["persona-secret", "persona-user:persona-secret@proxy.example:8080"]);
   });
 });
 

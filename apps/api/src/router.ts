@@ -8,6 +8,7 @@ import {
   computerControlExpireJobKey,
   type JobPublisher,
   type MemoryStore,
+  type PlanProvider,
   type RealtimeFanout,
   routineJobKey,
   routineWakeupJob,
@@ -333,6 +334,8 @@ export interface RouterDeps {
   /** Offline tests inject the Captell emulator. Production uses global fetch. */
   captellFetch?: typeof fetch;
   mailbox?: import("@rakazo/adapter-kit").MailboxProvider;
+  /** Billing stub. Absent means the static starter plan. */
+  plan?: PlanProvider;
   dataDir: string;
   env: {
     defaultProvider: string;

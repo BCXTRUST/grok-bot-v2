@@ -243,6 +243,7 @@ describe("link builder week", () => {
         return new Response(fail ? "no" : "ok", { status });
       },
       productionWebhooks: true,
+      resolveHostname: async () => [{ address: "203.0.113.10" }],
       now: () => clock,
       workerId: "week-worker",
     });
