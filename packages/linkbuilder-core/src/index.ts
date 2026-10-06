@@ -14,6 +14,7 @@ export * from "./host-state.js";
 export * from "./market.js";
 export * from "./pacing.js";
 export * from "./placement-state.js";
+export * from "./plan.js";
 export * from "./policy.js";
 export * from "./probe.js";
 export * from "./project-state.js";
