@@ -4,6 +4,7 @@ import { FakeProxyProvider } from "@rakazo/adapter-kit";
 import { EncryptedSecretStore } from "@rakazo/adapters";
 import {
   createLbProject,
+  grantExplicitProjectAllowance,
   startLbProject,
   summarizeLbCosts,
   updateLbProject,
@@ -67,6 +68,7 @@ describe("link builder week", () => {
       data: { id: actor.workspaceId, name: "Week", slug: "week", createdAt: new Date() },
     });
     await db.prisma.user.create({ data: { id: actor.userId, name: "Owner", email: actor.email } });
+    await grantExplicitProjectAllowance(db.prisma, actor.workspaceId);
     const deps = { prisma: db.prisma, secrets };
     const created = await createLbProject(deps as never, actor, {
       name: "Nordlicht",

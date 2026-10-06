@@ -112,6 +112,7 @@ import {
 import {
   archiveLbProject,
   buyLbCredits,
+  checkoutLbPackage,
   checkLbCaptchaBalance,
   continueLbTicket,
   createLbProject,
@@ -119,6 +120,7 @@ import {
   followLbProject,
   getLbArtifact,
   getLbProject,
+  offerLbBilling,
   listLbCaptchaEvents,
   listLbDrafts,
   listLbHosts,
@@ -2999,6 +3001,14 @@ export function createRouter(deps: RouterDeps) {
         ),
         seedDemo: authed.linkBuilder.projects.seedDemo.handler(async ({ context }) =>
           seedLbDemo(deps, context.actor),
+        ),
+      },
+      billing: {
+        offer: authed.linkBuilder.billing.offer.handler(async ({ context }) =>
+          offerLbBilling(deps, context.actor),
+        ),
+        checkout: authed.linkBuilder.billing.checkout.handler(async ({ context, input }) =>
+          checkoutLbPackage(deps, context.actor, input.packageId),
         ),
       },
       credits: {

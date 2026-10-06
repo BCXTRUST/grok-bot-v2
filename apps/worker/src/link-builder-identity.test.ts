@@ -12,7 +12,12 @@ import {
   readLeaseId,
   StaticPlanProvider,
 } from "@rakazo/adapters";
-import { createLbProject, startLbProject, updateLbProject } from "@rakazo/api/link-builder";
+import {
+  createLbProject,
+  grantExplicitProjectAllowance,
+  startLbProject,
+  updateLbProject,
+} from "@rakazo/api/link-builder";
 import { type Actor, LbProjectPatchSchema } from "@rakazo/contracts";
 import { createPgliteDb, type TestDatabase } from "@rakazo/db/pglite";
 import { BrowserEngineUnavailable } from "@rakazo/linkbuilder-browser";
@@ -58,6 +63,7 @@ describe("link builder identity", () => {
       data: { id: actor.workspaceId, name: "Identity", slug: "identity", createdAt: new Date() },
     });
     await db.prisma.user.create({ data: { id: actor.userId, name: "Owner", email: actor.email } });
+    await grantExplicitProjectAllowance(db.prisma, actor.workspaceId);
   });
 
   afterAll(async () => {

@@ -14,6 +14,7 @@ import {
 } from "@rakazo/adapters";
 import {
   createLbProject,
+  grantExplicitProjectAllowance,
   listLbRunSteps,
   startLbProject,
   updateLbProject,
@@ -120,6 +121,7 @@ async function wizardProject(
   personaName: string,
   platform = "phpbb",
 ) {
+  await grantExplicitProjectAllowance(h.db.prisma, actor.workspaceId);
   const created = await createLbProject(h.deps, actor, {
     name,
     brandName: "Vereinsplaner",

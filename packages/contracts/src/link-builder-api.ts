@@ -353,6 +353,33 @@ const ticketAction = z.object({
   note: z.string().trim().max(500).optional(),
 });
 
+export const LbCreditPackageSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  credits: z.number().int().positive(),
+  priceCents: z.number().int().positive(),
+  currency: z.literal("eur"),
+  recommended: z.boolean(),
+});
+
+export const LbBillingOfferSchema = z.object({
+  packages: z.array(LbCreditPackageSchema),
+  entitled: z.boolean(),
+  checkoutConnected: z.boolean(),
+  balance: z.number().int().min(0),
+  reason: z.string(),
+});
+export type LbBillingOffer = z.infer<typeof LbBillingOfferSchema>;
+
+export const LbCheckoutResultSchema = z.object({
+  charged: z.boolean(),
+  entitled: z.boolean(),
+  balance: z.number().int().min(0),
+  reason: z.string(),
+  checkoutUrl: z.string().nullable(),
+});
+export type LbCheckoutResult = z.infer<typeof LbCheckoutResultSchema>;
+
 export const linkBuilderContract = {
   pages: {
     suggest: oc
@@ -375,6 +402,12 @@ export const linkBuilderContract = {
     stop: oc.input(projectId).output(LbProjectDetailSchema),
     status: oc.input(projectId).output(LbProjectStatusViewSchema),
     seedDemo: oc.output(LbProjectDetailSchema),
+  },
+  billing: {
+    offer: oc.output(LbBillingOfferSchema),
+    checkout: oc
+      .input(z.object({ packageId: z.string().trim().min(1).max(40) }))
+      .output(LbCheckoutResultSchema),
   },
   credits: {
     buy: oc.input(projectId).output(

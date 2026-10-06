@@ -1,7 +1,7 @@
 import { lookup } from "node:dns/promises";
 import { ORPCError } from "@orpc/server";
 import { CaptchaSolverError } from "@rakazo/adapter-kit";
-import { CaptellHttpSolver, StaticPlanProvider } from "@rakazo/adapters";
+import { CaptellHttpSolver, StaticPlanProvider, stripeCheckoutConfigured } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import {
   EMPTY_COST_SUMMARY,
@@ -55,7 +55,11 @@ import { LB_DEMO_SLUG, Prisma, type PrismaClient, seedLinkBuilderDemo } from "@r
 import {
   assertStartWithinPlan,
   buildWhyNot,
-  creditBalanceAfterSpend,
+  CHECKOUT_NOT_CONNECTED_REASON,
+  CREDIT_PACKAGES,
+  creditBalanceFromLedger,
+  mayCreateLinkBuilderProject,
+  quoteCreditPurchase,
   type HostnameResolver,
   isWithinWindow,
   linkBuilderTopic,
@@ -239,6 +243,7 @@ export async function createLbProject(
     markets?: LbProjectDetail["markets"];
   },
 ) {
+  await assertMayCreateProject(deps.prisma, actor.workspaceId);
   const markets = input.markets ?? [{ ...LB_DEFAULT_MARKET }];
   const schedule = LbScheduleSchema.parse({ timezone: markets[0]?.timezoneId ?? "Europe/Berlin" });
   const base = slugifyProjectName(input.slug ?? input.name);
@@ -519,6 +524,7 @@ export async function summarizeLbCosts(
 }
 
 export async function seedLbDemo(deps: RouterDeps, actor: Actor) {
+  await assertMayCreateProject(deps.prisma, actor.workspaceId);
   const seeded = await seedLinkBuilderDemo(deps.prisma, {
     workspaceId: actor.workspaceId,
     userId: actor.userId,
@@ -1083,13 +1089,78 @@ function customerStepVisible(slug: string, lastAction: string | null): boolean {
 }
 
 async function readCreditBalance(prisma: PrismaClient, workspaceId: string): Promise<number> {
-  const steps = await prisma.lbRunStep.findMany({
-    where: { workspaceId },
-    select: { costs: true },
-  });
+  const [steps, purchases] = await Promise.all([
+    prisma.lbRunStep.findMany({
+      where: { workspaceId },
+      select: { costs: true },
+    }),
+    listCreditPurchases(prisma, workspaceId),
+  ]);
   let spent = 0;
   for (const step of steps) spent += numberField(step.costs, "credits");
-  return creditBalanceAfterSpend(spent);
+  return creditBalanceFromLedger(spent, purchases);
+}
+
+async function listCreditPurchases(prisma: PrismaClient, workspaceId: string) {
+  return prisma.lbCreditPurchase.findMany({
+    where: { workspaceId },
+    select: { billing: true, chargeId: true, credits: true },
+  });
+}
+
+async function assertMayCreateProject(prisma: PrismaClient, workspaceId: string) {
+  const purchases = await listCreditPurchases(prisma, workspaceId);
+  if (!mayCreateLinkBuilderProject(purchases)) {
+    throw new ORPCError("FORBIDDEN", { message: "Buy a credit package first." });
+  }
+}
+
+/**
+ * Writes an explicit dev/test allowance. It does not record a charge and adds no credits.
+ * Production routes never call this.
+ */
+export async function grantExplicitProjectAllowance(prisma: PrismaClient, workspaceId: string) {
+  await prisma.lbCreditPurchase.create({
+    data: {
+      workspaceId,
+      packageId: "allowance",
+      credits: 0,
+      priceCents: 0,
+      currency: "eur",
+      billing: "allowance",
+    },
+  });
+}
+
+export async function offerLbBilling(deps: RouterDeps, actor: Actor) {
+  const purchases = await listCreditPurchases(deps.prisma, actor.workspaceId);
+  const balance = await readCreditBalance(deps.prisma, actor.workspaceId);
+  const checkoutConnected = stripeCheckoutConfigured();
+  return {
+    packages: CREDIT_PACKAGES.map((pack) => ({ ...pack })),
+    entitled: mayCreateLinkBuilderProject(purchases),
+    checkoutConnected,
+    balance,
+    reason: checkoutConnected ? "" : CHECKOUT_NOT_CONNECTED_REASON,
+  };
+}
+
+/**
+ * Quotes a package. A card is charged only when billing is live and a charge id already exists.
+ * This route has no charge id, so it does not write a purchase or change the balance.
+ */
+export async function checkoutLbPackage(deps: RouterDeps, actor: Actor, packageId: string) {
+  const billing = stripeCheckoutConfigured() ? "live" : "stub";
+  const purchases = await listCreditPurchases(deps.prisma, actor.workspaceId);
+  const balance = await readCreditBalance(deps.prisma, actor.workspaceId);
+  const quote = quoteCreditPurchase({ billing, chargeId: null, packageId, balance });
+  return {
+    charged: quote.charged,
+    entitled: quote.charged || mayCreateLinkBuilderProject(purchases),
+    balance: quote.balance,
+    reason: quote.reason,
+    checkoutUrl: null,
+  };
 }
 
 /** Buying credits never charges a card while billing is a stub, and never invents a payment. */

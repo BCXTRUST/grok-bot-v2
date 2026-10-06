@@ -9,7 +9,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { emptyDraft, emptyPage, PAGE_BOX_LIMIT } from "./model.js";
 import { LinkBuilderPreview } from "./preview.js";
-import { OperatorView, ProjectView, WizardView } from "./views.js";
+import { CreditPackagesView, OperatorView, ProjectView, WizardView } from "./views.js";
 
 const noop = () => undefined;
 const loadArtifact = async () => "data:image/png;base64,iVBO";
@@ -378,6 +378,45 @@ describe("link builder screens", () => {
     expect(html).not.toContain("Unsupported captcha 0");
     expect(html.indexOf('aria-label="Computer"')).toBeLessThan(html.indexOf("Parked 1"));
     expect(html.indexOf("New accounts per day")).toBeLessThan(html.indexOf("40 tokens"));
+  });
+
+  it("shows credit packages with prices before a project exists", () => {
+    const html = renderToStaticMarkup(
+      <CreditPackagesView
+        packages={[
+          {
+            id: "starter",
+            name: "Starter",
+            credits: 200,
+            priceCents: 2900,
+            currency: "eur",
+            recommended: false,
+          },
+          {
+            id: "growth",
+            name: "Growth",
+            credits: 1000,
+            priceCents: 9900,
+            currency: "eur",
+            recommended: true,
+          },
+        ]}
+        balance={80}
+        reason="Checkout is not connected. No card was charged and credits were not added."
+        busy={false}
+        onBuy={() => undefined}
+      />,
+    );
+    expect(html).toContain("€29");
+    expect(html).toContain("€99");
+    expect(html).toContain("200 credits");
+    expect(html).toContain("1,000 credits");
+    expect(html).toContain('aria-label="Buy Starter"');
+    expect(html).toContain('aria-label="Buy Growth"');
+    expect(html).toContain('aria-label="Setup"');
+    expect(html).toContain('aria-current="step"');
+    expect(html).toContain("Checkout is not connected");
+    expect(html).not.toContain("Brand &amp; domains");
   });
 });
 

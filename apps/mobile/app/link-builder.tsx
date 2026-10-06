@@ -12,11 +12,7 @@ export default function LinkBuilderStatus() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      let next = await rpc<MobileLbCard[]>("linkBuilder/projects/list");
-      if (next.length === 0) {
-        await rpc("linkBuilder/projects/seedDemo");
-        next = await rpc<MobileLbCard[]>("linkBuilder/projects/list");
-      }
+      const next = await rpc<MobileLbCard[]>("linkBuilder/projects/list");
       setCards(next);
     } finally {
       setLoading(false);

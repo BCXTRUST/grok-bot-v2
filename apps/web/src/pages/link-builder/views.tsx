@@ -13,6 +13,7 @@ import type {
 } from "@rakazo/contracts";
 import {
   FIXTURE_DEMO_SLUG,
+  formatPackagePrice,
   isFixtureHostDomain,
   showHostToCustomer,
   stageFromActivity,
@@ -111,6 +112,86 @@ export function DashboardView({
           </BuiCard>
         ))}
       </div>
+    </main>
+  );
+}
+
+export function CreditPackagesView({
+  packages,
+  balance,
+  reason,
+  busy,
+  onBuy,
+}: {
+  packages: Array<{
+    id: string;
+    name: string;
+    credits: number;
+    priceCents: number;
+    currency: "eur";
+    recommended: boolean;
+  }>;
+  balance: number;
+  reason: string;
+  busy: boolean;
+  onBuy: (packageId: string) => void;
+}) {
+  return (
+    <main className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-4 py-8">
+      <header className="flex flex-col gap-2">
+        <ol aria-label="Setup" className="flex gap-3 text-[13px]">
+          <li className="text-[#3dbb72]">Account</li>
+          <li aria-current="step" className="text-[#ECECEE]">
+            Credits
+          </li>
+          <li className="text-[#85858A]">Project</li>
+        </ol>
+        <h1 className="text-[22px] font-medium text-[#ECECEE]">Credits</h1>
+      </header>
+      <p aria-label="Credit balance" className="text-[13px] text-[#ECECEE]">
+        <span className="tabular-nums">{balance}</span>
+        <span className="text-[#A6A6AD]"> credits</span>
+      </p>
+      <div className="grid gap-3 md:grid-cols-3">
+        {packages.map((pack) => (
+          <BuiCard
+            key={pack.id}
+            className="flex flex-col gap-3 p-4"
+            data-recommended={pack.recommended ? "true" : "false"}
+            style={
+              pack.recommended
+                ? { boxShadow: "0 0 0 1px var(--bui-accent), 0 8px 24px #00000055" }
+                : undefined
+            }
+          >
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="text-[16px] text-[#ECECEE]">{pack.name}</h2>
+              {pack.recommended ? (
+                <span className="text-[12px] text-[#7785ff]">Recommended</span>
+              ) : null}
+            </div>
+            <div className="text-[28px] font-medium text-[#ECECEE]">
+              {formatPackagePrice(pack.priceCents, pack.currency)}
+            </div>
+            <p className="text-[13px] text-[#A6A6AD]">
+              {pack.credits.toLocaleString("en-US")} credits
+            </p>
+            <BuiButton
+              tone={pack.recommended ? "accent" : "neutral"}
+              label={`Buy ${pack.name}`}
+              disabled={busy}
+              onClick={() => onBuy(pack.id)}
+            >
+              Buy
+            </BuiButton>
+          </BuiCard>
+        ))}
+      </div>
+      {reason ? (
+        <p role="status" className="text-[13px] text-[#A6A6AD]">
+          {reason}
+        </p>
+      ) : null}
     </main>
   );
 }

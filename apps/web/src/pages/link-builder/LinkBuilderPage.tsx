@@ -1,4 +1,5 @@
 import type {
+  LbBillingOffer,
   LbCaptchaEventView,
   LbDraftView,
   LbHostView,
@@ -31,7 +32,7 @@ import {
   withPersonaPrefill,
   wizardStepIssues,
 } from "./model.js";
-import { DashboardView, OperatorView, ProjectView, WizardView } from "./views.js";
+import { CreditPackagesView, DashboardView, OperatorView, ProjectView, WizardView } from "./views.js";
 
 function useArtifactLoader(projectId: string) {
   return useCallback(
@@ -47,6 +48,7 @@ export function LinkBuilderPage() {
   if (path.includes("/operator/") && params.projectId && params.ticketId) {
     return <OperatorRoute projectId={params.projectId} ticketId={params.ticketId} />;
   }
+  if (path === "/link-builder/credits") return <CreditsRoute />;
   if (path.includes("/new")) return <WizardRoute projectId={params.projectId} />;
   if (params.projectId) return <ProjectRoute projectId={params.projectId} />;
   return <DashboardRoute />;
@@ -60,11 +62,7 @@ function DashboardRoute() {
     let cancelled = false;
     void (async () => {
       try {
-        let next = await rpc.linkBuilder.projects.list();
-        if (next.length === 0) {
-          await rpc.linkBuilder.projects.seedDemo();
-          next = await rpc.linkBuilder.projects.list();
-        }
+        const next = await rpc.linkBuilder.projects.list();
         if (!cancelled) setCards(next);
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : "Could not load");
@@ -107,7 +105,130 @@ async function suggestPage(input: { url: string; allowedDomains: string[] }) {
   }
 }
 
+function useBillingOffer() {
+  const [offer, setOffer] = useState<LbBillingOffer | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    void rpc.linkBuilder.billing
+      .offer()
+      .then((next) => {
+        if (!cancelled) setOffer(next);
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : "Could not load");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function buy(packageId: string) {
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await rpc.linkBuilder.billing.checkout({ packageId });
+      if (result.checkoutUrl) {
+        window.location.assign(result.checkoutUrl);
+        return;
+      }
+      setOffer((current) =>
+        current
+          ? {
+              ...current,
+              balance: result.balance,
+              entitled: result.entitled,
+              reason: result.reason,
+            }
+          : current,
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not buy");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return { offer, error, busy, buy };
+}
+
+function BillingBody({
+  offer,
+  error,
+  busy,
+  onBuy,
+}: {
+  offer: LbBillingOffer | null;
+  error: string | null;
+  busy: boolean;
+  onBuy: (packageId: string) => void;
+}) {
+  if (!offer) {
+    return (
+      <div className="grid h-full place-items-center">
+        {error ? (
+          <p className="text-[13px] text-[#FF8B8B]">{error}</p>
+        ) : (
+          <LoadingState label="Loading packages" />
+        )}
+      </div>
+    );
+  }
+  return (
+    <div className="flex flex-col gap-3">
+      <CreditPackagesView
+        packages={offer.packages}
+        balance={offer.balance}
+        reason={error || offer.reason}
+        busy={busy}
+        onBuy={onBuy}
+      />
+    </div>
+  );
+}
+
+function CreditsRoute() {
+  const billing = useBillingOffer();
+  return (
+    <BillingBody
+      offer={billing.offer}
+      error={billing.error}
+      busy={billing.busy}
+      onBuy={(packageId) => void billing.buy(packageId)}
+    />
+  );
+}
+
+function NewProjectGate() {
+  const billing = useBillingOffer();
+  if (!billing.offer) {
+    return (
+      <BillingBody
+        offer={null}
+        error={billing.error}
+        busy={billing.busy}
+        onBuy={() => undefined}
+      />
+    );
+  }
+  if (billing.offer.entitled) return <WizardEditor />;
+  return (
+    <BillingBody
+      offer={billing.offer}
+      error={billing.error}
+      busy={billing.busy}
+      onBuy={(packageId) => void billing.buy(packageId)}
+    />
+  );
+}
+
 function WizardRoute({ projectId }: { projectId?: string }) {
+  if (!projectId) return <NewProjectGate />;
+  return <WizardEditor projectId={projectId} />;
+}
+
+function WizardEditor({ projectId }: { projectId?: string }) {
   const navigate = useNavigate();
   const [step, setStep] = useState(0);
   const [draft, setDraft] = useState<WizardDraft>(emptyDraft);
@@ -241,7 +362,6 @@ function ProjectRoute({ projectId }: { projectId: string }) {
   const [tickets, setTickets] = useState<LbOperatorTicketView[]>([]);
   const [leases, setLeases] = useState<LbProxyLeaseView[]>([]);
   const [busy, setBusy] = useState(false);
-  const [creditNote, setCreditNote] = useState<string | null>(null);
   const loadArtifact = useArtifactLoader(projectId);
 
   const reload = useCallback(async () => {
@@ -361,17 +481,8 @@ function ProjectRoute({ projectId }: { projectId: string }) {
         void call.then(() => reload());
       }}
       loadArtifact={loadArtifact}
-      creditNote={creditNote}
-      onBuyCredits={() => {
-        setBusy(true);
-        void rpc.linkBuilder.credits
-          .buy({ projectId })
-          .then((result) => {
-            setCreditNote(result.charged ? null : result.reason);
-            return reload();
-          })
-          .finally(() => setBusy(false));
-      }}
+      creditNote={null}
+      onBuyCredits={() => navigate("/link-builder/credits")}
     />
   );
 }

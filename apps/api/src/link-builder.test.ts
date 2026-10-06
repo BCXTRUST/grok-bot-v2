@@ -392,4 +392,58 @@ describe("link builder routes", () => {
       expect.objectContaining({ where: { id: "secret-1", workspaceId: "workspace-1" } }),
     );
   });
+
+  it("refuses a new project until a package is purchased", async () => {
+    const create = vi.fn();
+    const prisma = {
+      lbCreditPurchase: { findMany: vi.fn(async () => []) },
+      lbProject: { create },
+    } as unknown as PrismaClient;
+    const { response } = await call(deps(prisma), actor, "linkBuilder/projects/create", {
+      name: "New",
+      brandName: "New",
+      allowedDomains: ["nordlicht.example"],
+    });
+    expect(response.status).toBe(403);
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it("creates a project when an explicit allowance is already stored", async () => {
+    const row = projectRow();
+    const prisma = {
+      lbCreditPurchase: {
+        findMany: vi.fn(async () => [{ billing: "allowance", chargeId: null, credits: 0 }]),
+      },
+      lbProject: { create: vi.fn(async () => row) },
+    } as unknown as PrismaClient;
+    const { response } = await call(deps(prisma), actor, "linkBuilder/projects/create", {
+      name: "New",
+      brandName: "New",
+      allowedDomains: ["nordlicht.example"],
+    });
+    expect(response.status).toBe(200);
+    expect(prisma.lbProject.create).toHaveBeenCalled();
+  });
+
+  it("does not charge or store a purchase while checkout is disconnected", async () => {
+    const create = vi.fn();
+    const prisma = {
+      lbRunStep: { findMany: vi.fn(async () => []) },
+      lbCreditPurchase: { findMany: vi.fn(async () => []), create },
+    } as unknown as PrismaClient;
+    const { response } = await call(deps(prisma), actor, "linkBuilder/billing/checkout", {
+      packageId: "growth",
+    });
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      json: { charged: boolean; entitled: boolean; balance: number; reason: string; checkoutUrl: null };
+    };
+    expect(body.json.charged).toBe(false);
+    expect(body.json.entitled).toBe(false);
+    expect(body.json.balance).toBe(80);
+    expect(body.json.checkoutUrl).toBeNull();
+    expect(body.json.reason).toMatch(/not connected/i);
+    expect(body.json.reason).toMatch(/not added/i);
+    expect(create).not.toHaveBeenCalled();
+  });
 });

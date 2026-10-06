@@ -1,4 +1,5 @@
 export * from "./activity.js";
+export * from "./billing.js";
 export * from "./alerts.js";
 export * from "./captcha-helper-machine.js";
 export * from "./coherence.js";
