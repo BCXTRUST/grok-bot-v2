@@ -611,11 +611,7 @@ function Dashboard({
   const visibleThreads = threads.filter((thread) =>
     showHostToCustomer(thread.domain, project.slug),
   );
-  const visibleDrafts = drafts.filter((draft) => {
-    if (!hideExampleCopy) return true;
-    const text = `${draft.body} ${draft.targetUrl ?? ""} ${draft.anchorText ?? ""}`;
-    return !mentionsExampleDomain(text) && !mentionsFixtureHost(text);
-  });
+  const visibleDrafts = drafts.filter((draft) => customerDraft(draft, hideExampleCopy));
   const items = overviewFeed({
     steps,
     lastEvent: status?.lastEvent ?? null,
@@ -904,6 +900,19 @@ function LinksPlaced({ rows }: { rows: LbPlacementView[] }) {
       </BuiCard>
     </section>
   );
+}
+
+const FIXTURE_DRAFT_BODY = "Eine feste Uhrzeit hilft oft. Das hier erklärt es ganz gut.";
+
+function customerDraft(
+  draft: { body: string; targetUrl: string | null; anchorText: string | null; modelId: string },
+  hideExampleCopy: boolean,
+): boolean {
+  if (!hideExampleCopy) return true;
+  if (draft.modelId === "fake-draft") return false;
+  if (draft.body.trim() === FIXTURE_DRAFT_BODY) return false;
+  const text = `${draft.body} ${draft.targetUrl ?? ""} ${draft.anchorText ?? ""}`;
+  return !mentionsExampleDomain(text) && !mentionsFixtureHost(text);
 }
 
 function DraftNotes({

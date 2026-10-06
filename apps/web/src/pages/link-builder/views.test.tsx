@@ -454,8 +454,8 @@ describe("link builder screens", () => {
           linkSlot: "inline",
           modelLane: "draft",
           modelId: "fake-draft",
-          targetUrl: "https://nordlicht.example/schlaf",
-          anchorText: "Nordlicht",
+          targetUrl: null,
+          anchorText: null,
           confidence: null,
           qualityChecks: {
             factsOnly: true,
