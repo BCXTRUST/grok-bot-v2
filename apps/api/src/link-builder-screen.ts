@@ -16,8 +16,8 @@ import { ensureComputerRecord, type PrismaClient, type ThreadEvents } from "@rak
 import { addScreenProxyCapability, shouldProxyComputerScreen } from "./screen-proxy.js";
 
 const SCREEN_REFRESH_SLACK_MS = 5 * 60_000;
-const SCREEN_CONNECT_MS = 45_000;
-const SCREEN_BOOT_MS = 120_000;
+/** How long this request waits. The sandbox call keeps running so an abort cannot kill it. */
+const SCREEN_REQUEST_MS = 90_000;
 
 export interface ProjectScreenDeps {
   prisma: PrismaClient;
@@ -69,6 +69,7 @@ export function publicScreenError(error: unknown): string {
     error instanceof Error && error.message.trim()
       ? error.message.trim()
       : "Could not open the computer";
+  if (/signal:\s*terminated|operation was aborted/i.test(raw)) return "Could not open the computer";
   const cleaned = raw
     .replace(/postgres(?:ql)?:\/\/\S+/gi, "postgres://redacted")
     .replace(/e2b_[A-Za-z0-9_-]+/gi, "e2b_redacted")
@@ -102,6 +103,35 @@ export async function openProjectComputerScreen(
     select: { id: true },
   });
   if (!project) throw new ORPCError("NOT_FOUND");
+  const flightKey = `${actor.workspaceId}:${projectId}`;
+  const existing = screenFlights.get(flightKey);
+  const flight =
+    existing ??
+    openScreen(deps, actor, boot).finally(() => {
+      screenFlights.delete(flightKey);
+    });
+  if (!existing) screenFlights.set(flightKey, flight);
+  const deadline = startDeadline(SCREEN_REQUEST_MS, "The computer took too long to start");
+  try {
+    return await Promise.race([flight, deadline.promise]);
+  } catch (error) {
+    if (error instanceof ORPCError) throw error;
+    if (isStillStarting(error)) return { url: null, error: null };
+    const message = publicScreenError(error);
+    console.error("link builder screen", message);
+    return { url: null, error: message };
+  } finally {
+    deadline.cancel();
+  }
+}
+
+const screenFlights = new Map<string, Promise<{ url: string | null; error: string | null }>>();
+
+async function openScreen(
+  deps: ProjectScreenDeps,
+  actor: Actor,
+  boot: typeof provisionComputer,
+): Promise<{ url: string | null; error: string | null }> {
   try {
     let computer = await teamComputer(deps, actor);
     const cached = computer ? liveCachedUrl(computer) : null;
@@ -123,6 +153,10 @@ export async function openProjectComputerScreen(
     console.error("link builder screen", message);
     return { url: null, error: message };
   }
+}
+
+function isStillStarting(error: unknown): boolean {
+  return error instanceof Error && error.message === "The computer took too long to start";
 }
 
 function liveCachedUrl(computer: TeamComputer): string | null {
@@ -156,9 +190,8 @@ async function bootTeamComputer(
     orderBy: { createdAt: "asc" },
     select: { id: true },
   });
-  const timeout = abortAfter(SCREEN_BOOT_MS);
-  try {
-    await boot(
+  const runBoot = () =>
+    boot(
       {
         prisma: deps.prisma,
         sandbox: deps.sandbox,
@@ -168,10 +201,17 @@ async function bootTeamComputer(
         dataDir: deps.dataDir,
       },
       computer.id,
-      screenContext(actor, bot?.id, timeout.signal),
+      screenContext(actor, bot?.id, new AbortController().signal),
     );
-  } finally {
-    timeout.cancel();
+  try {
+    await runBoot();
+  } catch (error) {
+    if (!existing?.providerRef || !deadSandbox(error)) throw error;
+    await deps.prisma.computer.updateMany({
+      where: { id: computer.id, providerRef: existing.providerRef },
+      data: { state: "stopped", providerRef: null },
+    });
+    await runBoot();
   }
   const ready = await deps.prisma.computer.findUnique({ where: { id: computer.id } });
   if (!ready?.providerRef || (ready.state !== "running" && ready.state !== "booting")) {
@@ -193,17 +233,11 @@ async function connectTeamScreen(
     orderBy: { createdAt: "asc" },
     select: { id: true },
   });
-  const timeout = abortAfter(SCREEN_CONNECT_MS);
-  let session: { url: string | null };
-  try {
-    session = await deps.sandbox.connectScreen(
-      toComputerRef(computer),
-      { view: "stream", interactive: false },
-      screenContext(actor, bot?.id, timeout.signal),
-    );
-  } finally {
-    timeout.cancel();
-  }
+  const session = await deps.sandbox.connectScreen(
+    toComputerRef(computer),
+    { view: "stream", interactive: false },
+    screenContext(actor, bot?.id, new AbortController().signal),
+  );
   if (!session.url) return null;
   const viewUrl = withViewOnly(session.url, true);
   const proxied = addScreenProxyCapability(
@@ -284,8 +318,20 @@ function withViewOnly(url: string, viewOnly: boolean) {
   }
 }
 
-function abortAfter(ms: number) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), ms);
-  return { signal: controller.signal, cancel: () => clearTimeout(timer) };
+function deadSandbox(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : "";
+  return /terminated|not found|sandbox not found|killed/i.test(message);
+}
+
+function startDeadline(ms: number, message: string) {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const promise = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(message)), ms);
+  });
+  return {
+    promise,
+    cancel() {
+      if (timer) clearTimeout(timer);
+    },
+  };
 }
