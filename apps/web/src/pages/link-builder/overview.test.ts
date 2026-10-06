@@ -216,6 +216,23 @@ describe("overview feed", () => {
     expect(invented.map((item) => item.label).join("\n")).not.toContain(".example");
     expect(invented.some((item) => item.label.startsWith("Found"))).toBe(false);
     expect(overviewAction(invented, true)).toBe("Continuing");
+    const brand = overviewFeed({
+      steps: [
+        step(0, "Checking Google for on-topic forums"),
+        step(1, "Looking for threads"),
+        step(2, "Found Vitaminexpress"),
+        step(3, "Continuing"),
+      ],
+      lastEvent: "Found Vitaminexpress",
+      working: true,
+      blockers: [],
+    });
+    expect(brand.map((item) => item.label)).toEqual([
+      "Checking Google for on-topic forums",
+      "Looking for threads",
+      "Continuing",
+    ]);
+    expect(overviewAction(brand, true)).toBe("Continuing");
   });
 
   it("does not verify, or spin on Verify, when nothing was placed", () => {

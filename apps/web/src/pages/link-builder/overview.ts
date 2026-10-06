@@ -121,6 +121,7 @@ export function overviewFeed(input: {
     .filter((step) => {
       const label = step.lastAction?.trim() || step.kind;
       if (isStaleResearchLine(label)) return false;
+      if (!visibleFoundLine(label, input.forumName, input.threadName)) return false;
       if (!hasPlacement && offlineStage(step.kind, label)) return false;
       if (mentionsFixtureHost(label)) return false;
       if (input.hideExampleCopy && (mentionsExampleDomain(label) || leftoverHandoff(label))) {
@@ -148,6 +149,7 @@ export function overviewFeed(input: {
   const researchAlready = items.some((item) => /research/i.test(item.label));
   const hiddenEvent =
     isStaleResearchLine(event) ||
+    !visibleFoundLine(event, input.forumName, input.threadName) ||
     mentionsFixtureHost(event) ||
     (!hasPlacement && offlineStage("", event)) ||
     (event.toLowerCase() === "researching" && researchAlready) ||
@@ -196,6 +198,19 @@ export function overviewAction(items: OverviewFeedItem[], working: boolean): str
   }
   const last = [...items].reverse().find((item) => item.status !== "blocked");
   return last?.label ?? "";
+}
+
+/** A stored "Found …" line stays only when that forum or thread is on the project. */
+function visibleFoundLine(
+  label: string,
+  forumName: string | null | undefined,
+  threadName: string | null | undefined,
+): boolean {
+  if (!label.startsWith("Found ")) return true;
+  if (label.startsWith("Found forum ")) {
+    return researchResultName(label.slice("Found forum ".length)) === researchResultName(forumName);
+  }
+  return researchResultName(label.slice("Found ".length)) === researchResultName(threadName);
 }
 
 function researchRank(label: string): number | null {

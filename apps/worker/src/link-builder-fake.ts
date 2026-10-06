@@ -153,7 +153,10 @@ export function createPrismaFakeStore(
                 take: 8,
               },
               threadCandidates: {
-                select: { title: true },
+                select: {
+                  title: true,
+                  host: { select: { registrableDomain: true } },
+                },
                 orderBy: { createdAt: "desc" },
                 take: 8,
               },
@@ -293,7 +296,7 @@ function mapRun(run: {
     countNofollow: boolean;
     captchaLowBalanceCredits: number;
     hosts?: { registrableDomain: string }[];
-    threadCandidates?: { title: string }[];
+    threadCandidates?: { title: string; host?: { registrableDomain: string } | null }[];
   };
 }): FakeRunRecord | null {
   const status = LbRunStatusSchema.safeParse(run.status);
@@ -312,7 +315,11 @@ function mapRun(run: {
     stageBeats: run.steps.filter((step) => isCustomerStageKind(step.kind)).length,
     previousAction: latestAction(run.steps),
     forumName: firstRealName((run.project.hosts ?? []).map((host) => host.registrableDomain)),
-    threadName: firstRealName((run.project.threadCandidates ?? []).map((thread) => thread.title)),
+    threadName: firstRealName(
+      (run.project.threadCandidates ?? [])
+        .filter((thread) => researchResultName(thread.host?.registrableDomain ?? "") !== null)
+        .map((thread) => thread.title),
+    ),
     counters: {
       newToday: run.newToday,
       liveToday: run.liveToday,
