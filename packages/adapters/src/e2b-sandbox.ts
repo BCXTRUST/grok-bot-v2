@@ -52,11 +52,11 @@ import {
   extraDisplayInputCommand,
   extraDisplayLayout,
   observeExtraDisplayCommand,
+  PRIMARY_WATCH_VIEW_PORT,
   parseAllocatedExtraDisplay,
   parseExtraDisplayObservation,
   parseExtraDisplayViewPassword,
   parseReleasedExtraDisplay,
-  PRIMARY_WATCH_VIEW_PORT,
   releaseExtraDisplayCommand,
   screenControlKey,
 } from "./extra-displays.js";
@@ -644,7 +644,8 @@ export class E2BSandboxProvider implements SandboxProvider {
       // The SDK only keeps the URL in memory. A live x11vnc from an older
       // connection still serves the desktop on the standard noVNC port.
       if (!/already running/i.test(message)) return null;
-      if (await tcpOpen(desktop, 6080)) return watchUrl(`https://${desktop.getHost(6080)}/vnc.html`);
+      if (await tcpOpen(desktop, 6080))
+        return watchUrl(`https://${desktop.getHost(6080)}/vnc.html`);
       await stream.stop?.().catch(() => undefined);
       try {
         await stream.start();
@@ -660,18 +661,26 @@ export class E2BSandboxProvider implements SandboxProvider {
     layout: ReturnType<typeof extraDisplayLayout>,
     context: AdapterContext,
   ): Promise<string> {
-    const result = await desktop.commands.run(
-      ensurePrimaryViewCommand(layout, randomBytes(9).toString("base64url")),
-      { timeoutMs: 20_000, signal: context.signal },
-    );
-    if (result.exitCode !== 0) {
-      const detail = String(result.stderr || result.stdout || "");
-      const tagged = detail.match(/RAKAZO_SCREEN_ERROR=(\S+)/)?.[1];
+    try {
+      const result = await desktop.commands.run(
+        ensurePrimaryViewCommand(layout, randomBytes(9).toString("base64url")),
+        { timeoutMs: 20_000, signal: context.signal },
+      );
+      if (result.exitCode !== 0) {
+        throw new ComputerScreenUnavailableError(screenFailureDetail(result.stderr, result.stdout));
+      }
+      return parseExtraDisplayViewPassword(result.stdout);
+    } catch (error) {
+      if (error instanceof ComputerScreenUnavailableError) throw error;
+      const record = error as { stderr?: string; stdout?: string };
       throw new ComputerScreenUnavailableError(
-        tagged || detail.trim().slice(0, 240) || "primary view failed",
+        screenFailureDetail(
+          record?.stderr,
+          record?.stdout,
+          error instanceof Error ? error.message : "",
+        ),
       );
     }
-    return parseExtraDisplayViewPassword(result.stdout);
   }
 
   private async ensureExtraDisplay(
@@ -712,12 +721,11 @@ export class E2BSandboxProvider implements SandboxProvider {
         controlStreamStopCommand(),
         `printf %s ${shellQuote(controlToken)} > ${tokenFile}`,
         `x11vnc -storepasswd ${shellQuote(password)} ${passwordFile} >/dev/null`,
-        `x11vnc -bg -display ${shellQuote(desktop.display)} -forever -wait 50 -shared -rfbport ${layout.controlVncPort} -rfbauth ${passwordFile} 2>/tmp/rakazo-control-x11vnc.log`,
-        "cd /opt/noVNC/utils",
-        `(nohup ./novnc_proxy --vnc localhost:${layout.controlVncPort} --listen ${layout.controlPort} --web /opt/noVNC >/tmp/rakazo-control-novnc.log 2>&1 &)`,
+        `( x11vnc -bg -display ${shellQuote(desktop.display)} -forever -wait 50 -shared -rfbport ${layout.controlVncPort} -rfbauth ${passwordFile} ) </dev/null >/tmp/rakazo-control-x11vnc.log 2>&1`,
+        `( cd /opt/noVNC/utils && exec ./novnc_proxy --vnc localhost:${layout.controlVncPort} --listen ${layout.controlPort} --web /opt/noVNC ) </dev/null >/tmp/rakazo-control-novnc.log 2>&1 &`,
         `for i in $(seq 1 50); do netstat -tuln | grep -q ':${layout.controlPort} ' && exit 0; sleep 0.1; done`,
         "exit 1",
-      ].join(" && ");
+      ].join("\n");
       const result = await desktop.commands.run(command);
       if (result.exitCode !== 0) throw new Error(result.stderr || "control stream failed to start");
     } else {
@@ -747,6 +755,19 @@ export class E2BSandboxProvider implements SandboxProvider {
       this.controlStreams.delete(controlKey);
     }
   }
+}
+
+function screenFailureDetail(...parts: Array<string | undefined>): string {
+  const detail = parts.filter(Boolean).join("\n");
+  const tagged = detail.match(/RAKAZO_SCREEN_ERROR=(\S+)/)?.[1];
+  if (tagged) return tagged;
+  return (
+    detail
+      .replace(/RAKAZO_SCREEN_PASSWORD=\S+/g, "RAKAZO_SCREEN_PASSWORD=redacted")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 240) || "primary view failed"
+  );
 }
 
 function watchUrl(raw: string | null | undefined): string | null {

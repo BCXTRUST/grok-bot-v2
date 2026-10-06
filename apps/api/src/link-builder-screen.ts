@@ -118,7 +118,7 @@ export async function openProjectComputerScreen(
     if (error instanceof ORPCError) throw error;
     if (isStillStarting(error)) return { url: null, error: null };
     const message = publicScreenError(error);
-    console.error("link builder screen", message);
+    console.error("link builder screen", error instanceof Error ? error.name : "Error", message);
     return { url: null, error: message };
   } finally {
     deadline.cancel();
@@ -150,7 +150,7 @@ async function openScreen(
     if (error instanceof ORPCError) throw error;
     if (error instanceof ComputerBusyError) return { url: null, error: null };
     const message = publicScreenError(error);
-    console.error("link builder screen", message);
+    console.error("link builder screen", error instanceof Error ? error.name : "Error", message);
     return { url: null, error: message };
   }
 }
