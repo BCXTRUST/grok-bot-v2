@@ -74,6 +74,7 @@ describe("extra display ports", () => {
     expect(command).toContain("flock -w 20 8");
     expect(command).toContain("rfbport 5910");
     expect(command).toContain("--listen 6090");
+    expect(command).toContain("fuser -k 6090/tcp");
     expect(command).not.toContain("rfbport 5900");
     expect(command).not.toContain("pkill -f 'novnc_proxy");
     expect(() => ensurePrimaryViewCommand(extraDisplayLayout(1, ":0"), "secret")).toThrow(

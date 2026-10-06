@@ -318,6 +318,45 @@ describe("E2B computer backend", () => {
     expect(desktop.stream.start).toHaveBeenCalled();
   });
 
+  it("reuses the vendor noVNC port when x11vnc is already running", async () => {
+    const command = vi.fn(async (value: string) => {
+      if (value.includes("RAKAZO_SCREEN_INDEX=")) {
+        return { stdout: "RAKAZO_SCREEN_INDEX=0\n", stderr: "", exitCode: 0 };
+      }
+      if (value.includes("127.0.0.1")) return { stdout: "", stderr: "", exitCode: 0 };
+      return { stdout: "", stderr: "", exitCode: 0 };
+    });
+    const desktop = {
+      sandboxId: "e2b-live-stream",
+      display: ":0",
+      getHost: (port: number) => `${port}-desktop.test`,
+      commands: { run: command },
+      stream: {
+        start: vi.fn(async () => {
+          throw new Error("Stream is already running");
+        }),
+        stop: vi.fn(async () => undefined),
+        getUrl: () => {
+          throw new Error("Server is not running");
+        },
+      },
+    } as unknown as Sandbox;
+    const provider = new E2BSandboxProvider("test-key", {
+      create: vi.fn(async () => desktop),
+      connect: vi.fn(async () => desktop),
+      pause: vi.fn(async () => undefined),
+    });
+    const computer = await provider.provision({ botId: "bot-1", homePath: "/unused" }, context);
+    const screen = await provider.connectScreen(computer, { view: "stream" }, context);
+    expect(screen.url).toMatch(/^https:\/\/6080-desktop\.test\/vnc\.html\?/);
+    expect(screen.url).toContain("view_only=true");
+    expect(screen.url).not.toContain("password=");
+    expect(desktop.stream.stop).not.toHaveBeenCalled();
+    expect(command.mock.calls.some(([value]) => String(value).includes("screen-primary.lock"))).toBe(
+      false,
+    );
+  });
+
   it("gives Team bots distinct E2B screens and shared files", async () => {
     const files = new Map<string, Uint8Array>();
     const screenSlots = new Map<string, number>();

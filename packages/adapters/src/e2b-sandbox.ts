@@ -629,13 +629,7 @@ export class E2BSandboxProvider implements SandboxProvider {
     if (!stream || typeof stream.getUrl !== "function") return null;
     const read = (): string | null => {
       try {
-        const raw = stream.getUrl({ autoConnect: true, viewOnly: true, resize: "scale" });
-        if (typeof raw !== "string" || !raw.startsWith("https://")) return null;
-        const url = new URL(raw);
-        if (!url.searchParams.has("autoconnect")) url.searchParams.set("autoconnect", "true");
-        if (!url.searchParams.has("resize")) url.searchParams.set("resize", "scale");
-        url.searchParams.set("view_only", "true");
-        return url.toString();
+        return watchUrl(stream.getUrl({ autoConnect: true, viewOnly: true, resize: "scale" }));
       } catch {
         return null;
       }
@@ -645,8 +639,18 @@ export class E2BSandboxProvider implements SandboxProvider {
     if (typeof stream.start !== "function") return null;
     try {
       await stream.start();
-    } catch {
-      return null;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "";
+      // The SDK only keeps the URL in memory. A live x11vnc from an older
+      // connection still serves the desktop on the standard noVNC port.
+      if (!/already running/i.test(message)) return null;
+      if (await tcpOpen(desktop, 6080)) return watchUrl(`https://${desktop.getHost(6080)}/vnc.html`);
+      await stream.stop?.().catch(() => undefined);
+      try {
+        await stream.start();
+      } catch {
+        return null;
+      }
     }
     return read();
   }
@@ -743,6 +747,25 @@ export class E2BSandboxProvider implements SandboxProvider {
       this.controlStreams.delete(controlKey);
     }
   }
+}
+
+function watchUrl(raw: string | null | undefined): string | null {
+  if (typeof raw !== "string" || !raw.startsWith("https://")) return null;
+  const url = new URL(raw);
+  if (!url.searchParams.has("autoconnect")) url.searchParams.set("autoconnect", "true");
+  if (!url.searchParams.has("resize")) url.searchParams.set("resize", "scale");
+  url.searchParams.set("view_only", "true");
+  return url.toString();
+}
+
+async function tcpOpen(desktop: Sandbox, port: number): Promise<boolean> {
+  const result = await desktop.commands
+    .run(
+      `python3 -c 'import socket,sys;s=socket.socket();s.settimeout(0.4);s.connect(("127.0.0.1",int(sys.argv[1])))' ${port}`,
+      { timeoutMs: 5_000 },
+    )
+    .catch(() => undefined);
+  return result?.exitCode === 0;
 }
 
 function controlStreamStopCommand(controlToken?: string) {
