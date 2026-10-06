@@ -174,15 +174,25 @@ describe("link builder migration", () => {
       "LbRunStep",
       "LbCaptchaEvent",
       "LbOperatorTicket",
+      "LbAlert",
+      "LbWebhookDelivery",
+      "LbCostEntry",
+      "LbInboundMail",
     ]);
+    const sql = readdirSync(path.resolve(here, "../prisma/migrations"))
+      .map((dir) => path.join(path.resolve(here, "../prisma/migrations"), dir, "migration.sql"))
+      .filter((file) => existsSync(file))
+      .sort()
+      .map((file) => readFileSync(file, "utf8"))
+      .join("\n");
     for (const [, name, body = ""] of models) {
       const table = body.match(/@@map\("(lb_\w+)"\)/)?.[1];
       expect(table, name).toBeDefined();
       expect(body, name).toMatch(
         /workspace\s+Organization\s+@relation\(fields: \[workspaceId\], references: \[id\], onDelete: Cascade\)/,
       );
-      expect(migration, name).toContain(`CREATE TABLE "${table}"`);
-      expect(migration, name).toContain(
+      expect(sql, name).toContain(`CREATE TABLE "${table}"`);
+      expect(sql, name).toContain(
         `ALTER TABLE "${table}" ADD CONSTRAINT "${table}_workspaceId_fkey" FOREIGN KEY ("workspaceId") REFERENCES "organization"("id") ON DELETE CASCADE ON UPDATE CASCADE;`,
       );
     }
