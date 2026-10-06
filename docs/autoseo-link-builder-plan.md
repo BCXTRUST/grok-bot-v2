@@ -517,6 +517,16 @@ M7 deviations (as built):
 - The subscribe cursor now includes the latest placement and alert as well as the step and ticket.
 - A low Captell balance, a proxy lease past `renewsAt`, or a project with no mailbox pauses the project and emits one `project.paused` alert.
 
+M8 deviations (as built):
+
+- This milestone was built on Grok 4.7 after the Other Models pool was exhausted.
+- Daytona and E2B already forwarded command env (`env` / `envs`) and already ran the factory's `sh -c` start script, including the detached `nohup` serve. Offline tests drive both providers with fake SDK clients: env is present, a non-zero start exit fails, and a runner that never answers ping fails on the timeout. No live Daytona or E2B sandbox was used. The README states the image expectation (Node, `/usr/bin/chromium`, `rakazo-lb-browser` on `PATH`, a display for the operator live screen).
+- Kernel is an optional `BrowserSessionFactory` (`mode: "kernel"`) in `@rakazo/adapters`. It is constructed only when `LINK_BUILDER_BROWSER=kernel` and `LINK_BUILDER_KERNEL_SECRET_ID` are set. HTTP goes through an injected fetch, https only, credentials as `SecretRef`. Extension zips are not uploaded; `LINK_BUILDER_KERNEL_EXTENSION` names extensions already stored in the Kernel project. The operator live screen stays the sandbox display. No Kernel SDK and no live Kernel call. Browserbase is named in the architecture and is not in the M8 acceptance line, so it was not added.
+- Link-builder RPC is limited per workspace by an in-memory window in the API process (120 requests / 60 s). There is no shared limiter in the repo and no Redis.
+- Plan caps live in `@rakazo/linkbuilder-core` (`projects`, `live_per_day`, `personas`). A start checks them first. A placement is counted only while that project's `liveToday` is under `live_per_day` (per project, not summed across the workspace, because each project has its own local day). `PlanProvider` is in adapter-kit. `StaticPlanProvider` returns the `starter` plan (3 / 10 / 3). `StripePlanStub` returns the same plan and refuses every webhook. No Stripe SDK, no live key, and no billing route.
+- Scheduled work stays on the existing runner tick. It was not moved onto a Graphile task.
+- `proxyResolverFor` records a revealed proxy string once. `webhookUrlAllowed` stays syntactic outside production; in production it also resolves the hostname through an injected resolver and refuses when any answer is private, loopback, link-local, CGNAT, or metadata. Tests inject the resolver. Validation does not fetch the URL.
+
 ---
 
 ## 17. Decisions needed from Harold

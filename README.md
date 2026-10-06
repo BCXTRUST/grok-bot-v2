@@ -143,6 +143,41 @@ COMPUTER_E2E_MODEL=<vision-capable-openrouter-model-id> pnpm test:computer
 - [Mobile releases](./docs/mobile-release.md)
 - [Performance testing](./docs/performance.md)
 
+## Link Builder
+
+Link Builder is the weekday forum workflow inside this repo. A customer creates a project, fills the
+wizard, and clicks **Start building**. The worker then posts from a persona browser. The dashboard
+does not show a legal warning banner; the terms are in [PRODUCT.md](./PRODUCT.md).
+
+Customer setup, in wizard order:
+
+1. Project: brand name and allowed domains.
+2. Markets: country, locale, and timezone for each market.
+3. Persona: display name, language, and register.
+4. Captell token: paste it once. It is stored in the encrypted secret store and is not returned by the API.
+5. Proxy: an endpoint template. IPRoyal is the first preset, Oxylabs the second. Until a deployment sets a host, the placeholder is `proxy.example`.
+6. Mailbox: set `AGENTMAIL_API_KEY` to provision a real inbox. Without it, the address is `lb-<projectId>@inbox.example`.
+7. Disclosure: the default is `undisclosed_persona`.
+8. Start: clicking **Start building** records `responsibilityAck` for that project.
+9. Schedule: weekdays, inside the project's window.
+
+The persona browser runs in the computer sandbox (Docker locally, Daytona or E2B when that provider
+is selected). The sandbox image is expected to provide Node.js, Chromium at `/usr/bin/chromium`,
+`rakazo-lb-browser` on `PATH`, and a display the operator live screen can attach to. That image
+expectation has not been checked against a live Daytona or E2B sandbox.
+
+Kernel is optional. Set `LINK_BUILDER_BROWSER=kernel` and `LINK_BUILDER_KERNEL_SECRET_ID` to a
+secret id in the encrypted store. The adapter speaks HTTPS with an injected fetch and is not
+constructed otherwise. It does not upload extension zips; name extensions already stored in the
+Kernel project with `LINK_BUILDER_KERNEL_EXTENSION`. CI does not call Kernel.
+
+Plan limits in v1 come from a static `starter` stub (`projects` 3, `live_per_day` 10, `personas` 3).
+There is no Stripe SDK and no billing webhook. The link-builder API allows 120 requests per minute
+per workspace in each API process.
+
+Harold still runs these live canaries separately: Captell, two-board identity, the sandbox browser,
+AgentMail inbound, and an https webhook. This tree does not record their results.
+
 ## Contributing
 
 The Playwright workflow can also be started manually with **Sandbox provider** set to `e2b`, `daytona`, or `box`.
