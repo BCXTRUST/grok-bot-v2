@@ -223,7 +223,9 @@ describe("project computer screen", () => {
           scripts.push(request.argv.at(-1) ?? "");
           yield {
             type: "stdout" as const,
-            data: "9\t1\tMagnesium Krämpfe Forum - Google Suche\n",
+            data: request.argv.at(-1)?.includes("rakazo-chrome-kiosk-v2")
+              ? "ok\n"
+              : "9\t1\tMagnesium Krämpfe Forum - Google Suche\n",
           };
           yield { type: "exit" as const, code: 0 };
         },

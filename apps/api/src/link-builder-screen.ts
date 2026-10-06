@@ -364,7 +364,13 @@ async function showForumSearch(
     query ? desktopShowsProblemSearch(titles, query, shops) : desktopShowsForumSearch(titles);
   try {
     let titles = await visibleTitles(deps, actor, computer);
-    if (!onProblem(titles)) {
+    const stamp = await runDesktop(
+      deps,
+      actor,
+      computer,
+      "test -f /tmp/rakazo-chrome-kiosk-v2 && printf '%s\\n' ok || true",
+    ).catch(() => "");
+    if (!onProblem(titles) || !stamp.includes("ok")) {
       await runDesktop(deps, actor, computer, prepareKioskDesktopCommand(DESKTOP_DISPLAY));
       await runDesktop(deps, actor, computer, detachedBrowserCommand(DESKTOP_DISPLAY, url));
       titles = await visibleTitles(deps, actor, computer);

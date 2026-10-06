@@ -91,7 +91,7 @@ function hideDesktopChromeShell(): string {
 
 function dismissChromeDialogShell(): string {
   return [
-    'for name in "Welcome to Google Chrome" "Can\'t update Chrome" "Can’t update Chrome" "Cannot update Chrome" "Couldn\'t update Chrome" "Reinstall Chrome"; do',
+    'for name in "Welcome to Google Chrome" "Can\'t update Chrome" "Can’t update Chrome" "Cannot update Chrome" "Couldn\'t update Chrome" "Reinstall Chrome" "Google Translate"; do',
     "  dialog=$(xdotool search --onlyvisible --name \"$name\" 2>/dev/null | awk 'NR==1{print; exit}')",
     '  if [ -n "$dialog" ]; then',
     '    xdotool windowactivate --sync "$dialog" key Escape >/dev/null 2>&1 || true',
@@ -121,8 +121,9 @@ export function detachedBrowserCommand(display: string, url: string): string {
     'rm -rf "$dir"',
     'mkdir -p "$dir/Default"',
     'touch "$dir/First Run"',
-    `printf '%s\\n' '{"browser":{"check_default_browser":false,"has_seen_welcome_page":true},"distribution":{"skip_first_run_ui":true,"suppress_first_run_default_browser_prompt":true,"make_chrome_default_for_user":false}}' > "$dir/Default/Preferences"`,
-    'flags="--user-data-dir=$dir --kiosk --start-fullscreen --no-first-run --disable-fre --no-default-browser-check --disable-search-engine-choice-screen --disable-infobars --noerrdialogs --disable-session-crashed-bubble --hide-crash-restore-bubble --disable-component-update --disable-background-networking --disable-features=Translate,InfiniteSessionRestore,ChromeWhatsNewUI,OutdatedBuildDetector --password-store=basic --disable-sync --disable-dev-shm-usage --no-sandbox --window-position=0,0 --window-size=1280,800"',
+    `printf '%s\\n' '{"browser":{"check_default_browser":false,"has_seen_welcome_page":true},"translate":{"enabled":false},"intl":{"accept_languages":"de-DE,de","selected_languages":"de-DE,de"},"distribution":{"skip_first_run_ui":true,"suppress_first_run_default_browser_prompt":true,"make_chrome_default_for_user":false}}' > "$dir/Default/Preferences"`,
+    'flags="--user-data-dir=$dir --kiosk --start-fullscreen --no-first-run --disable-fre --no-default-browser-check --disable-search-engine-choice-screen --disable-translate --disable-infobars --noerrdialogs --disable-session-crashed-bubble --hide-crash-restore-bubble --disable-component-update --disable-background-networking --lang=de --accept-lang=de-DE,de --disable-features=Translate,TranslateUI,InfiniteSessionRestore,ChromeWhatsNewUI,OutdatedBuildDetector --password-store=basic --disable-sync --disable-dev-shm-usage --no-sandbox --window-position=0,0 --window-size=1280,800"',
+    "printf '%s\\n' translate-off > /tmp/rakazo-chrome-kiosk-v2",
     `setsid -f bash -c 'while true; do killall -q ${DESKTOP_PANEL_PROCESSES} 2>/dev/null; xdotool search --class fluxbox windowunmap >/dev/null 2>&1; sleep 1; done' </dev/null >/dev/null 2>&1 || true`,
     'if [ -x /usr/bin/google-chrome ]; then exec /usr/bin/google-chrome $flags "$url"; fi',
     'if [ -x /usr/bin/google-chrome-stable ]; then exec /usr/bin/google-chrome-stable $flags "$url"; fi',
@@ -172,6 +173,7 @@ export function raiseBrowserWindowCommand(display: string): string {
     '    xdotool windowmove "$id" 0 0 windowsize --sync "$id" "$width" "$height" windowactivate "$id" windowraise "$id" || true',
     '    xdotool windowstate --add FULLSCREEN "$id" 2>/dev/null || true',
     '    if command -v wmctrl >/dev/null 2>&1; then wmctrl -i -r "$id" -b add,fullscreen,above 2>/dev/null || true; fi',
+    '    xdotool key --window "$id" Escape >/dev/null 2>&1 || true',
     "    exit 0",
     "  fi",
     "  sleep 0.4",

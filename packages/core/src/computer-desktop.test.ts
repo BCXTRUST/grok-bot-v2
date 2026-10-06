@@ -89,6 +89,10 @@ describe("computer desktop window helpers", () => {
     expect(raised).toContain("FULLSCREEN");
     expect(command).toContain("fluxbox");
     expect(command).toContain("--disable-component-update");
+    expect(command).toContain("--disable-translate");
+    expect(command).toContain("--lang=de");
+    expect(command).toContain("TranslateUI");
+    expect(raised).toContain("Google Translate");
     expect(command).not.toContain("nohup");
   });
 
