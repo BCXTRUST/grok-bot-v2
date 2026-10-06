@@ -16,7 +16,11 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   captchaCropAcceptable,
   detectKnowledgeQuestion,
+  instructionClickSelector,
+  isLoginPath,
+  isSecretRegistrationPrompt,
   looksLikeKnowledgeQuestion,
+  pngDimensions,
   runPageHelper,
   solveImageCaptcha,
 } from "./captcha.js";
@@ -174,6 +178,49 @@ describe("captcha crop and widgets", () => {
     expect(captchaCropAcceptable(TINY_PNG)).toBe(false);
     expect(captchaCropAcceptable(noisePng(160, 48, 1))).toBe(true);
     expect(captchaCropAcceptable(noisePng(40, 40, 1))).toBe(false);
+  });
+
+  it("crops closer twice when the picture cannot be read", async () => {
+    const wide = noisePng(160, 48, 1);
+    const closer = noisePng(140, 40, 2);
+    const closest = noisePng(120, 32, 3);
+    const session = new FakeBrowserSession("s", persona, {
+      "https://board.example/register": {
+        elements: {
+          "#captcha": { png: wide, closerPngs: [closer, closest] },
+          "#answer": { text: "" },
+        },
+      },
+    });
+    await session.goto("https://board.example/register");
+    const solver = new FakeCaptchaSolver({
+      outcomes: [new CaptchaSolverError("not_read"), new CaptchaSolverError("not_read"), "K7XQ2"],
+    });
+    const solution = await solveImageCaptcha(
+      session,
+      { imageSelector: "#captcha", answerSelector: "#answer" },
+      solver,
+      context,
+    );
+    expect(solution).toMatchObject({ ok: true, answer: "K7XQ2" });
+    expect(solver.requests).toHaveLength(3);
+    expect(session.screenshots.map((shot) => shot.insetPx)).toEqual([undefined, 8, 16]);
+    const images = solver.requests.map((request) =>
+      request.type === "ImageToText" ? request.imagePng : new Uint8Array(),
+    );
+    expect(images[0]).toEqual(wide);
+    expect(images[1]).toEqual(closer);
+    expect(images[2]).toEqual(closest);
+  });
+
+  it("does not type an instruction or send a password question", () => {
+    expect(isSecretRegistrationPrompt("Enter the email code")).toBe(true);
+    expect(isSecretRegistrationPrompt("Wie heißt die Hauptstadt?")).toBe(false);
+    expect(instructionClickSelector("Click Weiter on this form.")).toContain("Weiter");
+    expect(instructionClickSelector("Click Login")).toBeNull();
+    expect(instructionClickSelector("Type Berlin")).toBeNull();
+    expect(isLoginPath("https://board.example/login")).toBe(true);
+    expect(isLoginPath("https://board.example/register")).toBe(false);
   });
 
   it("recognises knowledge questions and widget site keys", async () => {
@@ -411,7 +458,7 @@ describe.skipIf(!gate.available)(
       }
     });
 
-    it("re-crops once when the image cannot be read, then types the answer", async () => {
+    it("crops closer when the image cannot be read, then types the answer", async () => {
       const board = await startPhpbbFixture({ cookieWall: false, deliverMail: () => undefined });
       try {
         await session.goto(board.origin);
@@ -430,7 +477,12 @@ describe.skipIf(!gate.available)(
         expect(first?.type).toBe("ImageToText");
         expect(second?.type).toBe("ImageToText");
         if (first?.type === "ImageToText" && second?.type === "ImageToText") {
-          expect(second.imagePng.byteLength).toBeGreaterThan(first.imagePng.byteLength);
+          const before = pngDimensions(first.imagePng);
+          const after = pngDimensions(second.imagePng);
+          expect(before).not.toBeNull();
+          expect(after).not.toBeNull();
+          expect(after!.width).toBeLessThan(before!.width);
+          expect(after!.height).toBeLessThan(before!.height);
         }
       } finally {
         await board.close();

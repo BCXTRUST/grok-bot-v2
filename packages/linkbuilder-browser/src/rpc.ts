@@ -30,6 +30,7 @@ export const BrowserRpcRequestSchema = z.discriminatedUnion("method", [
       method: z.literal("elementScreenshotPng"),
       selector,
       paddingPx: z.number().int().min(0).max(200).optional(),
+      insetPx: z.number().int().min(0).max(200).optional(),
     })
     .strict(),
   z
@@ -110,7 +111,10 @@ export class BrowserRpcServer {
         return session.attribute(request.selector, request.name);
       case "elementScreenshotPng":
         return binary(
-          await session.elementScreenshotPng(request.selector, { paddingPx: request.paddingPx }),
+          await session.elementScreenshotPng(request.selector, {
+            paddingPx: request.paddingPx,
+            insetPx: request.insetPx,
+          }),
         );
       case "injectToken":
         this.secrets.add(request.token);
@@ -197,11 +201,15 @@ export class RpcBrowserSession implements BrowserSession {
       .parse(await this.call({ method: "attribute", selector, name }));
   }
 
-  elementScreenshotPng(selector: string, options?: { paddingPx?: number }): Promise<Uint8Array> {
+  elementScreenshotPng(
+    selector: string,
+    options?: { paddingPx?: number; insetPx?: number },
+  ): Promise<Uint8Array> {
     return this.bytes({
       method: "elementScreenshotPng",
       selector,
       paddingPx: options?.paddingPx,
+      insetPx: options?.insetPx,
     });
   }
 

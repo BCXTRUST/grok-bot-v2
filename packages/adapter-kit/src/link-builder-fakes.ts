@@ -78,6 +78,8 @@ export interface FakeElement {
   png?: Uint8Array;
   /** Used when a crop asks for padding. Falls back to `png`. */
   paddedPng?: Uint8Array;
+  /** Closer crops, consumed in order when `insetPx` is set. */
+  closerPngs?: Uint8Array[];
   onClick?: (page: FakePageController) => void;
 }
 
@@ -114,6 +116,7 @@ function clonePage(page: FakePage): FakePage {
     elements[selector] = {
       ...element,
       attributes: element.attributes ? { ...element.attributes } : undefined,
+      closerPngs: element.closerPngs ? [...element.closerPngs] : undefined,
     };
   }
   return { ...page, elements, formFields: page.formFields?.map((field) => ({ ...field })) };
@@ -121,6 +124,7 @@ function clonePage(page: FakePage): FakePage {
 
 export class FakeBrowserSession implements BrowserSession {
   readonly actions: FakeBrowserAction[] = [];
+  readonly screenshots: Array<{ selector: string; paddingPx?: number; insetPx?: number }> = [];
   private readonly pages = new Map<string, FakePage>();
   private currentUrl = "about:blank";
   private closed = false;
@@ -178,9 +182,18 @@ export class FakeBrowserSession implements BrowserSession {
 
   async elementScreenshotPng(
     selector: string,
-    options?: { paddingPx?: number },
+    options?: { paddingPx?: number; insetPx?: number },
   ): Promise<Uint8Array> {
+    this.screenshots.push({
+      selector,
+      paddingPx: options?.paddingPx,
+      insetPx: options?.insetPx,
+    });
     const element = this.require(selector);
+    if (options?.insetPx && element.closerPngs && element.closerPngs.length > 0) {
+      const closer = element.closerPngs.shift();
+      if (closer) return closer;
+    }
     if (options?.paddingPx && element.paddedPng) return element.paddedPng;
     return element.png ?? fakePngBytes(256, `${selector}:${element.text ?? ""}`);
   }

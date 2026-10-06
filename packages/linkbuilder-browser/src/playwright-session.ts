@@ -198,18 +198,26 @@ export class PlaywrightBrowserSession implements BrowserSession {
 
   async elementScreenshotPng(
     selector: string,
-    options?: { paddingPx?: number },
+    options?: { paddingPx?: number; insetPx?: number },
   ): Promise<Uint8Array> {
     const padding = options?.paddingPx ?? 0;
+    const inset = options?.insetPx ?? 0;
     const locator = this.first(selector);
-    if (padding <= 0) return new Uint8Array(await locator.screenshot({ type: "png" }));
+    if (padding <= 0 && inset <= 0)
+      return new Uint8Array(await locator.screenshot({ type: "png" }));
     const box = await locator.boundingBox();
     if (!box) throw new Error(`Could not crop ${selector}`);
     const viewport = this.page.viewportSize() ?? { width: 1280, height: 720 };
-    const x = Math.max(0, Math.floor(box.x - padding));
-    const y = Math.max(0, Math.floor(box.y - padding));
-    const right = Math.min(viewport.width, Math.ceil(box.x + box.width + padding));
-    const bottom = Math.min(viewport.height, Math.ceil(box.y + box.height + padding));
+    const x = Math.max(0, Math.floor(inset > 0 ? box.x + inset : box.x - padding));
+    const y = Math.max(0, Math.floor(inset > 0 ? box.y + inset : box.y - padding));
+    const right = Math.min(
+      viewport.width,
+      Math.ceil(inset > 0 ? box.x + box.width - inset : box.x + box.width + padding),
+    );
+    const bottom = Math.min(
+      viewport.height,
+      Math.ceil(inset > 0 ? box.y + box.height - inset : box.y + box.height + padding),
+    );
     return new Uint8Array(
       await this.page.screenshot({
         type: "png",

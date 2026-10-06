@@ -73,9 +73,10 @@ describe("CaptellHttpSolver", () => {
     );
     expect(emulator.requests.map((request) => request.body)).toEqual([
       {
-        type: "RecaptchaV2Enterprise",
+        type: "RecaptchaV2",
         websiteURL: "https://board.example/register",
         websiteKey: "ent-1",
+        isEnterprise: true,
       },
       { type: "GeeTest", websiteURL: "https://board.example/register", gt: "gt-1" },
       {
@@ -119,8 +120,11 @@ describe("CaptellHttpSolver", () => {
       method: "POST",
       url: "https://captell.example/api/v1/solve",
       authorization: `Bearer ${TOKEN}`,
+      contentType: "application/json",
       body: { type: "ImageToText", body: Buffer.from(png).toString("base64") },
     });
+    expect(JSON.stringify(emulator.requests[0]?.body)).not.toContain("data:");
+    expect(emulator.requests.every((request) => !request.url.includes("/tasks/"))).toBe(true);
     expect(emulator.requests[1]?.body).toEqual({
       type: "RecaptchaV2",
       websiteURL: "https://board.example/register",
@@ -211,6 +215,7 @@ describe("CaptellHttpSolver", () => {
       method: "GET",
       url: "https://captell.example/api/v1/balance",
       authorization: `Bearer ${TOKEN}`,
+      contentType: "application/json",
     });
     const sand = new CaptellEmulator([{ op: "balance", body: { credits: 1, sandbox: true } }]);
     await expect(solver(sand).balance(context)).rejects.toMatchObject({
@@ -234,5 +239,226 @@ describe("CaptellHttpSolver", () => {
     } catch (error) {
       expect(error instanceof Error ? error.message : "").not.toContain(TOKEN);
     }
+  });
+
+  it("reads a synchronous ready result and does not poll the task", async () => {
+    const emulator = new CaptellEmulator([
+      {
+        op: "solve",
+        body: {
+          id: "job_ready",
+          status: "ready",
+          type: "RecaptchaV2",
+          credits: 10,
+          balance: 0,
+          answer: "top-level",
+          solution: { gRecaptchaResponse: "from-solution" },
+          sandbox: false,
+        },
+      },
+      {
+        op: "solve",
+        body: {
+          id: "job_text",
+          status: "ready",
+          type: "ImageToText",
+          credits: 4,
+          balance: 0,
+          answer: "ignored",
+          solution: { text: "K7XQ2", token: "other" },
+          sandbox: false,
+        },
+      },
+    ]);
+    const client = solver(emulator);
+    await expect(
+      client.solve(
+        {
+          type: "recaptcha_v2",
+          websiteURL: "https://board.example/register",
+          websiteKey: "site-key-1",
+        },
+        context,
+      ),
+    ).resolves.toEqual({
+      answer: "from-solution",
+      credits: 10,
+      balance: 0,
+      taskId: "job_ready",
+    });
+    await expect(client.solve({ type: "ImageToText", imagePng: png }, context)).resolves.toEqual({
+      answer: "K7XQ2",
+      credits: 4,
+      balance: 0,
+      taskId: "job_text",
+    });
+    expect(emulator.requests.every((request) => !request.url.includes("/tasks/"))).toBe(true);
+  });
+
+  it("sends invisible v2 as RecaptchaV2, snaps v3 scores, and copies optional fields", async () => {
+    const emulator = new CaptellEmulator([
+      captellCues.tokenSolved(),
+      captellCues.tokenSolved(),
+      captellCues.tokenSolved(),
+      captellCues.tokenSolved(),
+      captellCues.tokenSolved(),
+    ]);
+    const client = solver(emulator);
+    const page = "https://board.example/register";
+    await client.solve(
+      { type: "recaptcha_v2", websiteURL: page, websiteKey: "k", isInvisible: true },
+      context,
+    );
+    await client.solve(
+      { type: "recaptcha_v2", websiteURL: page, websiteKey: "k", isInvisible: "true" },
+      context,
+    );
+    await client.solve(
+      { type: "recaptcha_v2", websiteURL: page, websiteKey: "k", isInvisible: "1" },
+      context,
+    );
+    await client.solve({ type: "recaptcha_v3", websiteURL: page, websiteKey: "k" }, context);
+    await client.solve(
+      {
+        type: "turnstile",
+        websiteURL: page,
+        websiteKey: "k",
+        action: "register",
+        cData: "cd",
+        pageAction: "signup",
+        minScore: 0.8,
+      },
+      context,
+    );
+    expect(emulator.requests.map((request) => request.body)).toEqual([
+      { type: "RecaptchaV2", websiteURL: page, websiteKey: "k", isInvisible: true },
+      { type: "RecaptchaV2", websiteURL: page, websiteKey: "k", isInvisible: true },
+      { type: "RecaptchaV2", websiteURL: page, websiteKey: "k", isInvisible: true },
+      { type: "RecaptchaV3", websiteURL: page, websiteKey: "k", minScore: 0.3 },
+      {
+        type: "Turnstile",
+        websiteURL: page,
+        websiteKey: "k",
+        action: "register",
+        cData: "cd",
+        pageAction: "signup",
+        minScore: 0.8,
+      },
+    ]);
+    const scores = new CaptellEmulator([
+      captellCues.tokenSolved(),
+      captellCues.tokenSolved(),
+      captellCues.tokenSolved(),
+    ]);
+    const scored = solver(scores);
+    for (const minScore of [0.5, 0.6, 0.85]) {
+      await scored.solve(
+        { type: "recaptcha_v3", websiteURL: page, websiteKey: "k", minScore },
+        context,
+      );
+    }
+    expect(
+      scores.requests.map((request) => (request.body as { minScore: number }).minScore),
+    ).toEqual([0.3, 0.7, 0.9]);
+  });
+
+  it("retries a failed solve and does not retry a request that never starts a job", async () => {
+    const upstream = new CaptellEmulator([
+      { op: "solve", status: 422, body: { code: "UPSTREAM", message: "upstream" }, times: 2 },
+      {
+        op: "solve",
+        body: {
+          id: "job_after",
+          status: "ready",
+          credits: 10,
+          balance: 0,
+          answer: "token-after-retry",
+          solution: {},
+        },
+      },
+    ]);
+    await expect(
+      solver(upstream, { maxRetries: 4 }).solve(
+        {
+          type: "recaptcha_v2",
+          websiteURL: "https://board.example/register",
+          websiteKey: "k",
+        },
+        context,
+      ),
+    ).resolves.toMatchObject({ answer: "token-after-retry", taskId: "job_after", balance: 0 });
+    expect(upstream.requests).toHaveLength(3);
+
+    const busy = new CaptellEmulator([
+      {
+        op: "solve",
+        status: 422,
+        body: { message: "No solver is free right now. Credits were returned." },
+        times: 1,
+      },
+      captellCues.tokenSolved(),
+    ]);
+    await expect(
+      solver(busy, { maxRetries: 4 }).solve({ type: "ImageToText", imagePng: png }, context),
+    ).resolves.toMatchObject({ answer: "fixture-token" });
+    expect(busy.requests).toHaveLength(2);
+
+    const stopped = [
+      { status: 422, body: { code: "UNREADABLE", message: "crop closer" }, code: "not_read" },
+      { status: 400, body: { code: "MISSING_FIELD" }, code: "invalid_request" },
+      { status: 400, body: { code: "FILE_TOO_SMALL" }, code: "invalid_request" },
+      { status: 400, body: { code: "UNKNOWN_TYPE" }, code: "unsupported" },
+      { status: 400, body: { code: "BAD_JSON" }, code: "invalid_request" },
+      { status: 401, body: { code: "UNAUTHORIZED" }, code: "refused" },
+      {
+        status: 402,
+        body: { code: "INSUFFICIENT_CREDITS", message: "Not enough credits" },
+        code: "credits",
+      },
+      { status: 499, body: { code: "ABORTED", message: "The try was stopped." }, code: "error" },
+      { status: 422, body: { code: "PAUSED" }, code: "invalid_request" },
+      {
+        status: 422,
+        body: { code: "TIMEOUT", message: "The solver did not answer in time." },
+        code: "error",
+        requests: 5,
+      },
+    ] as const;
+    for (const entry of stopped) {
+      const emulator = new CaptellEmulator([
+        { op: "solve", status: entry.status, body: entry.body, times: 5 },
+      ]);
+      const error = await solver(emulator, { maxRetries: 4 })
+        .solve({ type: "ImageToText", imagePng: png }, context)
+        .then(
+          () => null,
+          (caught: unknown) => caught,
+        );
+      expect(error).toBeInstanceOf(CaptchaSolverError);
+      expect(error).toMatchObject({ code: entry.code, retryable: false });
+      expect(emulator.requests).toHaveLength("requests" in entry ? entry.requests : 1);
+      expect(error instanceof Error ? error.message : "").not.toMatch(/not enough credits/i);
+    }
+  });
+
+  it("returns an instruction without calling the desk for a password, 2FA or email code", async () => {
+    const instructed = new CaptellEmulator([
+      {
+        op: "answer",
+        body: { status: "ready", instruction: "Click Weiter on this form." },
+      },
+    ]);
+    await expect(
+      solver(instructed).answerQuestion({ question: "Wie heißt die Hauptstadt?" }, context),
+    ).resolves.toEqual({ instruction: "Click Weiter on this form." });
+
+    const secret = new CaptellEmulator();
+    await expect(
+      solver(secret).answerQuestion({ question: "What is your password?" }, context),
+    ).resolves.toEqual({ couldNotAnswer: true });
+    await expect(
+      solver(secret).answerQuestion({ question: "Enter the email code" }, context),
+    ).resolves.toEqual({ couldNotAnswer: true });
+    expect(secret.requests).toHaveLength(0);
   });
 });

@@ -729,7 +729,7 @@ function CaptchaPanel({
           </div>
           {event.outcome === "sandbox" ? (
             <div className="text-[12px] text-[#E8B931]">
-              Sandbox answer. The Captell desk is not production-configured.
+              Sandbox answer. The solver is not production-configured.
             </div>
           ) : null}
         </div>

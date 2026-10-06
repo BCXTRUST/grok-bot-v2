@@ -102,9 +102,10 @@ export interface BrowserSession {
   attribute(selector: string, name: string): Promise<string | null>;
   /**
    * Tight PNG of the first match, used for image captchas instead of a full screenshot.
-   * `paddingPx` expands the crop once when the tight image is too small or the wrong shape.
+   * `paddingPx` expands the crop when the tight image is too small. `insetPx` pulls the crop
+   * in from the element edge when the solver cannot read the picture.
    */
-  elementScreenshotPng(selector: string, options?: { paddingPx?: number }): Promise<Uint8Array>;
+  elementScreenshotPng(selector: string, options?: ElementScreenshotOptions): Promise<Uint8Array>;
   pageText(): Promise<string>;
   /** Resolves true once the selector matches, false when the timeout elapses first. */
   waitFor(selector: string, options: { timeoutMs: number }): Promise<boolean>;
@@ -174,10 +175,34 @@ export const ImageToTextRequestSchema = z.object({
 });
 export type ImageToTextRequest = z.infer<typeof ImageToTextRequestSchema>;
 
+/** Captell accepts a boolean and the strings the parser treats as true. */
+export const CaptchaFlagSchema = z.union([
+  z.boolean(),
+  z.literal("true"),
+  z.literal("false"),
+  z.literal("1"),
+  z.literal("0"),
+]);
+
+export interface ElementScreenshotOptions {
+  paddingPx?: number;
+  insetPx?: number;
+}
+
 export const TokenRequestSchema = z.object({
   type: TokenCaptchaTypeSchema,
   websiteURL: z.url({ protocol: /^https?$/ }),
   websiteKey: z.string().min(1),
+  /** Invisible v2 is RecaptchaV2 with this flag, not a separate type. */
+  isInvisible: CaptchaFlagSchema.optional(),
+  isEnterprise: CaptchaFlagSchema.optional(),
+  pageAction: z.string().min(1).max(200).optional(),
+  minScore: z.number().min(0).max(1).optional(),
+  action: z.string().min(1).max(200).optional(),
+  cData: z.string().min(1).max(2_000).optional(),
+  chlPageData: z.string().min(1).max(8_000).optional(),
+  enterprisePayload: z.union([z.string().min(1), z.record(z.string(), z.unknown())]).optional(),
+  challenge: z.string().min(1).max(8_000).optional(),
 });
 export type TokenRequest = z.infer<typeof TokenRequestSchema>;
 
@@ -201,9 +226,13 @@ export type CaptchaQuestionRequest = z.infer<typeof CaptchaQuestionRequestSchema
 
 export const CaptchaQuestionResultSchema = z.union([
   z.object({ answer: z.string().min(1) }).strict(),
+  z.object({ instruction: z.string().min(1) }).strict(),
   z.object({ couldNotAnswer: z.literal(true) }).strict(),
 ]);
-export type CaptchaQuestionResult = { answer: string } | { couldNotAnswer: true };
+export type CaptchaQuestionResult =
+  | { answer: string }
+  | { instruction: string }
+  | { couldNotAnswer: true };
 
 export const CaptchaBalanceSchema = z.object({ credits: z.number().int() });
 export type CaptchaBalance = z.infer<typeof CaptchaBalanceSchema>;
@@ -245,6 +274,14 @@ export interface CaptchaSolver {
     request: CaptchaQuestionRequest,
     context: AdapterContext,
   ): Promise<CaptchaQuestionResult>;
+}
+
+const SECRET_REGISTRATION_PROMPT =
+  /password|passwort|kennwort|2fa|two[- ]factor|authenticator|\botp\b|one[- ]time|e-?mail code|verification code|bestätigungscode|confirmation code/i;
+
+/** Passwords, 2FA and email codes are never sent to a solver. */
+export function isSecretRegistrationPrompt(text: string): boolean {
+  return SECRET_REGISTRATION_PROMPT.test(text);
 }
 
 /** Validates a solve request before any adapter spends credits on it. */

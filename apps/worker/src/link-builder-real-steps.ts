@@ -6,6 +6,7 @@ import {
   type BrowserSessionFactory,
   type CaptchaSolver,
   CaptchaSolverError,
+  isSecretRegistrationPrompt,
   type MailboxProvider,
   type ProxyEndpoint,
   type ProxyProvider,
@@ -82,6 +83,8 @@ import {
   type CaptchaChallenge,
   enrichCaptchaChallenge,
   formErrorFixable,
+  instructionClickSelector,
+  isLoginPath,
   placeCaptchaToken,
   type RegistrationResult,
   runPageHelper,
@@ -1172,11 +1175,9 @@ async function questionCaptcha(
   challenge: Extract<CaptchaChallenge, { kind: "question" }>,
   attempt: number,
 ): Promise<StepResult> {
-  const answer = await ctx.services.captcha.answerQuestion(
-    { question: challenge.question || undefined, pageText: await entry.session.pageText() },
-    ctx.adapter,
-  );
-  if ("couldNotAnswer" in answer) {
+  const question = challenge.question.trim();
+  const prompt = question || (await entry.session.pageText()).trim().slice(0, 400);
+  const parkQuestion = async (note: string): Promise<StepResult> => {
     const artifactIds = await screenshot(ctx, entry, "captcha");
     entry.registerFormReady = false;
     return withEvent(
@@ -1186,7 +1187,7 @@ async function questionCaptcha(
         hostId: host.id,
         artifactIds,
         outcome: { captcha: "question_unanswered" },
-        apply: park(ctx, host, "captcha_unsolved", { note: challenge.question.slice(0, 500) }),
+        apply: park(ctx, host, "captcha_unsolved", { note: note.slice(0, 500) }),
       },
       captchaEvent(ctx, host, attempt, {
         type: "knowledge_question",
@@ -1195,6 +1196,38 @@ async function questionCaptcha(
         credits: 0,
       }),
       0,
+    );
+  };
+  if (!prompt || isSecretRegistrationPrompt(prompt) || isLoginPath(await entry.session.url())) {
+    return parkQuestion(question || prompt);
+  }
+  const answer = await ctx.services.captcha.answerQuestion(
+    question ? { question } : { pageText: prompt },
+    ctx.adapter,
+  );
+  if ("couldNotAnswer" in answer) {
+    return parkQuestion(question || prompt);
+  }
+  if ("instruction" in answer) {
+    const selector = instructionClickSelector(answer.instruction);
+    if (!selector) return parkQuestion(`${question || prompt}\n${answer.instruction}`);
+    await entry.session.click(selector);
+    if (isLoginPath(await entry.session.url())) {
+      return parkQuestion(`${question || prompt}\n${answer.instruction}`);
+    }
+    return finishRegistration(
+      ctx,
+      host,
+      entry,
+      driver,
+      attempt,
+      {
+        type: "knowledge_question",
+        door: "https_api",
+        outcome: "placed_submitted",
+        credits: 0,
+      },
+      await driver.readRegistrationResult(entry.session, { waitMs: 15_000 }),
     );
   }
   await entry.session.fill(challenge.answerSelector, answer.answer);
@@ -1242,13 +1275,15 @@ async function widgetCaptcha(
     helperVersion: entry.helperVersion ?? PAGE_HELPER_VERSION,
   });
   if (run.decision.action === "pause_project") {
-    await pauseForLowBalance(ctx, 0, { type: challenge.type, door: "page_helper" });
-    return {
-      kind: "step",
-      lastAction: "Paused, Captell balance is low",
-      hostId: host.id,
-      outcome: { helper: run.decision.action },
-    };
+    const paused = await pauseForLowBalance(ctx, 0, { type: challenge.type, door: "page_helper" });
+    if (paused) {
+      return {
+        kind: "step",
+        lastAction: "Paused, Captell balance is low",
+        hostId: host.id,
+        outcome: { helper: run.decision.action },
+      };
+    }
   }
   if (run.decision.action !== "submit") {
     const artifactIds = await screenshot(ctx, entry, "captcha");
@@ -1342,14 +1377,16 @@ async function solverFailure(
 ): Promise<StepResult> {
   const artifactIds = await screenshot(ctx, entry, "captcha");
   if (error.code === "credits") {
-    await pauseForLowBalance(ctx, 0);
-    return {
-      kind: "step",
-      lastAction: "Paused, Captell balance is low",
-      hostId: host.id,
-      artifactIds,
-      outcome: { captcha: "credits" },
-    };
+    const paused = await pauseForLowBalance(ctx, 0);
+    if (paused) {
+      return {
+        kind: "step",
+        lastAction: "Paused, Captell balance is low",
+        hostId: host.id,
+        artifactIds,
+        outcome: { captcha: "credits" },
+      };
+    }
   }
   const outcome: LbCaptchaOutcome =
     error.code === "sandbox"

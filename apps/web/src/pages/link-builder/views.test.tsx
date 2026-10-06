@@ -128,7 +128,7 @@ describe("link builder screens", () => {
   it("shows a sandbox hint on the Captchas tab", () => {
     const html = renderToStaticMarkup(<LinkBuilderPreview screen="captchas" />);
     expect(html).toContain("placed_submitted");
-    expect(html).toContain("Sandbox answer. The Captell desk is not production-configured.");
+    expect(html).toContain("Sandbox answer. The solver is not production-configured.");
   });
 
   it("renders the brand step", () => {

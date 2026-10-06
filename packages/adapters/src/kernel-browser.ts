@@ -272,24 +272,21 @@ class KernelBrowserSession implements BrowserSession {
 
   async elementScreenshotPng(
     selector: string,
-    options?: { paddingPx?: number },
+    options?: { paddingPx?: number; insetPx?: number },
   ): Promise<Uint8Array> {
     const result = await this.playwright(
       `const loc = page.locator(args.selector).first();
        const box = await loc.boundingBox();
        if (!box) throw new Error("element not found");
        const pad = args.paddingPx ?? 0;
-       const bytes = await page.screenshot({
-         type: "png",
-         clip: {
-           x: Math.max(0, box.x - pad),
-           y: Math.max(0, box.y - pad),
-           width: box.width + pad * 2,
-           height: box.height + pad * 2,
-         },
-       });
+       const inset = args.insetPx ?? 0;
+       const x = Math.max(0, inset > 0 ? box.x + inset : box.x - pad);
+       const y = Math.max(0, inset > 0 ? box.y + inset : box.y - pad);
+       const width = inset > 0 ? Math.max(1, box.width - inset * 2) : box.width + pad * 2;
+       const height = inset > 0 ? Math.max(1, box.height - inset * 2) : box.height + pad * 2;
+       const bytes = await page.screenshot({ type: "png", clip: { x, y, width, height } });
        return { base64: Buffer.from(bytes).toString("base64") };`,
-      { selector, paddingPx: options?.paddingPx ?? 0 },
+      { selector, paddingPx: options?.paddingPx ?? 0, insetPx: options?.insetPx ?? 0 },
       z.object({ base64: z.string() }),
     );
     return Buffer.from(result.base64, "base64");
