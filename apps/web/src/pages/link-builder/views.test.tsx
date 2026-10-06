@@ -39,8 +39,9 @@ describe("link builder screens", () => {
 
   it("shows NEW and LIVE rings and an operator pill", () => {
     const html = renderToStaticMarkup(<LinkBuilderPreview screen="dashboard" />);
-    expect(html).toContain("NEW");
-    expect(html).toContain("LIVE");
+    expect(html).toContain("New accounts per day");
+    expect(html).toContain("Live links per day");
+    expect(html).toContain("Live links per week");
     expect(html).toContain("needs operator ×1");
     expect(html).toContain("Parked fragen.nordlicht.example");
   });
@@ -50,7 +51,10 @@ describe("link builder screens", () => {
     expect(html).toContain("Start building");
     expect(html).toContain("responsible for this content");
     expect(html).not.toContain('type="checkbox"');
-    expect(html).toContain("undisclosed persona");
+    expect(html).toContain("Writes as the persona");
+    expect(html).toContain("New accounts per day");
+    expect(html).not.toContain("New / day");
+    expect(html).not.toContain("Week cap");
   });
 
   it("offers continue and skip on the operator ticket", () => {

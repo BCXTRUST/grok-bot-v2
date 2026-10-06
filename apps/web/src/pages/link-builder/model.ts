@@ -30,6 +30,22 @@ export const WIZARD_STEPS = [
   "Review",
 ] as const;
 
+/** One short line under each step title. Same order as `WIZARD_STEPS`. */
+export const WIZARD_STEP_HINTS = [
+  "Name the project, the brand, and the sites posts may link to.",
+  "The person who writes, and where forum mail goes.",
+  "How many accounts to open, and how many links to publish.",
+  "What to write about, and which page to link.",
+  "Where to post, and which forums to skip.",
+  "Check this, then start.",
+] as const;
+
+export const QUOTA_LABELS = {
+  newPerDay: "New accounts per day",
+  livePerDay: "Live links per day",
+  liveWeek: "Live links per week",
+} as const;
+
 export const FUNNEL_COLUMNS = [
   { id: "discovered", label: "Discovered", statuses: ["discovered", "probed"] },
   { id: "qualified", label: "Qualified", statuses: ["qualified"] },
@@ -223,7 +239,16 @@ export function artifactImageSrc(artifact: {
 
 export function warmupNote(hours = 24): string {
   const days = Math.max(1, Math.ceil(hours / 24));
-  return `First LIVE after warm-up, about ${days} ${days === 1 ? "day" : "days"}.`;
+  const span = days === 1 ? "1 day" : `${days} days`;
+  return `The first live link waits about ${span}. Until then the account posts without a link.`;
+}
+
+export function disclosureLabel(mode: string): string {
+  if (mode === "undisclosed_persona") return "Writes as the persona";
+  if (mode === "disclosed_persona") return "Persona, and says it is a promotion";
+  if (mode === "disclosed_brand") return "Writes as the brand";
+  if (mode === "drafts_only") return "Drafts only, nothing is posted";
+  return mode.replaceAll("_", " ");
 }
 
 export function addMarket(draft: WizardDraft, country: string): WizardDraft {

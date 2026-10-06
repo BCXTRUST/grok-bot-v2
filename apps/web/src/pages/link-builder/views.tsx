@@ -20,11 +20,14 @@ import {
 } from "../../components/beautiful-ui/primitives";
 import {
   addMarket,
+  disclosureLabel,
   FUNNEL_COLUMNS,
   funnelColumnId,
   LB_WIZARD_COUNTRIES,
+  QUOTA_LABELS,
   RESPONSIBILITY_SENTENCE,
   removeMarket,
+  WIZARD_STEP_HINTS,
   WIZARD_STEPS,
   type WizardDraft,
   warmupNote,
@@ -69,9 +72,13 @@ export function DashboardView({
                 </div>
                 <Pill label={card.activityLabel} />
               </div>
-              <div className="flex items-center gap-4">
-                <Ring label="NEW" value={card.newToday} max={card.newPerDay} />
-                <Ring label="LIVE" value={card.liveToday} max={card.livePerDay} />
+              <div className="flex flex-wrap items-center gap-4">
+                <Ring label={QUOTA_LABELS.newPerDay} value={card.newToday} max={card.newPerDay} />
+                <Ring
+                  label={QUOTA_LABELS.livePerDay}
+                  value={card.liveToday}
+                  max={card.livePerDay}
+                />
                 <WeekBar value={card.liveWeek} max={card.liveWeekCap} />
               </div>
               <div className="truncate text-[12.5px] text-[#A6A6AD]">
@@ -112,12 +119,12 @@ export function WizardView({
   const last = WIZARD_STEPS.length - 1;
   return (
     <main
-      className="grid h-full min-h-dvh bg-[#050506]"
-      style={{ gridTemplateColumns: "240px minmax(0, 1fr)" }}
+      className="grid h-full min-h-dvh w-full min-w-0 overflow-x-clip bg-[#050506]"
+      style={{ gridTemplateColumns: "280px minmax(0, 1fr)" }}
     >
       <ol
         aria-label="Setup steps"
-        className="flex flex-col gap-0.5 border-r border-[#2A2A31] px-3 py-8"
+        className="flex min-w-0 flex-col gap-0.5 overflow-y-auto border-r border-[#2A2A31] px-3 py-8"
         style={{ position: "sticky", top: 0, height: "100vh", alignSelf: "start" }}
       >
         {WIZARD_STEPS.map((label, index) => {
@@ -131,7 +138,7 @@ export function WizardView({
                 aria-label={`Step ${index + 1} of ${WIZARD_STEPS.length}: ${label}${done ? ", done" : ""}`}
                 disabled={busy || index > step}
                 onClick={() => onGoTo(index)}
-                className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[13px] ${
+                className={`flex w-full min-w-0 items-start gap-2 rounded-lg px-2 py-1.5 text-left text-[13px] leading-snug ${
                   current
                     ? "bg-[#1C1C20] text-[#ECECEE] shadow-[inset_2px_0_0_#7785ff]"
                     : done
@@ -140,7 +147,7 @@ export function WizardView({
                 } disabled:hover:bg-transparent`}
               >
                 <StepMark index={index} done={done} />
-                <span>{label}</span>
+                <span className="min-w-0 flex-1 whitespace-normal break-words">{label}</span>
               </button>
             </li>
           );
@@ -149,6 +156,7 @@ export function WizardView({
       <div className="rk-scroll min-w-0 flex-1 overflow-y-auto">
         <div className="mx-auto flex w-full max-w-xl flex-col gap-4 px-6 py-8">
           <h1 className="text-[22px] font-medium text-[#ECECEE]">{title}</h1>
+          <p className="text-[13px] text-[#A6A6AD]">{WIZARD_STEP_HINTS[step]}</p>
           <BuiCard className="flex flex-col gap-3 p-4">
             {step === 0 ? <BrandFields draft={draft} onChange={onChange} /> : null}
             {step === 1 ? <PersonaFields draft={draft} onChange={onChange} /> : null}
@@ -194,6 +202,7 @@ function StepMark({ index, done }: { index: number; done: boolean }) {
   if (done) {
     return (
       <svg
+        className="mt-0.5 shrink-0"
         width="14"
         height="14"
         viewBox="0 0 24 24"
@@ -208,7 +217,7 @@ function StepMark({ index, done }: { index: number; done: boolean }) {
       </svg>
     );
   }
-  return <span className="w-3.5 text-center tabular-nums">{index + 1}</span>;
+  return <span className="mt-0.5 w-3.5 shrink-0 text-center tabular-nums">{index + 1}</span>;
 }
 
 export function ProjectView({
@@ -427,14 +436,14 @@ function Overview({
           Stop
         </BuiButton>
       </div>
-      <div className="flex gap-4">
+      <div className="flex flex-wrap gap-4">
         <Ring
-          label="NEW"
+          label={QUOTA_LABELS.newPerDay}
           value={status?.run?.newToday ?? 0}
           max={status?.newPerDay ?? project.quotas?.newPerDay ?? 0}
         />
         <Ring
-          label="LIVE"
+          label={QUOTA_LABELS.livePerDay}
           value={status?.run?.liveToday ?? 0}
           max={status?.livePerDay ?? project.quotas?.livePerDay ?? 0}
         />
@@ -482,7 +491,9 @@ function Overview({
 }
 
 function TargetList({ project }: { project: LbProjectDetail }) {
-  if (project.targets.length === 0) return <p className="text-[13px] text-[#85858A]">No targets</p>;
+  if (project.targets.length === 0) {
+    return <p className="text-[13px] text-[#85858A]">No pages to link yet</p>;
+  }
   return (
     <ul className="flex flex-col gap-2">
       {project.targets.map((target) => (
@@ -763,13 +774,14 @@ function SettingsPanel({
 }) {
   return (
     <BuiCard className="flex flex-col gap-2 p-4 text-[13px] text-[#C9C9CE]">
-      <div>Disclosure {project.disclosureMode.replaceAll("_", " ")}</div>
-      <div>Markets {project.markets.map((market) => market.country).join(", ")}</div>
+      <div>How posts identify you: {disclosureLabel(project.disclosureMode)}</div>
+      <div>Countries {project.markets.map((market) => market.country).join(", ")}</div>
       <div>
-        Link ratio {project.linkRatio.links}/{project.linkRatio.posts}
+        {project.linkRatio.links} {project.linkRatio.links === 1 ? "link" : "links"} in every{" "}
+        {project.linkRatio.posts} posts
       </div>
       <div>Proxy {project.proxyPolicy.replaceAll("_", " ")}</div>
-      <div>Deny {project.denyHosts.join(", ") || "none"}</div>
+      <div>Forums to skip {project.denyHosts.join(", ") || "none"}</div>
       <ul aria-label="Proxy leases" className="flex flex-col gap-1">
         {leases.length === 0 ? <li>No active lease</li> : null}
         {leases.map((lease) => (
@@ -792,7 +804,7 @@ function BrandFields({
 }) {
   return (
     <>
-      <Field label="Name">
+      <Field label="Project name">
         <input
           aria-label="Project name"
           className={inputClass}
@@ -800,17 +812,17 @@ function BrandFields({
           onChange={(event) => onChange({ ...draft, name: event.target.value })}
         />
       </Field>
-      <Field label="Brand">
+      <Field label="Brand name">
         <input
-          aria-label="Brand"
+          aria-label="Brand name"
           className={inputClass}
           value={draft.brandName}
           onChange={(event) => onChange({ ...draft, brandName: event.target.value })}
         />
       </Field>
-      <Field label="Sites">
+      <Field label="Sites posts may link to">
         <input
-          aria-label="Allowed sites"
+          aria-label="Sites posts may link to"
           className={inputClass}
           value={draft.allowedDomains}
           placeholder="https://www.example.com/de"
@@ -833,39 +845,41 @@ function PersonaFields({
 }) {
   return (
     <>
-      <Field label="Display name">
+      <Field label="Name on forums">
         <input
-          aria-label="Display name"
+          aria-label="Name on forums"
           className={inputClass}
           value={draft.displayName}
           onChange={(event) => onChange({ ...draft, displayName: event.target.value })}
         />
       </Field>
-      <Field label="Bio">
+      <Field label="Bio on forums">
         <textarea
-          aria-label="Bio"
+          aria-label="Bio on forums"
           className={`${inputClass} min-h-20`}
           value={draft.bio}
           onChange={(event) => onChange({ ...draft, bio: event.target.value })}
         />
       </Field>
       {draft.markets[0]?.language === "de" ? (
-        <Field label="Register">
+        <Field label="Address people as">
           <select
-            aria-label="Register"
+            aria-label="Address people as"
             className={inputClass}
             value={draft.register}
             onChange={(event) =>
               onChange({ ...draft, register: event.target.value as "du" | "sie" })
             }
           >
-            <option value="du">du</option>
-            <option value="sie">sie</option>
+            <option value="du">du, informal</option>
+            <option value="sie">sie, formal</option>
           </select>
         </Field>
       ) : null}
       <div className="text-[13px] text-[#A6A6AD]">
-        {draft.mailboxAddress ?? "Inbox is created on continue"}
+        {draft.mailboxAddress
+          ? `Forum mail arrives at ${draft.mailboxAddress}`
+          : "The inbox is created when you continue."}
       </div>
     </>
   );
@@ -880,35 +894,35 @@ function QuotaFields({
 }) {
   return (
     <>
-      <div className="grid grid-cols-3 gap-2">
-        <Field label="New / day">
+      <div className="flex flex-col gap-3">
+        <Field label={QUOTA_LABELS.newPerDay}>
           <input
-            aria-label="New per day"
+            aria-label={QUOTA_LABELS.newPerDay}
             className={inputClass}
             value={draft.newPerDay}
             onChange={(event) => onChange({ ...draft, newPerDay: event.target.value })}
           />
         </Field>
-        <Field label="LIVE / day">
+        <Field label={QUOTA_LABELS.livePerDay}>
           <input
-            aria-label="LIVE per day"
+            aria-label={QUOTA_LABELS.livePerDay}
             className={inputClass}
             value={draft.livePerDay}
             onChange={(event) => onChange({ ...draft, livePerDay: event.target.value })}
           />
         </Field>
-        <Field label="Week cap">
+        <Field label={QUOTA_LABELS.liveWeek}>
           <input
-            aria-label="Week cap"
+            aria-label={QUOTA_LABELS.liveWeek}
             className={inputClass}
             value={draft.liveWeekCap}
             onChange={(event) => onChange({ ...draft, liveWeekCap: event.target.value })}
           />
         </Field>
       </div>
-      <Field label="Time zone">
+      <Field label="Time zone for posting">
         <input
-          aria-label="Time zone"
+          aria-label="Time zone for posting"
           className={inputClass}
           value={draft.timezone}
           onChange={(event) => onChange({ ...draft, timezone: event.target.value })}
@@ -929,9 +943,9 @@ function TopicFields({
   const lane = draft.lanes[0];
   return (
     <>
-      <Field label="Topic">
+      <Field label="Topic to write about">
         <input
-          aria-label="Topic"
+          aria-label="Topic to write about"
           className={inputClass}
           value={lane?.tag ?? ""}
           onChange={(event) =>
@@ -948,9 +962,9 @@ function TopicFields({
           }
         />
       </Field>
-      <Field label="Target URL">
+      <Field label="Page to link">
         <input
-          aria-label="Target URL"
+          aria-label="Page to link"
           className={inputClass}
           value={draft.targets[0]?.url ?? ""}
           onChange={(event) =>
@@ -958,9 +972,9 @@ function TopicFields({
           }
         />
       </Field>
-      <Field label="Facts">
+      <Field label="Facts the posts can use">
         <textarea
-          aria-label="Facts"
+          aria-label="Facts the posts can use"
           className={`${inputClass} min-h-20`}
           value={draft.facts}
           onChange={(event) => onChange({ ...draft, facts: event.target.value })}
@@ -979,28 +993,31 @@ function PolicyFields({
 }) {
   return (
     <>
-      <fieldset className="flex flex-wrap gap-2 border-0 p-0" aria-label="Markets">
-        {LB_WIZARD_COUNTRIES.map((country) => {
-          const selected = draft.markets.some((market) => market.country === country);
-          return (
-            <button
-              key={country}
-              type="button"
-              aria-pressed={selected}
-              aria-label={country}
-              className={`rounded-full px-3 py-1 text-[13px] ${selected ? "bg-[#232327] text-[#ECECEE]" : "text-[#A6A6AD]"}`}
-              onClick={() => onChange(toggleCountry(draft, country, selected))}
-            >
-              {country}
-            </button>
-          );
-        })}
+      <fieldset className="flex flex-col gap-2 border-0 p-0">
+        <legend className="text-[12.5px] text-[#A6A6AD]">Countries to post in</legend>
+        <div className="flex flex-wrap gap-2">
+          {LB_WIZARD_COUNTRIES.map((country) => {
+            const selected = draft.markets.some((market) => market.country === country);
+            return (
+              <button
+                key={country}
+                type="button"
+                aria-pressed={selected}
+                aria-label={country}
+                className={`rounded-full px-3 py-1 text-[13px] ${selected ? "bg-[#232327] text-[#ECECEE]" : "text-[#A6A6AD]"}`}
+                onClick={() => onChange(toggleCountry(draft, country, selected))}
+              >
+                {country}
+              </button>
+            );
+          })}
+        </div>
       </fieldset>
       {draft.markets.map((market, index) => (
         <div key={`${market.country}-${market.language}`} className="grid grid-cols-2 gap-2">
-          <Field label={`${market.country} locale`}>
+          <Field label={`${market.country} language and region`}>
             <input
-              aria-label={`${market.country} locale`}
+              aria-label={`${market.country} language and region`}
               className={inputClass}
               value={market.locale}
               onChange={(event) =>
@@ -1031,18 +1048,20 @@ function PolicyFields({
           </Field>
         </div>
       ))}
-      <Field label="Deny hosts">
+      <Field label="Forums to skip">
         <input
-          aria-label="Deny hosts"
+          aria-label="Forums to skip"
           className={inputClass}
           value={draft.denyHosts}
           onChange={(event) => onChange({ ...draft, denyHosts: event.target.value })}
         />
       </Field>
       <details>
-        <summary className="cursor-pointer text-[13px] text-[#A6A6AD]">Advanced</summary>
+        <summary className="cursor-pointer text-[13px] text-[#A6A6AD]">
+          How posts identify you
+        </summary>
         <select
-          aria-label="Disclosure mode"
+          aria-label="How posts identify you"
           className={`${inputClass} mt-2`}
           value={draft.disclosureMode}
           onChange={(event) =>
@@ -1052,10 +1071,10 @@ function PolicyFields({
             })
           }
         >
-          <option value="undisclosed_persona">undisclosed persona</option>
-          <option value="disclosed_persona">disclosed persona</option>
-          <option value="disclosed_brand">disclosed brand</option>
-          <option value="drafts_only">drafts only</option>
+          <option value="undisclosed_persona">{disclosureLabel("undisclosed_persona")}</option>
+          <option value="disclosed_persona">{disclosureLabel("disclosed_persona")}</option>
+          <option value="disclosed_brand">{disclosureLabel("disclosed_brand")}</option>
+          <option value="drafts_only">{disclosureLabel("drafts_only")}</option>
         </select>
       </details>
     </>
@@ -1064,17 +1083,25 @@ function PolicyFields({
 
 function ReviewFields({ draft }: { draft: WizardDraft }) {
   return (
-    <dl className="grid grid-cols-[8rem_1fr] gap-y-1 text-[13px] text-[#C9C9CE]">
-      <dt>Brand</dt>
-      <dd>{draft.brandName}</dd>
-      <dt>Markets</dt>
-      <dd>{draft.markets.map((market) => market.country).join(", ")}</dd>
-      <dt>Persona</dt>
-      <dd>{draft.displayName}</dd>
-      <dt>Inbox</dt>
-      <dd>{draft.mailboxAddress ?? "—"}</dd>
-      <dt>Disclosure</dt>
-      <dd>{draft.disclosureMode.replaceAll("_", " ")}</dd>
+    <dl className="flex flex-col gap-2 text-[13px]">
+      {(
+        [
+          ["Brand name", draft.brandName],
+          ["Sites", draft.allowedDomains || "—"],
+          ["Countries", draft.markets.map((market) => market.country).join(", ")],
+          ["Name on forums", draft.displayName || "—"],
+          ["Inbox", draft.mailboxAddress ?? "—"],
+          [QUOTA_LABELS.newPerDay, draft.newPerDay],
+          [QUOTA_LABELS.livePerDay, draft.livePerDay],
+          [QUOTA_LABELS.liveWeek, draft.liveWeekCap || "—"],
+          ["How posts identify you", disclosureLabel(draft.disclosureMode)],
+        ] as const
+      ).map(([label, value]) => (
+        <div key={label}>
+          <dt className="text-[#85858A]">{label}</dt>
+          <dd className="text-[#C9C9CE]">{value}</dd>
+        </div>
+      ))}
     </dl>
   );
 }
@@ -1123,9 +1150,13 @@ function Ring({ label, value, max }: { label: string; value: number; max: number
 function WeekBar({ value, max }: { value: number; max: number | null }) {
   const pct = !max || max <= 0 ? 0 : Math.min(100, Math.round((value / max) * 100));
   return (
-    <div role="img" className="min-w-24 flex-1" aria-label={`Week ${value} of ${max ?? value}`}>
+    <div
+      role="img"
+      className="min-w-24 flex-1"
+      aria-label={`${QUOTA_LABELS.liveWeek} ${value} of ${max ?? value}`}
+    >
       <div className="mb-1 text-[12px] text-[#A6A6AD]">
-        Week {value}
+        {QUOTA_LABELS.liveWeek} {value}
         {max ? `/${max}` : ""}
       </div>
       <div className="h-1.5 overflow-hidden rounded-full bg-[#2A2A31]">

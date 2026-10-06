@@ -7,6 +7,7 @@ import {
   parseAllowedSite,
   patchFromDraft,
   RESPONSIBILITY_SENTENCE,
+  warmupNote,
   withPersonaPrefill,
   wizardStepIssues,
 } from "./model.js";
@@ -34,6 +35,13 @@ describe("link builder wizard", () => {
       locale: "en-US",
       timezoneId: "America/New_York",
     });
+  });
+
+  it("describes warm-up in days without changing the wait", () => {
+    expect(warmupNote(24)).toBe(
+      "The first live link waits about 1 day. Until then the account posts without a link.",
+    );
+    expect(warmupNote(48)).toContain("2 days");
   });
 
   it("requires brand fields, a topic, and a saved inbox before start", () => {
