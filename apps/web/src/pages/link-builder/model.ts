@@ -14,7 +14,11 @@ import {
   LbScheduleSchema,
   LbTopicLaneSchema,
 } from "@rakazo/contracts";
-import { defaultMarketForCountry, LB_WIZARD_COUNTRIES } from "@rakazo/linkbuilder-core";
+import {
+  defaultMarketForCountry,
+  LB_WIZARD_COUNTRIES,
+  registrableDomain,
+} from "@rakazo/linkbuilder-core";
 
 export const RESPONSIBILITY_SENTENCE = LB_RESPONSIBILITY_ACK_SENTENCE;
 
@@ -263,15 +267,71 @@ export function updateMarketLocale(
 
 export { LB_WIZARD_COUNTRIES };
 
+export type ParsedSite =
+  | { ok: true; domain: string; targetUrl: string | null }
+  | { ok: false };
+
+/** Accept a bare host, www, http(s), or a path. Store the registrable domain. */
+export function parseAllowedSite(raw: string): ParsedSite {
+  const trimmed = raw.trim();
+  if (!trimmed || /\s/.test(trimmed)) return { ok: false };
+  const withScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  let url: URL;
+  try {
+    url = new URL(withScheme);
+  } catch {
+    return { ok: false };
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") return { ok: false };
+  if (url.username || url.password) return { ok: false };
+  const domain = registrableDomain(url.hostname);
+  if (!domain || !LbRegistrableDomainSchema.safeParse(domain).success) return { ok: false };
+  const path = url.pathname.replace(/\/+$/, "");
+  if (!path) return { ok: true, domain, targetUrl: null };
+  url.hash = "";
+  url.pathname = path;
+  return { ok: true, domain, targetUrl: url.toString() };
+}
+
+export function parsedSites(value: string): ParsedSite[] {
+  return splitList(value).map(parseAllowedSite);
+}
+
+export function withPersonaPrefill(draft: WizardDraft): WizardDraft {
+  const brand = draft.brandName.trim() || draft.name.trim();
+  const sites = parsedSites(draft.allowedDomains).filter(
+    (site): site is Extract<ParsedSite, { ok: true }> => site.ok,
+  );
+  const section = sites
+    .map((site) => (site.targetUrl ? new URL(site.targetUrl).pathname : ""))
+    .find((path) => path.length > 1);
+  return {
+    ...draft,
+    displayName: draft.displayName.trim() || brand,
+    bio: draft.bio.trim() ? draft.bio : suggestBio(brand, draft.markets[0]?.language, section),
+  };
+}
+
+function suggestBio(brand: string, language: string | undefined, section?: string): string {
+  const name = brand || "the brand";
+  if (language === "de") {
+    return section
+      ? `Antwortet ruhig und konkret. Kennt ${name}, vor allem die Seiten unter ${section}.`
+      : `Antwortet ruhig und konkret. Kennt ${name} und bleibt bei dem, was die Seite sagt.`;
+  }
+  return section
+    ? `Replies in a calm, specific voice. Knows ${name}, especially the pages under ${section}.`
+    : `Replies in a calm, specific voice. Knows ${name} and stays with what the page says.`;
+}
+
 function brandIssues(draft: WizardDraft): string[] {
   const issues: string[] = [];
   if (draft.name.trim().length === 0) issues.push("Name is required");
   if (draft.brandName.trim().length === 0) issues.push("Brand is required");
-  const domains = splitList(draft.allowedDomains);
-  if (domains.length === 0) issues.push("Add at least one domain");
-  for (const domain of domains) {
-    if (!LbRegistrableDomainSchema.safeParse(domain).success)
-      issues.push(`Domain ${domain} looks wrong`);
+  const sites = splitList(draft.allowedDomains);
+  if (sites.length === 0) issues.push("Add at least one site");
+  for (const site of sites) {
+    if (!parseAllowedSite(site).ok) issues.push(`Site ${site} is not a valid address`);
   }
   const slug = draft.slug.trim() || slugifyProjectName(draft.name);
   if (draft.name.trim() && !/^[a-z0-9]+(-[a-z0-9]+)*$/.test(slug)) issues.push("Slug looks wrong");
@@ -329,7 +389,9 @@ function topicIssues(draft: WizardDraft): string[] {
     });
     if (!parsed.success) issues.push(parsed.error.issues[0]?.message ?? "Topic looks wrong");
   }
-  const domains = splitList(draft.allowedDomains);
+  const domains = parsedSites(draft.allowedDomains).flatMap((site) =>
+    site.ok ? [site.domain] : [],
+  );
   for (const target of draft.targets) {
     if (!target.url.trim()) continue;
     try {
@@ -364,7 +426,11 @@ function newLaneId(): string {
 }
 
 export function patchFromDraft(draft: WizardDraft) {
-  const domains = splitList(draft.allowedDomains);
+  const sites = parsedSites(draft.allowedDomains).filter(
+    (site): site is Extract<ParsedSite, { ok: true }> => site.ok,
+  );
+  const domains = [...new Set(sites.map((site) => site.domain))];
+  const siteTargets = sites.flatMap((site) => (site.targetUrl ? [site.targetUrl] : []));
   const lanes = draft.lanes
     .filter((lane) => lane.tag.trim())
     .map((lane) => ({
@@ -373,14 +439,24 @@ export function patchFromDraft(draft: WizardDraft) {
       description: lane.description,
       exampleQuestions: [],
     }));
-  const targets = draft.targets
-    .filter((target) => target.url.trim())
-    .map((target) => ({
+  const typedTargets = draft.targets.filter((target) => target.url.trim());
+  const seen = new Set(typedTargets.map((target) => target.url.trim()));
+  const targets = [
+    ...typedTargets.map((target) => ({
       url: target.url.trim(),
       priority: 50,
       description: "",
       keywordClusters: splitList(target.keywords),
-    }));
+    })),
+    ...siteTargets
+      .filter((url) => !seen.has(url))
+      .map((url) => ({
+        url,
+        priority: 50,
+        description: "",
+        keywordClusters: [] as string[],
+      })),
+  ];
   return {
     name: draft.name.trim(),
     slug: draft.slug.trim() || slugifyProjectName(draft.name),

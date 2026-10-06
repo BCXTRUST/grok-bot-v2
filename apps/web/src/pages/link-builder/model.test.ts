@@ -4,7 +4,10 @@ import {
   artifactImageSrc,
   canStart,
   emptyDraft,
+  parseAllowedSite,
+  patchFromDraft,
   RESPONSIBILITY_SENTENCE,
+  withPersonaPrefill,
   wizardStepIssues,
 } from "./model.js";
 
@@ -52,6 +55,46 @@ describe("link builder wizard", () => {
     draft.mailboxId = "mbx-1";
     draft.captchaConfigured = true;
     expect(canStart(draft)).toBe(true);
+  });
+
+  it("accepts a site with www, https, and a path", () => {
+    expect(parseAllowedSite("https://www.vitaminexpress.org/de")).toEqual({
+      ok: true,
+      domain: "vitaminexpress.org",
+      targetUrl: "https://www.vitaminexpress.org/de",
+    });
+    expect(parseAllowedSite("www.vitaminexpress.org").ok).toBe(true);
+    expect(parseAllowedSite("vitaminexpress.org")).toMatchObject({
+      ok: true,
+      domain: "vitaminexpress.org",
+      targetUrl: null,
+    });
+    expect(parseAllowedSite("http://vitaminexpress.org/de/")).toMatchObject({
+      ok: true,
+      targetUrl: "http://vitaminexpress.org/de",
+    });
+    expect(parseAllowedSite("not a site").ok).toBe(false);
+
+    const draft = emptyDraft();
+    draft.name = "Vitaminexpress";
+    draft.brandName = "Vitaminexpress";
+    draft.allowedDomains = "https://www.vitaminexpress.org/de";
+    expect(wizardStepIssues(0, draft)).toEqual([]);
+    const patch = patchFromDraft(draft);
+    expect(patch.allowedDomains).toEqual(["vitaminexpress.org"]);
+    expect(patch.targets.map((target) => target.url)).toEqual(["https://www.vitaminexpress.org/de"]);
+  });
+
+  it("prefills an empty bio from the brand and path", () => {
+    const draft = emptyDraft();
+    draft.brandName = "Vitaminexpress";
+    draft.allowedDomains = "https://www.vitaminexpress.org/de";
+    const filled = withPersonaPrefill(draft);
+    expect(filled.displayName).toBe("Vitaminexpress");
+    expect(filled.bio).toContain("Vitaminexpress");
+    expect(filled.bio).toContain("/de");
+    draft.bio = "Already written";
+    expect(withPersonaPrefill(draft).bio).toBe("Already written");
   });
 
   it("keeps acceptance as a sentence with no checkbox field", () => {

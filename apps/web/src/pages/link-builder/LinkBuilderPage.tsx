@@ -24,6 +24,7 @@ import {
   patchFromDraft,
   slugifyProjectName,
   type WizardDraft,
+  withPersonaPrefill,
   wizardStepIssues,
 } from "./model.js";
 import { DashboardView, OperatorView, ProjectView, WizardView } from "./views.js";
@@ -141,12 +142,14 @@ function WizardRoute({ projectId }: { projectId?: string }) {
   );
 
   async function nextStep() {
-    const found = wizardStepIssues(step, draft);
+    const next = step === 0 ? withPersonaPrefill(draft) : draft;
+    if (next !== draft) setDraft(next);
+    const found = wizardStepIssues(step, next);
     setIssues(found);
     if (found.length > 0) return;
     setBusy(true);
     try {
-      const saved = await save(draft, step === 2);
+      const saved = await save(next, step === 2);
       setDraft(draftFromProject(saved));
       setStep((value) => Math.min(6, value + 1));
     } catch (err) {
@@ -210,6 +213,11 @@ function WizardRoute({ projectId }: { projectId?: string }) {
       onNext={() => void nextStep()}
       onCheckBalance={() => void checkBalance()}
       onStart={() => void start()}
+      onGoTo={(index) => {
+        if (index > step) return;
+        setIssues([]);
+        setStep(index);
+      }}
     />
   );
 }

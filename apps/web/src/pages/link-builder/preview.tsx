@@ -66,6 +66,7 @@ export function LinkBuilderPreview({ screen }: { screen: string }) {
           onNext={() => undefined}
           onCheckBalance={() => undefined}
           onStart={() => undefined}
+          onGoTo={() => undefined}
         />
       </div>
     );
@@ -93,6 +94,7 @@ export function LinkBuilderPreview({ screen }: { screen: string }) {
           onNext={() => undefined}
           onCheckBalance={() => undefined}
           onStart={() => undefined}
+          onGoTo={() => undefined}
         />
       </div>
     );

@@ -96,6 +96,7 @@ export function WizardView({
   onNext,
   onCheckBalance,
   onStart,
+  onGoTo,
 }: {
   step: number;
   draft: WizardDraft;
@@ -107,13 +108,33 @@ export function WizardView({
   onNext: () => void;
   onCheckBalance: () => void;
   onStart: () => void;
+  onGoTo: (step: number) => void;
 }) {
   const title = WIZARD_STEPS[step] ?? "Review";
   return (
     <main className="mx-auto flex w-full max-w-xl flex-col gap-4 px-4 py-8">
-      <div className="text-[12px] text-[#85858A]">
-        Step {step + 1} of {WIZARD_STEPS.length}
-      </div>
+      <ol aria-label="Setup steps" className="flex flex-col gap-0.5">
+        {WIZARD_STEPS.map((label, index) => {
+          const current = index === step;
+          return (
+            <li key={label}>
+              <button
+                type="button"
+                aria-current={current ? "step" : undefined}
+                aria-label={`Step ${index + 1} of ${WIZARD_STEPS.length}: ${label}`}
+                disabled={busy || index > step}
+                onClick={() => onGoTo(index)}
+                className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[13px] ${
+                  current ? "bg-[#1C1C20] text-[#ECECEE]" : "text-[#85858A] hover:bg-[#141416]"
+                } disabled:hover:bg-transparent`}
+              >
+                <span className="w-4 tabular-nums">{index + 1}</span>
+                <span>{label}</span>
+              </button>
+            </li>
+          );
+        })}
+      </ol>
       <h1 className="text-[22px] font-medium text-[#ECECEE]">{title}</h1>
       <BuiCard className="flex flex-col gap-3 p-4">
         {step === 0 ? <BrandFields draft={draft} onChange={onChange} /> : null}
@@ -126,9 +147,11 @@ export function WizardView({
         {step === 5 ? <PolicyFields draft={draft} onChange={onChange} /> : null}
         {step === 6 ? <ReviewFields draft={draft} /> : null}
         {issues.length > 0 ? (
-          <p className="text-[13px] text-[#FF8B8B]" role="alert">
-            {issues[0]}
-          </p>
+          <ul className="flex flex-col gap-1 text-[13px] text-[#FF8B8B]" role="alert">
+            {issues.map((issue) => (
+              <li key={issue}>{issue}</li>
+            ))}
+          </ul>
         ) : null}
       </BuiCard>
       <div className="flex items-center justify-between gap-3">
@@ -758,14 +781,17 @@ function BrandFields({
           onChange={(event) => onChange({ ...draft, brandName: event.target.value })}
         />
       </Field>
-      <Field label="Domains">
+      <Field label="Sites">
         <input
-          aria-label="Allowed domains"
+          aria-label="Allowed sites"
           className={inputClass}
           value={draft.allowedDomains}
-          placeholder="nordlicht.example"
+          placeholder="https://www.example.com/de"
           onChange={(event) => onChange({ ...draft, allowedDomains: event.target.value })}
         />
+        <p className="mt-1 text-[12px] text-[#85858A]">
+          A domain, www, https, or a path. Separate several sites with a comma.
+        </p>
       </Field>
     </>
   );
