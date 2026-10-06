@@ -16,6 +16,7 @@ import {
 } from "@rakazo/adapter-kit";
 import type { EncryptedSecretStore } from "@rakazo/adapters";
 import {
+  LB_DEFAULT_SPAM_SENTENCES,
   LbContentSchema,
   LbDisclosureModeSchema,
   type LbHostStatus,
@@ -28,6 +29,7 @@ import {
   type LbRunStatus,
   LbRunStatusSchema,
   LbScheduleSchema,
+  LbSpamRetrySchema,
   LbTargetSchema,
   LbTopicLaneSchema,
   LbWarmupSchema,
@@ -40,6 +42,7 @@ import {
   isWarmupMet,
   isWithinWindow,
   linkBuilderTopic,
+  localDateKey,
   marketKey,
   PAGE_HELPER_BUTTON_SELECTOR,
   planRealStep,
@@ -47,8 +50,7 @@ import {
   redactSecrets,
   transitionRun,
 } from "@rakazo/linkbuilder-core";
-import { discoverDueProjects } from "./link-builder-discovery.js";
-import { renewDueLeases } from "./link-builder-proxy.js";
+import { runDueWork } from "./link-builder-operations.js";
 import {
   browserPersona,
   isUnique,
@@ -107,6 +109,10 @@ export interface LinkBuilderRealDeps {
   textModel?: TextModel;
   search?: SearchProvider;
   proxies?: ProxyProvider;
+  notifications?: import("@rakazo/adapter-kit").NotificationProvider;
+  webhookFetch?: typeof fetch;
+  /** When true, webhook URLs may not target private or loopback addresses. */
+  productionWebhooks?: boolean;
   /** Passwords the proxy resolver has loaded. Shared with step redaction. */
   revealedSecrets?: string[];
   /** False when the Camoufox executable is not installed. The host then goes dead on a second edge block. */
@@ -184,48 +190,42 @@ export class LinkBuilderRealRunner {
   }
 
   async tick(): Promise<number> {
-    if (this.deps.search) {
-      await discoverDueProjects({
-        prisma: this.deps.prisma,
-        search: this.deps.search,
-        fetchImpl: this.deps.probeFetch,
-        allowPrivate: this.deps.allowPrivateProbe ?? false,
-        now: this.now(),
-      }).catch((error: unknown) => {
-        console.error(
-          "linkbuilder.discover",
-          error instanceof Error ? error.message : "discovery failed",
-        );
-      });
-    }
-    if (this.deps.proxies) {
-      const now = this.now();
-      await renewDueLeases({
-        prisma: this.deps.prisma,
-        provider: this.deps.proxies,
-        secrets: this.deps.secrets,
-        now,
-        context: {
-          operationId: "lb-proxy-renew",
-          traceId: "lb-proxy-renew",
-          workspaceId: "renew",
-          userId: "renew",
-          signal: new AbortController().signal,
-        },
-      }).catch((error: unknown) => {
-        console.error(
-          "linkbuilder.proxy",
-          error instanceof Error ? error.message : "renewal failed",
-        );
-      });
-    }
+    const now = this.now();
+    await runDueWork({
+      prisma: this.deps.prisma,
+      secrets: this.deps.secrets,
+      now,
+      notifications: this.deps.notifications,
+      webhookFetch: this.deps.webhookFetch,
+      productionWebhooks: this.deps.productionWebhooks,
+      verifyFetch: this.deps.verifyFetch,
+      allowPrivateVerify: this.deps.allowPrivateVerify,
+      artifacts: this.deps.artifacts,
+      realtime: this.deps.realtime,
+      search: this.deps.search,
+      probeFetch: this.deps.probeFetch,
+      allowPrivateProbe: this.deps.allowPrivateProbe,
+      captcha: this.deps.captcha,
+      resolveCaptcha: this.deps.resolveCaptcha
+        ? async (project) => this.deps.resolveCaptcha!(project, () => undefined)
+        : undefined,
+      proxies: this.deps.proxies,
+    }).catch((error: unknown) => {
+      console.error(
+        "linkbuilder.schedule",
+        error instanceof Error ? error.message : "schedule failed",
+      );
+    });
     const runs = await this.deps.prisma.lbRun.findMany({
       where: { status: { in: ["running", "overtime"] }, project: { status: "active" } },
-      select: { id: true },
+      select: { id: true, date: true, project: { select: { schedule: true } } },
       orderBy: { createdAt: "asc" },
     });
     let stepped = 0;
     for (const run of runs) {
+      const schedule = LbScheduleSchema.safeParse(run.project.schedule);
+      const today = schedule.success ? localDateKey(now, schedule.data.timezone) : run.date;
+      if (run.date !== today) continue;
       try {
         if ((await this.step(run.id)) === "stepped") stepped += 1;
       } catch (error) {
@@ -621,6 +621,7 @@ export class LinkBuilderRealRunner {
       registerFormReady: false,
       captchaAttempts: 0,
       registrationRetried: false,
+      spamRetries: 0,
       profileSet: false,
       engine,
     };
@@ -713,6 +714,7 @@ function projectConfig(row: {
   mailboxAddress: string | null;
   captchaLowBalanceCredits: number;
   operator: unknown;
+  spamRetry: unknown;
   facts: string[];
   content: unknown;
   disclosureMode: string;
@@ -728,6 +730,7 @@ function projectConfig(row: {
   const warmup = LbWarmupSchema.safeParse(row.warmup);
   const targets = LbTargetSchema.array().safeParse(row.targets);
   const operator = LbOperatorSettingsSchema.safeParse(row.operator);
+  const spam = LbSpamRetrySchema.safeParse(row.spamRetry);
   if (!persona.success || !markets.success || !quotas.success || !schedule.success) return null;
   return {
     id: row.id,
@@ -754,6 +757,9 @@ function projectConfig(row: {
     mailboxAddress: row.mailboxAddress,
     captchaLowBalanceCredits: row.captchaLowBalanceCredits,
     operatorTtlHours: operator.success ? operator.data.parkedHostTtlHours : 48,
+    ticketTtlHours: operator.success ? operator.data.ticketTtlHours : 24,
+    spamSentences: spam.success ? spam.data.sentences : [...LB_DEFAULT_SPAM_SENTENCES],
+    spamMaxRetries: spam.success ? spam.data.maxRetries : 1,
     proxyPolicy: LbProxyPolicySchema.safeParse(row.proxyPolicy).data ?? "static_isp_per_persona",
   };
 }

@@ -15,6 +15,8 @@ loadRootEnv();
 
 import {
   AgentMailEmulator,
+  AgentMailMailbox,
+  agentMailLiveClient,
   createBackgroundJobHandlers,
   createConnectorStack,
   createJobReconciler,
@@ -177,8 +179,10 @@ async function main() {
             workspaceId: project.workspaceId,
             redact,
           }),
-        // Live inbox provisioning stays on the emulator until the inbound webhook is wired.
-        mailbox: new AgentMailEmulator(),
+        mailbox: process.env.AGENTMAIL_API_KEY
+          ? new AgentMailMailbox(agentMailLiveClient(process.env.AGENTMAIL_API_KEY), prisma)
+          : new AgentMailEmulator(),
+        notifications: new ExpoPushProvider(dataDir),
         workerId: `worker-${process.pid}`,
         search: searchProviderFromEnv({ env: process.env, prisma, secrets }),
         textModel: process.env.OPENROUTER_API_KEY

@@ -65,10 +65,12 @@ import {
   recordRegistration,
   redactSecrets,
   shouldCount,
+  spamRetryDecision,
   transitionHost,
   transitionPlacement,
   transitionProject,
   transitionRun,
+  verifyDeadline,
   WORKABLE_HOST_ORDER,
 } from "@rakazo/linkbuilder-core";
 import {
@@ -106,6 +108,7 @@ export interface RealWorkerServices {
   allowPrivateVerify: boolean;
   verifyDelayMs: number;
   reverifyAfterMs: number;
+  alerts?: import("@rakazo/linkbuilder-core").AlertSink;
   proxies?: ProxyProvider;
   /** When false, a second Chromium edge block marks the host dead instead of launching Camoufox. */
   camoufoxAvailable?: boolean;
@@ -131,6 +134,8 @@ export interface PoolEntry {
   captchaAttempts: number;
   /** One correction of a fixable registration error (taken username, banned email, missing password). */
   registrationRetried: boolean;
+  /** Spam-protection retries already used on this registration. */
+  spamRetries: number;
   profileSet: boolean;
   engine: "chromium" | "camoufox";
   /** Kept for the open session so a mapped form survives the next step. */
@@ -161,6 +166,9 @@ export interface ProjectConfig {
   mailboxAddress: string | null;
   captchaLowBalanceCredits: number;
   operatorTtlHours: number;
+  ticketTtlHours: number;
+  spamSentences: readonly string[];
+  spamMaxRetries: number;
   proxyPolicy: LbProxyPolicy;
 }
 
@@ -365,7 +373,7 @@ function park(
         screenUrl: options.screenUrl ?? null,
         note: options.note ?? null,
         status: "open",
-        expiresAt: new Date(ctx.now.getTime() + ctx.project.operatorTtlHours * 3_600_000),
+        expiresAt: new Date(ctx.now.getTime() + ctx.project.ticketTtlHours * 3_600_000),
       },
     });
   };
@@ -477,6 +485,7 @@ async function selectHost(ctx: StepContext): Promise<StepResult> {
           registerFormReady: false,
           captchaAttempts: 0,
           registrationRetried: false,
+          spamRetries: 0,
           profileSet: false,
           driver: undefined,
         });
@@ -638,6 +647,7 @@ async function openSession(ctx: StepContext): Promise<StepResult> {
     registerFormReady: false,
     captchaAttempts: 0,
     registrationRetried: false,
+    spamRetries: 0,
     profileSet: false,
     driver: undefined,
   });
@@ -1420,6 +1430,48 @@ async function finishRegistration(
       credits,
     );
   }
+  const spam = spamRetryDecision({
+    messages: result.kind === "form_error" || result.kind === "unknown" ? result.messages : [],
+    sentences: ctx.project.spamSentences,
+    retriesUsed: entry.spamRetries,
+    maxRetries: ctx.project.spamMaxRetries,
+  });
+  if (spam === "retry") {
+    entry.spamRetries += 1;
+    entry.registerFormReady = false;
+    entry.captchaAttempts = 0;
+    const credentials = await ensureCredentials(ctx, host);
+    await driver.fillRegistration(entry.session, credentials);
+    return withEvent(
+      {
+        kind: "step",
+        lastAction: "Spam filter, trying once more",
+        hostId: host.id,
+        artifactIds,
+        outcome: { registration: "spam_retry" },
+      },
+      event,
+      credits,
+    );
+  }
+  if (spam === "block") {
+    entry.registerFormReady = false;
+    return withEvent(
+      {
+        kind: "step",
+        lastAction: "Board blocked this account as spam",
+        hostId: host.id,
+        artifactIds,
+        outcome: { registration: "spam_blocked" },
+        apply: (tx) => moveHost(tx, host, "spam_blocked"),
+        afterCommit: () => {
+          entry.captchaAttempts = 0;
+        },
+      },
+      event,
+      credits,
+    );
+  }
   if (
     result.kind === "form_error" &&
     formErrorFixable(result.messages) &&
@@ -2031,6 +2083,7 @@ async function publish(ctx: StepContext, warmup: boolean): Promise<StepResult> {
             status: "pending",
             counted: false,
             nextVerifyAt: new Date(postedAt.getTime() + ctx.services.verifyDelayMs),
+            verifyCount: 0,
           },
         });
       }
@@ -2104,7 +2157,8 @@ async function verify(ctx: StepContext): Promise<StepResult> {
           verifiedAt: ctx.now,
           verifyMethod: "logged_out_fetch",
           snapshotArtifactId: snapshotId,
-          nextVerifyAt: new Date(ctx.now.getTime() + ctx.services.reverifyAfterMs),
+          nextVerifyAt: verifyDeadline(placement.createdAt, placement.verifyCount + 1),
+          verifyCount: placement.verifyCount + 1,
           counted,
         },
       });

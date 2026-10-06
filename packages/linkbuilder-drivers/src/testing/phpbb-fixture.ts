@@ -33,6 +33,8 @@ export interface PhpbbFixtureOptions {
   /** How posted links are rendered. */
   rel?: FixtureRel;
   activation?: "email" | "none" | "admin";
+  /** Registration submits that return the spam-protection sentence before a real result. */
+  spamRejects?: number;
   cookieWall?: boolean;
   /** Members below this post count may not post links; also shown as the board rule. */
   linkRuleMinPosts?: number;
@@ -191,6 +193,7 @@ export async function startPhpbbFixture(options: PhpbbFixtureOptions): Promise<P
   let nextUserId = 2;
   let captchaServed = 0;
   let registrationSubmits = 0;
+  let spamLeft = options.spamRejects ?? 0;
   let replySubmits = 0;
   let origin = "";
 
@@ -351,6 +354,16 @@ export async function startPhpbbFixture(options: PhpbbFixtureOptions): Promise<P
         const form = await readForm(request);
         if (!form.has("submit")) return registerForm(response, request, {});
         registrationSubmits += 1;
+        if (spamLeft > 0) {
+          spamLeft -= 1;
+          const username = (form.get("username") ?? "").trim();
+          const email = (form.get("email") ?? "").trim();
+          return registerForm(response, request, {
+            username,
+            email,
+            error: "Die Registrierung ist wegen Spamschutzmaßnahmen fehlgeschlagen.",
+          });
+        }
         const username = (form.get("username") ?? "").trim();
         const email = (form.get("email") ?? "").trim();
         const password = form.get("new_password") ?? "";
