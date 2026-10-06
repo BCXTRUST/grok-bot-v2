@@ -7,6 +7,7 @@ import {
   LbCaptchaTokenSchema,
   LbCaptchaTypeSchema,
   LbContentSchema,
+  LbCostSummarySchema,
   LbDisclosureModeSchema,
   LbDraftQualityChecksSchema,
   LbDraftStatusSchema,
@@ -89,6 +90,9 @@ export const LbProjectPatchSchema = z.object({
   spamRetry: LbSpamRetrySchema.optional(),
   content: LbContentSchema.optional(),
   operator: LbOperatorSettingsSchema.optional(),
+  /** https endpoint for outbound alerts. Null clears it. The signing secret is write-only. */
+  webhookUrl: z.string().max(500).nullable().optional(),
+  webhookSecret: z.string().min(16).max(200).optional(),
 });
 export type LbProjectPatch = z.infer<typeof LbProjectPatchSchema>;
 
@@ -146,6 +150,8 @@ export const LbProjectDetailSchema = z.object({
   warmup: LbWarmupSchema,
   content: LbContentSchema,
   operator: LbOperatorSettingsSchema,
+  webhookUrl: z.string().nullable(),
+  webhookConfigured: z.boolean(),
   createdAt: IsoDate,
   updatedAt: IsoDate,
 });
@@ -185,6 +191,7 @@ export const LbProjectStatusViewSchema = z.object({
   livePerDay: z.number().int(),
   liveWeekCap: z.number().int().nullable(),
   lastEvent: z.string().nullable(),
+  costs: z.object({ day: LbCostSummarySchema, week: LbCostSummarySchema }),
 });
 export type LbProjectStatusView = z.infer<typeof LbProjectStatusViewSchema>;
 
@@ -315,6 +322,7 @@ export const LbOperatorTicketViewSchema = z.object({
   screenshotArtifactId: Id.nullable(),
   note: z.string().nullable(),
   status: LbOperatorTicketStatusSchema,
+  expiresAt: IsoDate.nullable(),
   createdAt: IsoDate,
 });
 export type LbOperatorTicketView = z.infer<typeof LbOperatorTicketViewSchema>;
@@ -385,6 +393,11 @@ export const linkBuilderContract = {
   },
   artifacts: {
     get: oc.input(z.object({ projectId: Id, artifactId: Id })).output(LbArtifactViewSchema),
+  },
+  costs: {
+    summary: oc
+      .input(projectId.extend({ range: z.enum(["day", "week"]) }))
+      .output(LbCostSummarySchema),
   },
   captell: {
     checkBalance: oc
