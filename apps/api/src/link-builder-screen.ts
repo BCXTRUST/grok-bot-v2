@@ -12,7 +12,17 @@ import {
   touchRunningComputer,
 } from "@rakazo/adapters";
 import { type Actor, SandboxKind } from "@rakazo/contracts";
+import {
+  exposeBrowserDesktopCommand,
+  listVisibleWindowsCommand,
+  openHttpUrlCommand,
+  parseVisibleWindows,
+} from "@rakazo/core";
 import { ensureComputerRecord, type PrismaClient, type ThreadEvents } from "@rakazo/db";
+import {
+  desktopShowsForumSearch,
+  forumSearchUrlFromProject,
+} from "@rakazo/linkbuilder-core";
 import { addScreenProxyCapability, shouldProxyComputerScreen } from "./screen-proxy.js";
 
 const SCREEN_REFRESH_SLACK_MS = 5 * 60_000;
@@ -88,9 +98,17 @@ export function publicScreenError(error: unknown): string {
   return cleaned || "Could not open the computer";
 }
 
+type ScreenProject = {
+  name: string | null;
+  brandName: string | null;
+  topicLanes: unknown;
+  targets: unknown;
+};
+
 /**
  * The dashboard computer. Reuses the workspace team machine and the existing
- * screen proxy. Does not change the link-builder driver and does not open a site.
+ * screen proxy. Opens Google search for the stored topic. Does not change the
+ * link-builder driver, register an account, post, or place a link.
  */
 export async function openProjectComputerScreen(
   deps: ProjectScreenDeps,
@@ -100,14 +118,14 @@ export async function openProjectComputerScreen(
 ): Promise<{ url: string | null; error: string | null }> {
   const project = await deps.prisma.lbProject.findFirst({
     where: { id: projectId, workspaceId: actor.workspaceId, archivedAt: null },
-    select: { id: true },
+    select: { id: true, name: true, brandName: true, topicLanes: true, targets: true },
   });
   if (!project) throw new ORPCError("NOT_FOUND");
   const flightKey = `${actor.workspaceId}:${projectId}`;
   const existing = screenFlights.get(flightKey);
   const flight =
     existing ??
-    openScreen(deps, actor, boot).finally(() => {
+    openScreen(deps, actor, project, boot).finally(() => {
       screenFlights.delete(flightKey);
     });
   if (!existing) screenFlights.set(flightKey, flight);
@@ -130,6 +148,7 @@ const screenFlights = new Map<string, Promise<{ url: string | null; error: strin
 async function openScreen(
   deps: ProjectScreenDeps,
   actor: Actor,
+  project: ScreenProject,
   boot: typeof provisionComputer,
 ): Promise<{ url: string | null; error: string | null }> {
   try {
@@ -137,7 +156,10 @@ async function openScreen(
     const cached = computer ? liveCachedUrl(computer) : null;
     if (computer && cached) {
       try {
-        if (await keepComputerAwake(deps, computer)) return { url: cached, error: null };
+        if (await keepComputerAwake(deps, computer)) {
+          await showForumSearch(deps, actor, project, computer);
+          return { url: cached, error: null };
+        }
       } catch {
         // The stored stream is stale. Reconnect the same machine below.
       }
@@ -145,6 +167,7 @@ async function openScreen(
     computer = await bootTeamComputer(deps, actor, computer, boot);
     const url = await connectTeamScreen(deps, actor, computer);
     if (!url) return { url: null, error: "Could not open the computer" };
+    await showForumSearch(deps, actor, project, computer);
     return { url, error: null };
   } catch (error) {
     if (error instanceof ORPCError) throw error;
@@ -316,6 +339,85 @@ function withViewOnly(url: string, viewOnly: boolean) {
     const join = url.includes("?") ? "&" : "?";
     return `${url}${join}view_only=${viewOnly ? "true" : "false"}`;
   }
+}
+
+const DESKTOP_DISPLAY = ":0";
+
+/** Open Chrome on Google search unless that page is already in front. */
+async function showForumSearch(
+  deps: ProjectScreenDeps,
+  actor: Actor,
+  project: ScreenProject,
+  computer: TeamComputer,
+): Promise<void> {
+  if (!computer.providerRef || (computer.state !== "running" && computer.state !== "booting")) {
+    return;
+  }
+  const url = forumSearchUrlFromProject(project);
+  if (!url.startsWith("https://www.google.com/search?")) return;
+  try {
+    let titles: string[] = [];
+    try {
+      const listed = await runDesktop(
+        deps,
+        actor,
+        computer,
+        listVisibleWindowsCommand(DESKTOP_DISPLAY),
+      );
+      titles = parseVisibleWindows(listed).flatMap((window) => (window.title ? [window.title] : []));
+    } catch {
+      titles = [];
+    }
+    if (desktopShowsForumSearch(titles)) return;
+    await runDesktop(deps, actor, computer, openForumSearchScript(url));
+  } catch (error) {
+    console.error("link builder screen", "forum search", publicScreenError(error));
+  }
+}
+
+function openForumSearchScript(url: string): string {
+  return [
+    openHttpUrlCommand(DESKTOP_DISPLAY, url),
+    "sleep 1",
+    exposeBrowserDesktopCommand(DESKTOP_DISPLAY),
+    fillBrowserWindow(DESKTOP_DISPLAY),
+  ].join("\n");
+}
+
+/** Cover the desktop so the search page is what the pane shows. */
+function fillBrowserWindow(display: string): string {
+  const classes = ["google-chrome", "Google-chrome", "Chromium", "chromium", "firefox", "Firefox"]
+    .map((name) => `'${name}'`)
+    .join(" ");
+  return [
+    "id=",
+    `for class in ${classes}; do`,
+    `  id=$(DISPLAY=${display} xdotool search --onlyvisible --class "$class" 2>/dev/null | awk 'NR==1{print; exit}')`,
+    `  if [ -n "$id" ]; then break; fi`,
+    "done",
+    `if [ -n "$id" ]; then`,
+    `  DISPLAY=${display} xdotool windowmove "$id" 0 0 windowsize --sync "$id" 1280 800 windowactivate "$id" 2>/dev/null || true`,
+    "fi",
+  ].join("\n");
+}
+
+async function runDesktop(
+  deps: ProjectScreenDeps,
+  actor: Actor,
+  computer: TeamComputer,
+  script: string,
+): Promise<string> {
+  let stdout = "";
+  const events = deps.sandbox.execute(
+    toComputerRef(computer),
+    { argv: ["bash", "-lc", script], timeoutMs: 20_000 },
+    screenContext(actor, undefined, new AbortController().signal),
+  );
+  for await (const event of events) {
+    if (event.type === "stdout") stdout += event.data;
+    if (event.type === "exit" && event.code !== 0) throw new Error("desktop command failed");
+  }
+  return stdout;
 }
 
 function deadSandbox(error: unknown): boolean {

@@ -11,6 +11,7 @@ export * from "./due.js";
 export * from "./edge-block.js";
 export * from "./errors.js";
 export * from "./fake-scenario.js";
+export * from "./forum-search.js";
 export * from "./funnel.js";
 export * from "./host-state.js";
 export * from "./market.js";

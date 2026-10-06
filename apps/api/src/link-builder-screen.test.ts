@@ -129,4 +129,88 @@ describe("project computer screen", () => {
     expect(result.url).not.toContain("password=");
     expect(stored.screenUrl).toBe(result.url);
   });
+
+  it("opens Google search for the stored topic and skips example hosts", async () => {
+    const expires = Date.now() + 30 * 60_000;
+    const url = `https://app.autoseo.run/novnc/remote/view/${expires}.capability/vnc.html`;
+    const scripts: string[] = [];
+    const prisma = {
+      lbProject: {
+        findFirst: vi.fn(async () => ({
+          id: "project-google",
+          name: "Vitaminexpress",
+          brandName: "Vitaminexpress",
+          topicLanes: [{ tag: "forum-abc.example" }],
+          targets: [{ keywordClusters: ["brett-abc.example"] }],
+        })),
+      },
+      computer: {
+        findFirst: vi.fn(async () => computer({ screenUrl: url })),
+        updateMany: vi.fn(async () => ({ count: 1 })),
+      },
+      bot: { findFirst: vi.fn() },
+    } as unknown as PrismaClient;
+    const result = await openProjectComputerScreen(
+      deps(prisma, {
+        connectScreen: vi.fn(),
+        keepAlive: vi.fn(),
+        execute: async function* (_ref: unknown, request: { argv: string[] }) {
+          const script = request.argv.at(-1) ?? "";
+          scripts.push(script);
+          yield {
+            type: "stdout" as const,
+            data: script.includes("xdotool search") ? "1\t1\tHome\n" : "",
+          };
+          yield { type: "exit" as const, code: 0 };
+        },
+      }),
+      actor,
+      "project-google",
+    );
+    expect(result).toEqual({ url, error: null });
+    const opened = scripts.find((script) => script.includes("google.com/search"));
+    expect(opened).toContain("Vitaminexpress");
+    expect(opened).toContain("forum");
+    expect(opened).not.toContain(".example");
+    expect(scripts.join("\n")).not.toMatch(/register|signup|post/i);
+  });
+
+  it("leaves a Google search that is already on the computer", async () => {
+    const expires = Date.now() + 30 * 60_000;
+    const url = `https://app.autoseo.run/novnc/remote/view/${expires}.capability/vnc.html`;
+    const scripts: string[] = [];
+    const prisma = {
+      lbProject: {
+        findFirst: vi.fn(async () => ({
+          id: "project-searching",
+          name: "Vitaminexpress",
+          brandName: "Vitaminexpress",
+          topicLanes: [],
+          targets: [],
+        })),
+      },
+      computer: {
+        findFirst: vi.fn(async () => computer({ screenUrl: url })),
+        updateMany: vi.fn(async () => ({ count: 1 })),
+      },
+      bot: { findFirst: vi.fn() },
+    } as unknown as PrismaClient;
+    await openProjectComputerScreen(
+      deps(prisma, {
+        keepAlive: vi.fn(),
+        execute: async function* (_ref: unknown, request: { argv: string[] }) {
+          scripts.push(request.argv.at(-1) ?? "");
+          yield {
+            type: "stdout" as const,
+            data: "9\t1\tVitaminexpress forum - Google Search\n",
+          };
+          yield { type: "exit" as const, code: 0 };
+        },
+      }),
+      actor,
+      "project-searching",
+    );
+    expect(scripts).toHaveLength(1);
+    expect(scripts[0]).not.toContain("google.com/search");
+  });
 });
