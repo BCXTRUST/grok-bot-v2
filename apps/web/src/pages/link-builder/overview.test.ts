@@ -111,15 +111,20 @@ describe("overview feed", () => {
     });
     expect(quiet.map((item) => item.label)).toEqual([]);
     expect(overviewAction(quiet, true)).toBe("Working");
+    const opened = step(3, "Opened Google search");
     const counted = overviewFeed({
-      steps,
-      lastEvent: "Checking Google for on-topic forums",
+      steps: [...steps, opened],
+      lastEvent: "Opened Google search",
       working: true,
       blockers: [],
       searches: 1,
     });
-    expect(counted.map((item) => item.label)).toEqual(["Checking Google for on-topic forums"]);
-    expect(counted.map((item) => item.label).join("\n")).not.toMatch(/Looking for threads|Continuing/);
+    expect(counted.map((item) => item.label)).toEqual(["Opened Google search"]);
+    expect(counted[0]?.status).toBe("working");
+    expect(counted.some((item) => item.status === "done")).toBe(false);
+    expect(counted.map((item) => item.label).join("\n")).not.toMatch(
+      /Checking Google for on-topic forums|Looking for threads|Continuing/,
+    );
   });
 
   it("drops the canned three-line loop even when those steps are stored", () => {

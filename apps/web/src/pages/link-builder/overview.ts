@@ -125,9 +125,7 @@ export function overviewFeed(input: {
     .filter((step) => {
       const label = step.lastAction?.trim() || step.kind;
       if (isStaleResearchLine(label)) return false;
-      if (isCannedResearchLine(label) && !(label === RESEARCH_OPENING && (input.searches ?? 0) > 0)) {
-        return false;
-      }
+      if (isCannedResearchLine(label)) return false;
       if (input.searches === 0 && claimsGoogleSearch(label)) return false;
       if (label === RESEARCH_OPENING) {
         if (keptOpening) return false;
@@ -161,7 +159,7 @@ export function overviewFeed(input: {
   const researchAlready = items.some((item) => /research/i.test(item.label));
   const hiddenEvent =
     isStaleResearchLine(event) ||
-    (isCannedResearchLine(event) && !(event === RESEARCH_OPENING && (input.searches ?? 0) > 0)) ||
+    isCannedResearchLine(event) ||
     (input.searches === 0 && claimsGoogleSearch(event)) ||
     !visibleFoundLine(event, input.forumName, input.threadName) ||
     mentionsFixtureHost(event) ||
