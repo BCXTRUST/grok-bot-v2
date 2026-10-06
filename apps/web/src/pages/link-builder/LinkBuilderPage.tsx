@@ -30,6 +30,7 @@ import {
   withPersonaPrefill,
   wizardStepIssues,
 } from "./model.js";
+import { isLinkBuilderRateLimit } from "./rate-limit.js";
 import {
   CreditPackagesView,
   DashboardView,
@@ -64,16 +65,28 @@ function DashboardRoute() {
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     let cancelled = false;
-    void (async () => {
-      try {
-        const next = await rpc.linkBuilder.projects.list();
-        if (!cancelled) setCards(next);
-      } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : "Could not load");
-      }
-    })();
+    let timer = 0;
+    const load = () => {
+      void rpc.linkBuilder.projects
+        .list()
+        .then((next) => {
+          if (cancelled) return;
+          setCards(next);
+          setError(null);
+        })
+        .catch((err: unknown) => {
+          if (cancelled) return;
+          if (isLinkBuilderRateLimit(err)) {
+            timer = window.setTimeout(load, 2_000);
+            return;
+          }
+          setError(err instanceof Error ? err.message : "Could not load");
+        });
+    };
+    load();
     return () => {
       cancelled = true;
+      window.clearTimeout(timer);
     };
   }, []);
   if (!cards) {
@@ -240,14 +253,25 @@ function WizardEditor({ projectId }: { projectId?: string }) {
   useEffect(() => {
     if (!projectId) return;
     let cancelled = false;
-    void rpc.linkBuilder.projects.get({ projectId }).then((project) => {
-      if (cancelled) return;
-      setDraft(draftFromProject(project));
-      setId(project.id);
-      setReady(true);
-    });
+    let timer = 0;
+    const load = () => {
+      void rpc.linkBuilder.projects
+        .get({ projectId })
+        .then((project) => {
+          if (cancelled) return;
+          setDraft(draftFromProject(project));
+          setId(project.id);
+          setReady(true);
+        })
+        .catch((err: unknown) => {
+          if (cancelled || !isLinkBuilderRateLimit(err)) return;
+          timer = window.setTimeout(load, 2_000);
+        });
+    };
+    load();
     return () => {
       cancelled = true;
+      window.clearTimeout(timer);
     };
   }, [projectId]);
 
@@ -448,10 +472,47 @@ function ProjectRoute({ projectId }: { projectId: string }) {
   useEffect(() => {
     if (surface !== "dashboard") return;
     const timer = setInterval(() => {
-      void reload().catch(() => undefined);
-    }, 2000);
+      void rpc.linkBuilder.projects
+        .status({ projectId })
+        .then((next) => setStatus(next))
+        .catch(() => undefined);
+    }, 2_000);
     return () => clearInterval(timer);
-  }, [reload, surface]);
+  }, [projectId, surface]);
+
+  const lastSnapshotAt = useRef(0);
+  const snapshotTimer = useRef(0);
+  const scheduleSnapshot = useCallback(() => {
+    const run = () => {
+      lastSnapshotAt.current = Date.now();
+      void reload().catch(() => undefined);
+    };
+    const wait = 10_000 - (Date.now() - lastSnapshotAt.current);
+    if (wait <= 0) {
+      window.clearTimeout(snapshotTimer.current);
+      snapshotTimer.current = 0;
+      run();
+      return;
+    }
+    if (snapshotTimer.current) return;
+    snapshotTimer.current = window.setTimeout(() => {
+      snapshotTimer.current = 0;
+      run();
+    }, wait);
+  }, [reload]);
+
+  useEffect(() => {
+    if (surface !== "dashboard") return;
+    const interval = window.setInterval(() => scheduleSnapshot(), 10_000);
+    return () => window.clearInterval(interval);
+  }, [scheduleSnapshot, surface]);
+
+  useEffect(() => {
+    return () => {
+      window.clearTimeout(snapshotTimer.current);
+      snapshotTimer.current = 0;
+    };
+  }, [scheduleSnapshot]);
 
   useEffect(() => {
     const abort = new AbortController();
@@ -466,16 +527,17 @@ function ProjectRoute({ projectId }: { projectId: string }) {
           for await (const event of events) {
             if (abort.signal.aborted) return;
             cursor = event.cursor;
-            await reload();
+            scheduleSnapshot();
           }
-        } catch {
+        } catch (err) {
           if (abort.signal.aborted) return;
-          await new Promise((resolve) => setTimeout(resolve, 1500));
+          const delay = isLinkBuilderRateLimit(err) ? 10_000 : 1_500;
+          await new Promise((resolve) => setTimeout(resolve, delay));
         }
       }
     })();
     return () => abort.abort();
-  }, [projectId, reload]);
+  }, [projectId, scheduleSnapshot]);
 
   if (!project) {
     return (
@@ -554,20 +616,31 @@ function OperatorRoute({ projectId, ticketId }: { projectId: string; ticketId: s
   const loadArtifact = useArtifactLoader(projectId);
   useEffect(() => {
     let cancelled = false;
-    void rpc.linkBuilder.operator.tickets({ projectId }).then((tickets) => {
-      if (cancelled) return;
-      const found = tickets.find((item) => item.id === ticketId) ?? null;
-      const captcha =
-        found?.reason === "captcha_unsolved" || isFixtureHostDomain(found?.domain ?? "");
-      if (!found || captcha) {
-        navigate(`/link-builder/${projectId}`, { replace: true });
-        return;
-      }
-      setTicket(found);
-      setNote(found.note ?? "");
-    });
+    let timer = 0;
+    const load = () => {
+      void rpc.linkBuilder.operator
+        .tickets({ projectId })
+        .then((tickets) => {
+          if (cancelled) return;
+          const found = tickets.find((item) => item.id === ticketId) ?? null;
+          const captcha =
+            found?.reason === "captcha_unsolved" || isFixtureHostDomain(found?.domain ?? "");
+          if (!found || captcha) {
+            navigate(`/link-builder/${projectId}`, { replace: true });
+            return;
+          }
+          setTicket(found);
+          setNote(found.note ?? "");
+        })
+        .catch((err: unknown) => {
+          if (cancelled || !isLinkBuilderRateLimit(err)) return;
+          timer = window.setTimeout(load, 2_000);
+        });
+    };
+    load();
     return () => {
       cancelled = true;
+      window.clearTimeout(timer);
     };
   }, [navigate, projectId, ticketId]);
   if (!ticket) {
