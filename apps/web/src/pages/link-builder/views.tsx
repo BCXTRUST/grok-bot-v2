@@ -300,12 +300,10 @@ export function ProjectView({
   onBuyCredits?: () => void;
 }) {
   const [intent, setIntent] = useState<OverviewIntent>(null);
-  const serverWorking = status?.activity === "running" || status?.activity === "overtime";
   useEffect(() => {
-    if (!intent) return;
-    if (intent === "working" && serverWorking) setIntent(null);
-    if ((intent === "paused" || intent === "stopped") && !serverWorking && !busy) setIntent(null);
-  }, [intent, serverWorking, busy]);
+    if (!intent || busy) return;
+    setIntent(null);
+  }, [intent, busy]);
   const working = overviewWorking({ activity: status?.activity ?? null, intent });
   const pill = overviewPill({ activityLabel: status?.activityLabel ?? null, intent });
   function request(kind: "start" | "pause" | "stop") {
