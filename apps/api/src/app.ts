@@ -48,6 +48,7 @@ import { createAgentMailInbox, listAgentMailInboxes } from "./agentmail.js";
 import { type AppEnv, loadEnv } from "./env.js";
 import { ingestInboundMail, verifyInboundMailSignature } from "./link-builder-mail.js";
 import {
+  anonymousRateKey,
   LINK_BUILDER_POLL_RATE_LIMIT,
   LINK_BUILDER_RATE_LIMIT,
   LINK_BUILDER_RATE_WINDOW_MS,
@@ -283,7 +284,7 @@ export async function createApp(
   });
   const rpc = new RPCHandler(router);
   const linkBuilderLimiters = {
-    interactive: new WorkspaceRateLimiter(LINK_BUILDER_RATE_LIMIT, LINK_BUILDER_RATE_WINDOW_MS),
+    page: new WorkspaceRateLimiter(LINK_BUILDER_RATE_LIMIT, LINK_BUILDER_RATE_WINDOW_MS),
     poll: new WorkspaceRateLimiter(LINK_BUILDER_POLL_RATE_LIMIT, LINK_BUILDER_RATE_WINDOW_MS),
   };
   const app = new Hono();
@@ -309,16 +310,15 @@ export async function createApp(
     const actor = session?.user
       ? await requireMembership(prisma, session.user.id).catch(() => null)
       : null;
-    if (actor) {
-      const decision = takeLinkBuilderRequest(linkBuilderLimiters, {
-        pathname: new URL(c.req.url).pathname,
-        workspaceId: actor.workspaceId,
+    const decision = takeLinkBuilderRequest(linkBuilderLimiters, {
+      pathname: new URL(c.req.url).pathname,
+      member: Boolean(actor),
+      clientKey: anonymousRateKey(c.req.header("x-forwarded-for"), c.req.header("x-real-ip")),
+    });
+    if (!decision.ok) {
+      return c.json({ error: "Too many requests" }, 429, {
+        "retry-after": String(Math.ceil(decision.retryAfterMs / 1000)),
       });
-      if (!decision.ok) {
-        return c.json({ error: "Too many requests" }, 429, {
-          "retry-after": String(Math.ceil(decision.retryAfterMs / 1000)),
-        });
-      }
     }
     const { matched, response } = await rpc.handle(c.req.raw, {
       prefix: "/rpc",

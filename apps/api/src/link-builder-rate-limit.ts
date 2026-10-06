@@ -27,8 +27,8 @@ export const LINK_BUILDER_RATE_LIMIT = 120;
 export const LINK_BUILDER_RATE_WINDOW_MS = 60_000;
 
 /**
- * Dashboard reads use their own window. The same 120/60s cap still applies,
- * but status traffic cannot spend the budget that opens the project list.
+ * Anonymous callers only. A signed-in workspace member is not charged, so a
+ * live dashboard cannot lock the customer out of the project list.
  */
 export const LINK_BUILDER_POLL_RATE_LIMIT = LINK_BUILDER_RATE_LIMIT;
 
@@ -54,7 +54,7 @@ export type LinkBuilderRateBucket = "poll" | "interactive";
 
 /**
  * Document navigations such as `/link-builder` are not RPC and are not counted.
- * `projects/list` stays on the interactive window.
+ * `projects/list` stays on the page-load window.
  */
 export function linkBuilderRpcBucket(pathname: string): LinkBuilderRateBucket | null {
   const index = pathname.indexOf(LINK_BUILDER_RPC_MARKER);
@@ -64,15 +64,30 @@ export function linkBuilderRpcBucket(pathname: string): LinkBuilderRateBucket | 
   return POLL_PROCEDURES.has(procedure) ? "poll" : "interactive";
 }
 
+/** First forwarded address, or the direct peer. Unusable values share one bucket. */
+export function anonymousRateKey(
+  forwardedFor: string | null | undefined,
+  realIp: string | null | undefined,
+): string {
+  const forwarded = forwardedFor?.split(",")[0]?.trim() ?? "";
+  const raw = forwarded || realIp?.trim() || "";
+  const ip = raw.replace(/[^0-9a-fA-F:.%]/g, "").slice(0, 64);
+  return ip ? `ip:${ip}` : "anonymous";
+}
+
+/**
+ * Signed-in members are allowed through. Anonymous floods are limited, and a
+ * status or computer poll does not spend the page-load window.
+ */
 export function takeLinkBuilderRequest(
-  limiters: { poll: WorkspaceRateLimiter; interactive: WorkspaceRateLimiter },
-  input: { pathname: string; workspaceId: string },
+  limiters: { poll: WorkspaceRateLimiter; page: WorkspaceRateLimiter },
+  input: { pathname: string; member: boolean; clientKey: string },
 ):
   | { ok: true; bucket: LinkBuilderRateBucket | null }
   | { ok: false; bucket: LinkBuilderRateBucket; retryAfterMs: number } {
   const bucket = linkBuilderRpcBucket(input.pathname);
-  if (!bucket) return { ok: true, bucket };
-  const decision = limiters[bucket].take(input.workspaceId);
+  if (!bucket || input.member) return { ok: true, bucket };
+  const decision = (bucket === "poll" ? limiters.poll : limiters.page).take(input.clientKey);
   if (!decision.ok) return { ok: false, bucket, retryAfterMs: decision.retryAfterMs };
   return { ok: true, bucket };
 }

@@ -30,7 +30,7 @@ import {
   withPersonaPrefill,
   wizardStepIssues,
 } from "./model.js";
-import { isLinkBuilderRateLimit } from "./rate-limit.js";
+import { isLinkBuilderRateLimit, linkBuilderPollBackoffMs } from "./rate-limit.js";
 import {
   CreditPackagesView,
   DashboardView,
@@ -66,18 +66,21 @@ function DashboardRoute() {
   useEffect(() => {
     let cancelled = false;
     let timer = 0;
+    let attempt = 0;
     const load = () => {
       void rpc.linkBuilder.projects
         .list()
         .then((next) => {
           if (cancelled) return;
+          attempt = 0;
           setCards(next);
           setError(null);
         })
         .catch((err: unknown) => {
           if (cancelled) return;
           if (isLinkBuilderRateLimit(err)) {
-            timer = window.setTimeout(load, 2_000);
+            timer = window.setTimeout(load, linkBuilderPollBackoffMs(attempt));
+            attempt += 1;
             return;
           }
           setError(err instanceof Error ? err.message : "Could not load");
@@ -254,18 +257,21 @@ function WizardEditor({ projectId }: { projectId?: string }) {
     if (!projectId) return;
     let cancelled = false;
     let timer = 0;
+    let attempt = 0;
     const load = () => {
       void rpc.linkBuilder.projects
         .get({ projectId })
         .then((project) => {
           if (cancelled) return;
+          attempt = 0;
           setDraft(draftFromProject(project));
           setId(project.id);
           setReady(true);
         })
         .catch((err: unknown) => {
           if (cancelled || !isLinkBuilderRateLimit(err)) return;
-          timer = window.setTimeout(load, 2_000);
+          timer = window.setTimeout(load, linkBuilderPollBackoffMs(attempt));
+          attempt += 1;
         });
     };
     load();
@@ -424,7 +430,26 @@ function ProjectRoute({ projectId }: { projectId: string }) {
   }, [projectId]);
 
   useEffect(() => {
-    void reload().catch(() => undefined);
+    let cancelled = false;
+    let timer = 0;
+    let attempt = 0;
+    const load = () => {
+      void reload()
+        .then(() => {
+          attempt = 0;
+        })
+        .catch((err: unknown) => {
+          if (cancelled) return;
+          const limited = isLinkBuilderRateLimit(err);
+          timer = window.setTimeout(load, limited ? linkBuilderPollBackoffMs(attempt) : 5_000);
+          if (limited) attempt += 1;
+        });
+    };
+    load();
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
   }, [reload]);
 
   useEffect(() => {
@@ -440,6 +465,7 @@ function ProjectRoute({ projectId }: { projectId: string }) {
     setScreenError(null);
     setScreenPending(true);
     const pull = async () => {
+      let limited = false;
       try {
         const next = await rpc.linkBuilder.projects.screen({ projectId });
         if (cancelled) return;
@@ -448,19 +474,24 @@ function ProjectRoute({ projectId }: { projectId: string }) {
           setScreenUrl(next.url);
           setScreenError(null);
           setScreenPending(false);
-        } else if (next.error) {
+        } else if (next.error && !/too many requests/i.test(next.error)) {
           screenUrlRef.current = null;
           setScreenUrl(null);
           setScreenError(next.error);
           setScreenPending(false);
+        } else if (next.error) {
+          limited = true;
+          if (!screenUrlRef.current) setScreenPending(true);
         } else if (!screenUrlRef.current) {
           setScreenPending(true);
         }
-      } catch {
+      } catch (err) {
+        limited = isLinkBuilderRateLimit(err);
         if (!cancelled && !screenUrlRef.current) setScreenPending(true);
       }
       if (cancelled) return;
-      timer = window.setTimeout(pull, screenUrlRef.current ? 45_000 : 8_000);
+      const wait = limited ? linkBuilderPollBackoffMs(0) : screenUrlRef.current ? 45_000 : 8_000;
+      timer = window.setTimeout(pull, wait);
     };
     void pull();
     return () => {
@@ -471,21 +502,44 @@ function ProjectRoute({ projectId }: { projectId: string }) {
 
   useEffect(() => {
     if (surface !== "dashboard") return;
-    const timer = setInterval(() => {
+    let cancelled = false;
+    let timer = 0;
+    let attempt = 0;
+    const tick = () => {
       void rpc.linkBuilder.projects
         .status({ projectId })
-        .then((next) => setStatus(next))
-        .catch(() => undefined);
-    }, 2_000);
-    return () => clearInterval(timer);
+        .then((next) => {
+          if (cancelled) return;
+          attempt = 0;
+          setStatus(next);
+          timer = window.setTimeout(tick, 2_000);
+        })
+        .catch((err: unknown) => {
+          if (cancelled) return;
+          const limited = isLinkBuilderRateLimit(err);
+          timer = window.setTimeout(tick, limited ? linkBuilderPollBackoffMs(attempt) : 2_000);
+          if (limited) attempt += 1;
+        });
+    };
+    timer = window.setTimeout(tick, 2_000);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
   }, [projectId, surface]);
 
   const lastSnapshotAt = useRef(0);
   const snapshotTimer = useRef(0);
+  const pollPausedUntil = useRef(0);
   const scheduleSnapshot = useCallback(() => {
     const run = () => {
+      if (Date.now() < pollPausedUntil.current) return;
       lastSnapshotAt.current = Date.now();
-      void reload().catch(() => undefined);
+      void reload().catch((err: unknown) => {
+        if (isLinkBuilderRateLimit(err)) {
+          pollPausedUntil.current = Date.now() + linkBuilderPollBackoffMs(0);
+        }
+      });
     };
     const wait = 10_000 - (Date.now() - lastSnapshotAt.current);
     if (wait <= 0) {
@@ -531,7 +585,7 @@ function ProjectRoute({ projectId }: { projectId: string }) {
           }
         } catch (err) {
           if (abort.signal.aborted) return;
-          const delay = isLinkBuilderRateLimit(err) ? 10_000 : 1_500;
+          const delay = isLinkBuilderRateLimit(err) ? linkBuilderPollBackoffMs(0) : 5_000;
           await new Promise((resolve) => setTimeout(resolve, delay));
         }
       }
@@ -617,6 +671,7 @@ function OperatorRoute({ projectId, ticketId }: { projectId: string; ticketId: s
   useEffect(() => {
     let cancelled = false;
     let timer = 0;
+    let attempt = 0;
     const load = () => {
       void rpc.linkBuilder.operator
         .tickets({ projectId })
@@ -634,7 +689,8 @@ function OperatorRoute({ projectId, ticketId }: { projectId: string; ticketId: s
         })
         .catch((err: unknown) => {
           if (cancelled || !isLinkBuilderRateLimit(err)) return;
-          timer = window.setTimeout(load, 2_000);
+          timer = window.setTimeout(load, linkBuilderPollBackoffMs(attempt));
+          attempt += 1;
         });
     };
     load();
