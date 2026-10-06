@@ -352,6 +352,7 @@ async function checkBalances(
   deps: DueWorkDeps,
   alerts: ReturnType<typeof createAlertSink>,
 ): Promise<void> {
+  if (process.env.CAPTELL_API_KEY?.trim()) return;
   const projects = await deps.prisma.lbProject.findMany({
     where: { status: "active", archivedAt: null },
   });

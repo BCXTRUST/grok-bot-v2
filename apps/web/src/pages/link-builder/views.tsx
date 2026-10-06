@@ -94,7 +94,6 @@ export function WizardView({
   onChange,
   onBack,
   onNext,
-  onCheckBalance,
   onStart,
   onGoTo,
 }: {
@@ -106,16 +105,20 @@ export function WizardView({
   onChange: (draft: WizardDraft) => void;
   onBack: () => void;
   onNext: () => void;
-  onCheckBalance: () => void;
   onStart: () => void;
   onGoTo: (step: number) => void;
 }) {
   const title = WIZARD_STEPS[step] ?? "Review";
+  const last = WIZARD_STEPS.length - 1;
   return (
-    <main className="flex h-full min-h-dvh bg-[#050506]">
+    <main
+      className="grid h-full min-h-dvh bg-[#050506]"
+      style={{ gridTemplateColumns: "240px minmax(0, 1fr)" }}
+    >
       <ol
         aria-label="Setup steps"
-        className="flex w-56 shrink-0 flex-col gap-0.5 border-r border-[#2A2A31] px-3 py-8"
+        className="flex flex-col gap-0.5 border-r border-[#2A2A31] px-3 py-8"
+        style={{ position: "sticky", top: 0, height: "100vh", alignSelf: "start" }}
       >
         {WIZARD_STEPS.map((label, index) => {
           const current = index === step;
@@ -149,13 +152,10 @@ export function WizardView({
           <BuiCard className="flex flex-col gap-3 p-4">
             {step === 0 ? <BrandFields draft={draft} onChange={onChange} /> : null}
             {step === 1 ? <PersonaFields draft={draft} onChange={onChange} /> : null}
-            {step === 2 ? (
-              <CaptchaFields draft={draft} onChange={onChange} onCheckBalance={onCheckBalance} />
-            ) : null}
-            {step === 3 ? <QuotaFields draft={draft} onChange={onChange} /> : null}
-            {step === 4 ? <TopicFields draft={draft} onChange={onChange} /> : null}
-            {step === 5 ? <PolicyFields draft={draft} onChange={onChange} /> : null}
-            {step === 6 ? <ReviewFields draft={draft} /> : null}
+            {step === 2 ? <QuotaFields draft={draft} onChange={onChange} /> : null}
+            {step === 3 ? <TopicFields draft={draft} onChange={onChange} /> : null}
+            {step === 4 ? <PolicyFields draft={draft} onChange={onChange} /> : null}
+            {step === last ? <ReviewFields draft={draft} /> : null}
             {issues.length > 0 ? (
               <ul className="flex flex-col gap-1 text-[13px] text-[#FF8B8B]" role="alert">
                 {issues.map((issue) => (
@@ -168,7 +168,7 @@ export function WizardView({
             <BuiButton label="Back" onClick={onBack} disabled={step === 0 || busy}>
               Back
             </BuiButton>
-            {step < 6 ? (
+            {step < last ? (
               <BuiButton tone="accent" label="Continue" onClick={onNext} disabled={busy}>
                 Continue
               </BuiButton>
@@ -453,10 +453,6 @@ function Overview({
             <li>Pending email {status.whyNot.pendingEmail}</li>
             <li>Pending admin {status.whyNot.pendingAdmin}</li>
             <li>Model errors {status.whyNot.modelErrors}</li>
-            <li>
-              Captell balance{" "}
-              {status.whyNot.captchaBalance === null ? "unknown" : status.whyNot.captchaBalance}
-            </li>
             <li>Proxy {status.whyNot.proxy}</li>
           </ul>
         </section>
@@ -465,14 +461,12 @@ function Overview({
         <section aria-label="Costs">
           <div className="text-[12px] text-[#85858A]">Costs</div>
           <p className="mt-1 text-[13px] text-[#ECECEE]">
-            Today {status.costs.day.captellCredits} credits · {status.costs.day.modelTokens} tokens
-            · {status.costs.day.searchQueries} searches · {status.costs.day.proxyLeaseDays} proxy
-            days
+            Today {status.costs.day.modelTokens} tokens · {status.costs.day.searchQueries} searches
+            · {status.costs.day.proxyLeaseDays} proxy days
           </p>
           <p className="text-[13px] text-[#A6A6AD]">
-            Week {status.costs.week.captellCredits} credits · {status.costs.week.modelTokens} tokens
-            · {status.costs.week.searchQueries} searches · {status.costs.week.proxyLeaseDays} proxy
-            days
+            Week {status.costs.week.modelTokens} tokens · {status.costs.week.searchQueries} searches
+            · {status.costs.week.proxyLeaseDays} proxy days
           </p>
         </section>
       ) : null}
@@ -873,44 +867,6 @@ function PersonaFields({
       <div className="text-[13px] text-[#A6A6AD]">
         {draft.mailboxAddress ?? "Inbox is created on continue"}
       </div>
-    </>
-  );
-}
-
-function CaptchaFields({
-  draft,
-  onChange,
-  onCheckBalance,
-}: {
-  draft: WizardDraft;
-  onChange: (draft: WizardDraft) => void;
-  onCheckBalance: () => void;
-}) {
-  return (
-    <>
-      <Field label="Captell token">
-        <input
-          aria-label="Captell token"
-          className={inputClass}
-          value={draft.captchaToken}
-          placeholder="ct_live_…"
-          autoComplete="off"
-          onChange={(event) =>
-            onChange({ ...draft, captchaToken: event.target.value, balance: null })
-          }
-        />
-      </Field>
-      <BuiButton label="Check balance" onClick={onCheckBalance}>
-        Check balance
-      </BuiButton>
-      <div className="text-[13px] text-[#A6A6AD]">
-        {draft.captchaConfigured
-          ? "Token saved"
-          : draft.balance === null
-            ? "Balance not checked"
-            : `${draft.balance} credits`}
-      </div>
-      <div className="text-[12px] text-[#85858A]">Helper 2026.10.4.16</div>
     </>
   );
 }

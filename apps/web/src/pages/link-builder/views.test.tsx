@@ -142,7 +142,9 @@ describe("link builder screens", () => {
 
   it("marks earlier steps done beside the review form", () => {
     const html = renderToStaticMarkup(<LinkBuilderPreview screen="review" />);
-    expect(html.split("M20 6 9 17 4 12").length - 1).toBe(6);
+    expect(html.split("M20 6 9 17 4 12").length - 1).toBe(5);
+    expect(html).not.toContain("Captell token");
+    expect(html).not.toContain("Check balance");
     expect(html).toContain('aria-current="step"');
   });
 });

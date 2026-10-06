@@ -986,6 +986,7 @@ export async function pauseForLowBalance(
   balance: number,
   record: Pick<CaptchaRecord, "type" | "door"> = { type: "unsupported", door: "https_api" },
 ): Promise<boolean> {
+  if (process.env.CAPTELL_API_KEY?.trim()) return false;
   const paused = await ctx.services.prisma.$transaction(async (tx) => {
     const updated = await tx.lbProject.updateMany({
       where: { id: ctx.project.id, workspaceId: ctx.project.workspaceId, status: "active" },

@@ -318,6 +318,8 @@ export const FAKE_CAPTCHA_COSTS: Record<FakeCaptchaCostKey, number> = {
   recaptcha_enterprise: 25,
   turnstile: 10,
   hcaptcha: 10,
+  geetest: 9,
+  funcaptcha: 15,
 };
 
 export type FakeCaptchaOutcome = string | CaptchaSolverError;
@@ -350,6 +352,8 @@ export class FakeCaptchaSolver implements CaptchaSolver {
       "recaptcha_enterprise",
       "turnstile",
       "hcaptcha",
+      "geetest",
+      "funcaptcha",
       "image_letters",
       "knowledge_question",
     ];

@@ -64,7 +64,6 @@ export function LinkBuilderPreview({ screen }: { screen: string }) {
           onChange={() => undefined}
           onBack={() => undefined}
           onNext={() => undefined}
-          onCheckBalance={() => undefined}
           onStart={() => undefined}
           onGoTo={() => undefined}
         />
@@ -84,7 +83,7 @@ export function LinkBuilderPreview({ screen }: { screen: string }) {
     return (
       <div className="min-h-screen bg-[#050506]">
         <WizardView
-          step={6}
+          step={5}
           draft={draft}
           issues={[]}
           busy={false}
@@ -92,7 +91,6 @@ export function LinkBuilderPreview({ screen }: { screen: string }) {
           onChange={() => undefined}
           onBack={() => undefined}
           onNext={() => undefined}
-          onCheckBalance={() => undefined}
           onStart={() => undefined}
           onGoTo={() => undefined}
         />

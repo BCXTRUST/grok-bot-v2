@@ -45,15 +45,11 @@ describe("link builder wizard", () => {
     expect(wizardStepIssues(0, draft)).toEqual([]);
     draft.displayName = "Mira";
     expect(wizardStepIssues(1, draft)).toEqual([]);
-    draft.captchaToken = "ct_live_placeholder";
-    expect(wizardStepIssues(2, draft)).toContain("Check the balance before continuing");
-    draft.balance = 1200;
     expect(wizardStepIssues(2, draft)).toEqual([]);
     draft.lanes = [{ id: "lane-schlaf", tag: "Schlaf", description: "Abend" }];
-    expect(wizardStepIssues(4, draft)).toEqual([]);
+    expect(wizardStepIssues(3, draft)).toEqual([]);
     expect(canStart(draft)).toBe(false);
     draft.mailboxId = "mbx-1";
-    draft.captchaConfigured = true;
     expect(canStart(draft)).toBe(true);
   });
 
@@ -82,7 +78,9 @@ describe("link builder wizard", () => {
     expect(wizardStepIssues(0, draft)).toEqual([]);
     const patch = patchFromDraft(draft);
     expect(patch.allowedDomains).toEqual(["vitaminexpress.org"]);
-    expect(patch.targets.map((target) => target.url)).toEqual(["https://www.vitaminexpress.org/de"]);
+    expect(patch.targets.map((target) => target.url)).toEqual([
+      "https://www.vitaminexpress.org/de",
+    ]);
   });
 
   it("prefills an empty bio from the brand and path", () => {

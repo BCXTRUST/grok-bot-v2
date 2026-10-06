@@ -79,6 +79,8 @@ export function captchaCropAcceptable(bytes: Uint8Array): boolean {
 export function captchaResponseField(type: TokenCaptchaType): string {
   if (type === "turnstile") return "cf-turnstile-response";
   if (type === "hcaptcha") return "h-captcha-response";
+  if (type === "geetest") return "geetest_validate";
+  if (type === "funcaptcha") return "fc-token";
   return "g-recaptcha-response";
 }
 

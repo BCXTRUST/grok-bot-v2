@@ -180,6 +180,7 @@ async function main() {
             projectId: project.id,
             workspaceId: project.workspaceId,
             redact,
+            env: process.env,
           }),
         mailbox: process.env.AGENTMAIL_API_KEY
           ? new AgentMailMailbox(agentMailLiveClient(process.env.AGENTMAIL_API_KEY), prisma)

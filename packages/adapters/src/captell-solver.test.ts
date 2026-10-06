@@ -36,9 +36,68 @@ describe("CaptellHttpSolver", () => {
       "recaptcha_enterprise",
       "turnstile",
       "hcaptcha",
+      "geetest",
+      "funcaptcha",
       "image_letters",
       "knowledge_question",
     ]);
+  });
+
+  it("posts enterprise, GeeTest and FunCaptcha on the HTTPS door and accepts a deployment key", async () => {
+    const emulator = new CaptellEmulator([
+      captellCues.tokenSolved(),
+      captellCues.tokenSolved(),
+      captellCues.tokenSolved(),
+    ]);
+    const client = new CaptellHttpSolver({
+      token: async () => "deployment-key-unlimited-1",
+      fetch: emulator.fetch,
+      baseUrl: "https://captell.example",
+      maxRetries: 0,
+    });
+    await client.solve(
+      {
+        type: "recaptcha_enterprise",
+        websiteURL: "https://board.example/register",
+        websiteKey: "ent-1",
+      },
+      context,
+    );
+    await client.solve(
+      { type: "geetest", websiteURL: "https://board.example/register", websiteKey: "gt-1" },
+      context,
+    );
+    await client.solve(
+      { type: "funcaptcha", websiteURL: "https://board.example/register", websiteKey: "pk-1" },
+      context,
+    );
+    expect(emulator.requests.map((request) => request.body)).toEqual([
+      {
+        type: "RecaptchaV2Enterprise",
+        websiteURL: "https://board.example/register",
+        websiteKey: "ent-1",
+      },
+      { type: "GeeTest", websiteURL: "https://board.example/register", gt: "gt-1" },
+      {
+        type: "FunCaptcha",
+        websiteURL: "https://board.example/register",
+        websitePublicKey: "pk-1",
+      },
+    ]);
+    expect(emulator.requests[0]?.authorization).toBe("Bearer deployment-key-unlimited-1");
+    const refused = new CaptellEmulator();
+    await expect(
+      new CaptellHttpSolver({
+        token: async () => "short",
+        fetch: refused.fetch,
+        baseUrl: "https://captell.example",
+        maxRetries: 0,
+      }).solve(
+        { type: "geetest", websiteURL: "https://board.example/register", websiteKey: "gt-1" },
+        context,
+      ),
+    ).rejects.toMatchObject({ code: "invalid_request" });
+    expect(refused.requests).toHaveLength(0);
   });
 
   it("posts ImageToText and widget solves with the bearer token and never the image when it is tiny", async () => {

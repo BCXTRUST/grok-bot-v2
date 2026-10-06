@@ -1,6 +1,5 @@
 import {
   LB_RESPONSIBILITY_ACK_SENTENCE,
-  LbCaptchaTokenSchema,
   type LbDisclosureMode,
   type LbHostStatus,
   LbLinkRatioSchema,
@@ -25,7 +24,6 @@ export const RESPONSIBILITY_SENTENCE = LB_RESPONSIBILITY_ACK_SENTENCE;
 export const WIZARD_STEPS = [
   "Brand & domains",
   "Persona & inbox",
-  "Captell",
   "Quotas & schedule",
   "Topics & targets",
   "Policy",
@@ -195,23 +193,24 @@ export function splitList(value: string): string[] {
 }
 
 export function wizardStepIssues(step: number, draft: WizardDraft): string[] {
-  if (step === 6) {
-    const issues = [0, 1, 2, 3, 4, 5].flatMap((index) => wizardStepIssues(index, draft));
+  const review = WIZARD_STEPS.length - 1;
+  if (step === review) {
+    const issues = Array.from({ length: review }, (_, index) =>
+      wizardStepIssues(index, draft),
+    ).flat();
     if (!draft.mailboxId) issues.push("Inbox is still provisioning");
-    if (!draft.captchaConfigured) issues.push("Save the Captell token first");
     return issues;
   }
   if (step === 0) return brandIssues(draft);
   if (step === 1) return personaIssues(draft);
-  if (step === 2) return captchaIssues(draft);
-  if (step === 3) return quotaIssues(draft);
-  if (step === 4) return topicIssues(draft);
-  if (step === 5) return policyIssues(draft);
+  if (step === 2) return quotaIssues(draft);
+  if (step === 3) return topicIssues(draft);
+  if (step === 4) return policyIssues(draft);
   return ["Unknown step"];
 }
 
 export function canStart(draft: WizardDraft): boolean {
-  return wizardStepIssues(6, draft).length === 0;
+  return wizardStepIssues(WIZARD_STEPS.length - 1, draft).length === 0;
 }
 
 export function artifactImageSrc(artifact: {
@@ -267,9 +266,7 @@ export function updateMarketLocale(
 
 export { LB_WIZARD_COUNTRIES };
 
-export type ParsedSite =
-  | { ok: true; domain: string; targetUrl: string | null }
-  | { ok: false };
+export type ParsedSite = { ok: true; domain: string; targetUrl: string | null } | { ok: false };
 
 /** Accept a bare host, www, http(s), or a path. Store the registrable domain. */
 export function parseAllowedSite(raw: string): ParsedSite {
@@ -346,14 +343,6 @@ function personaIssues(draft: WizardDraft): string[] {
     language: draft.markets[0]?.language,
   });
   return parsed.success ? [] : parsed.error.issues.map((issue) => issue.message);
-}
-
-function captchaIssues(draft: WizardDraft): string[] {
-  if (draft.captchaConfigured) return [];
-  if (!LbCaptchaTokenSchema.safeParse(draft.captchaToken).success)
-    return ["Paste a ct_live_ token"];
-  if (draft.balance === null) return ["Check the balance before continuing"];
-  return [];
 }
 
 function quotaIssues(draft: WizardDraft): string[] {

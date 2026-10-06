@@ -105,13 +105,12 @@ describe("link builder project config", () => {
     expect(LbLanguageSchema.safeParse("en-GB").success).toBe(true);
   });
 
-  it("requires mailbox, captcha seat and topic lanes before start", () => {
+  it("requires a mailbox and topic lanes before start", () => {
     expect(LbProjectStartableSchema.safeParse(minimal).success).toBe(false);
     expect(
       LbProjectStartableSchema.safeParse({
         ...minimal,
         mailboxId: "inbox-1",
-        captchaSecretId: "secret-1",
         topicLanes: [{ id: "lane-1", tag: "Rücken", description: "Rückenschmerzen" }],
       }).success,
     ).toBe(true);

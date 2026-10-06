@@ -144,7 +144,18 @@ export async function captchaSolverForProject(input: {
   redact?: (secret: string) => void;
   fetch?: typeof fetch;
   baseUrl?: string;
+  env?: NodeJS.ProcessEnv;
 }): Promise<CaptchaSolver | null> {
+  const deployment = input.env?.CAPTELL_API_KEY?.trim();
+  if (deployment) {
+    return new CaptellHttpSolver({
+      fetch: input.fetch,
+      baseUrl: input.baseUrl ?? input.env?.CAPTELL_BASE_URL,
+      onToken: input.redact,
+      maxRetries: 4,
+      token: async () => deployment,
+    });
+  }
   const project = await input.prisma.lbProject.findFirst({
     where: { id: input.projectId, workspaceId: input.workspaceId },
     select: { captchaSecretId: true },

@@ -417,6 +417,7 @@ export class LinkBuilderRealRunner {
       if (!solver) return "missing";
       ctx.services = { ...ctx.services, captcha: solver };
     }
+    if (process.env.CAPTELL_API_KEY?.trim()) return "ok";
     let credits: number;
     try {
       credits = (await ctx.services.captcha.balance(ctx.adapter)).credits;

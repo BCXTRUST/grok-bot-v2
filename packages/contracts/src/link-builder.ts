@@ -103,6 +103,8 @@ export const LbCaptchaTypeSchema = z.enum([
   "recaptcha_enterprise",
   "turnstile",
   "hcaptcha",
+  "geetest",
+  "funcaptcha",
   "image_letters",
   "knowledge_question",
   "security_check_label",
@@ -117,6 +119,8 @@ export const LbTokenCaptchaTypeSchema = LbCaptchaTypeSchema.extract([
   "recaptcha_enterprise",
   "turnstile",
   "hcaptcha",
+  "geetest",
+  "funcaptcha",
 ]);
 export type LbTokenCaptchaType = z.infer<typeof LbTokenCaptchaTypeSchema>;
 
@@ -490,10 +494,9 @@ export const LbProjectConfigSchema = z.object({
 export type LbProjectConfig = z.infer<typeof LbProjectConfigSchema>;
 export type LbProjectConfigInput = z.input<typeof LbProjectConfigSchema>;
 
-/** Fields the wizard must have before Start building is allowed. */
+/** Fields the wizard must have before Start building is allowed. Captell stays on the deployment. */
 export const LbProjectStartableSchema = LbProjectConfigSchema.extend({
   mailboxId: Id,
-  captchaSecretId: Id,
   topicLanes: z.array(LbTopicLaneSchema).min(1).max(20),
 });
 

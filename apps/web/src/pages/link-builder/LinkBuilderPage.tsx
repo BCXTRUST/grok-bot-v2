@@ -23,6 +23,7 @@ import {
   emptyDraft,
   patchFromDraft,
   slugifyProjectName,
+  WIZARD_STEPS,
   type WizardDraft,
   withPersonaPrefill,
   wizardStepIssues,
@@ -120,9 +121,9 @@ function WizardRoute({ projectId }: { projectId?: string }) {
   }, [projectId]);
 
   const save = useCallback(
-    async (next: WizardDraft, includeToken: boolean) => {
+    async (next: WizardDraft) => {
       const patch = patchFromDraft(next);
-      if (!includeToken) delete patch.captchaToken;
+      delete patch.captchaToken;
       if (!id) {
         const created = await rpc.linkBuilder.projects.create({
           name: patch.name,
@@ -149,7 +150,7 @@ function WizardRoute({ projectId }: { projectId?: string }) {
     if (found.length > 0) return;
     setBusy(true);
     try {
-      const saved = await save(next, step === 2);
+      const saved = await save(next);
       setDraft(draftFromProject(saved));
       setStep((value) => Math.min(6, value + 1));
     } catch (err) {
@@ -159,23 +160,8 @@ function WizardRoute({ projectId }: { projectId?: string }) {
     }
   }
 
-  async function checkBalance() {
-    setBusy(true);
-    try {
-      const balance = await rpc.linkBuilder.captell.checkBalance(
-        id && draft.captchaConfigured ? { projectId: id } : { token: draft.captchaToken },
-      );
-      setDraft((current) => ({ ...current, balance: balance.credits }));
-      setIssues([]);
-    } catch (err) {
-      setIssues([err instanceof Error ? err.message : "Balance check failed"]);
-    } finally {
-      setBusy(false);
-    }
-  }
-
   async function start() {
-    const found = wizardStepIssues(6, draft);
+    const found = wizardStepIssues(WIZARD_STEPS.length - 1, draft);
     setIssues(found);
     if (!canStart(draft) || !id) return;
     setBusy(true);
@@ -211,7 +197,6 @@ function WizardRoute({ projectId }: { projectId?: string }) {
         else setStep((value) => value - 1);
       }}
       onNext={() => void nextStep()}
-      onCheckBalance={() => void checkBalance()}
       onStart={() => void start()}
       onGoTo={(index) => {
         if (index > step) return;

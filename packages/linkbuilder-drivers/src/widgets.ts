@@ -7,6 +7,8 @@ const WIDGETS: ReadonlyArray<{ selector: string; type: TokenCaptchaType; key: st
   { selector: ".cf-turnstile", type: "turnstile", key: "data-sitekey" },
   { selector: ".h-captcha", type: "hcaptcha", key: "data-sitekey" },
   { selector: "[data-ipsCaptcha-key]", type: "turnstile", key: "data-ipsCaptcha-key" },
+  { selector: ".funcaptcha", type: "funcaptcha", key: "data-pkey" },
+  { selector: ".geetest_captcha", type: "geetest", key: "data-gt" },
 ];
 
 const ENTERPRISE_SCRIPT = "script[src*='recaptcha/enterprise']";

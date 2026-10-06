@@ -31,14 +31,16 @@ const SUPPORTS: CaptchaType[] = [
   "recaptcha_enterprise",
   "turnstile",
   "hcaptcha",
+  "geetest",
+  "funcaptcha",
   "image_letters",
   "knowledge_question",
 ];
 
-const SOLVE_TYPE: Record<TokenCaptchaType, string> = {
+const SOLVE_TYPE: Record<Exclude<TokenCaptchaType, "geetest" | "funcaptcha">, string> = {
   recaptcha_v2: "RecaptchaV2",
   recaptcha_v3: "RecaptchaV3",
-  recaptcha_enterprise: "RecaptchaEnterprise",
+  recaptcha_enterprise: "RecaptchaV2Enterprise",
   turnstile: "Turnstile",
   hcaptcha: "HCaptcha",
 };
@@ -91,7 +93,7 @@ export class CaptellHttpSolver implements CaptchaSolver {
       throw new CaptchaSolverError("invalid_request", "Captell base URL must be https");
     }
     this.timeoutMs = options.timeoutMs ?? 20_000;
-    this.maxRetries = options.maxRetries ?? 2;
+    this.maxRetries = options.maxRetries ?? 4;
     this.retryDelayMs = options.retryDelayMs ?? 0;
   }
 
@@ -115,14 +117,7 @@ export class CaptellHttpSolver implements CaptchaSolver {
 
   async solve(request: CaptchaSolveRequest, context: AdapterContext): Promise<CaptchaSolveResult> {
     const parsed = parseCaptchaSolveRequest(request);
-    const payload =
-      parsed.type === "ImageToText"
-        ? { type: "ImageToText", body: Buffer.from(parsed.imagePng).toString("base64") }
-        : {
-            type: SOLVE_TYPE[parsed.type],
-            websiteURL: parsed.websiteURL,
-            websiteKey: parsed.websiteKey,
-          };
+    const payload = solvePayload(parsed);
     const { status, json } = await this.call(context, "/api/v1/solve", {
       method: "POST",
       body: JSON.stringify(payload),
@@ -164,7 +159,7 @@ export class CaptellHttpSolver implements CaptchaSolver {
   ): Promise<{ status: number; json: unknown }> {
     const token = await this.token(context);
     this.onToken?.(token);
-    if (!/^ct_live_[A-Za-z0-9_-]{8,120}$/.test(token)) {
+    if (!usableBearer(token)) {
       throw new CaptchaSolverError("invalid_request", "invalid_request");
     }
     const headers: Record<string, string> = {
@@ -271,6 +266,33 @@ function failure(status: number, json: unknown): CaptchaSolverError {
     return new CaptchaSolverError("invalid_request", "invalid_request", { retryable: false });
   }
   return new CaptchaSolverError("error", "error", { retryable: false });
+}
+
+function usableBearer(token: string): boolean {
+  if (!token || /\s/.test(token) || token.includes("://")) return false;
+  if (/^ct_live_[A-Za-z0-9_-]{8,120}$/.test(token)) return true;
+  return token.length >= 16 && token.length <= 200;
+}
+
+function solvePayload(parsed: CaptchaSolveRequest): Record<string, string> {
+  if (parsed.type === "ImageToText") {
+    return { type: "ImageToText", body: Buffer.from(parsed.imagePng).toString("base64") };
+  }
+  if (parsed.type === "geetest") {
+    return { type: "GeeTest", websiteURL: parsed.websiteURL, gt: parsed.websiteKey };
+  }
+  if (parsed.type === "funcaptcha") {
+    return {
+      type: "FunCaptcha",
+      websiteURL: parsed.websiteURL,
+      websitePublicKey: parsed.websiteKey,
+    };
+  }
+  return {
+    type: SOLVE_TYPE[parsed.type],
+    websiteURL: parsed.websiteURL,
+    websiteKey: parsed.websiteKey,
+  };
 }
 
 function delay(ms: number): Promise<void> {
