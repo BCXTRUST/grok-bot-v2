@@ -748,7 +748,7 @@ function ComputerPane({
         {frame?.kind === "url" ? (
           <iframe
             title="Computer"
-            src={frame.url}
+            src={watchingFrameSrc(frame.url)}
             className="absolute inset-0 h-full w-full border-0 bg-black"
             sandbox={computerFrameSandbox(frame.url)}
             allow="fullscreen"
@@ -781,6 +781,22 @@ function ComputerPane({
       </div>
     </section>
   );
+}
+
+/** noVNC reads autoconnect from the iframe URL. The proxy keeps provider secrets in the path. */
+export function watchingFrameSrc(url: string): string {
+  try {
+    const parsed = new URL(url, "https://app.autoseo.run");
+    const page = parsed.pathname.endsWith("/vnc.html") || parsed.pathname.endsWith("/embed.html");
+    if (!page) return url;
+    parsed.searchParams.set("autoconnect", "true");
+    parsed.searchParams.set("resize", "scale");
+    parsed.searchParams.set("view_only", "true");
+    if (url.startsWith("http://") || url.startsWith("https://")) return parsed.toString();
+    return `${parsed.pathname}${parsed.search}`;
+  } catch {
+    return url;
+  }
 }
 
 function computerFrameSandbox(url: string): string | undefined {

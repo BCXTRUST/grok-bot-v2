@@ -135,7 +135,9 @@ describe("link builder screens", () => {
       />,
     );
     expect(html).toContain('data-frame="url"');
-    expect(html).toContain(`src="${stream}"`);
+    expect(html).toContain(
+      `src="${stream}?autoconnect=true&amp;resize=scale&amp;view_only=true"`,
+    );
     expect(html).toContain('title="Computer"');
     expect(html).toContain("allow-scripts allow-same-origin");
     expect(html).not.toContain("No session");
