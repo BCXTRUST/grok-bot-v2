@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { fakeDomains, fakeScriptLength, planFakeStep, replayFakeScript } from "./fake-scenario.js";
+import {
+  fakeDomains,
+  fakeScriptLength,
+  isFixtureHostDomain,
+  planFakeStep,
+  replayFakeScript,
+} from "./fake-scenario.js";
 
 const now = new Date("2026-10-05T17:00:00.000Z");
 const input = {
@@ -28,47 +34,31 @@ describe("fake scenario", () => {
     expect(fakeDomains("other")).not.toEqual(fakeDomains(input.seed));
   });
 
-  it("walks discover → LIVE and parks one host for an operator", () => {
+  it("researches without creating example hosts", () => {
     const steps = replayFakeScript(input);
     expect(steps).toHaveLength(fakeScriptLength());
-    expect(steps.map((step) => step.kind)).toEqual([
-      "discover",
-      "probe",
-      "qualify",
-      "discover",
-      "probe",
-      "qualify",
-      "discover",
-      "probe",
-      "qualify",
-      "register",
-      "captcha",
-      "activate",
-      "ready",
-      "post",
-      "verify",
-      "register",
-      "park",
-      "close",
-    ]);
-    const verified = steps.find((step) => step.kind === "verify");
-    expect(verified?.placement).toMatchObject({
-      status: "nofollow_live",
-      counted: true,
-      rel: ["ugc"],
+    expect(steps.every((step) => step.kind === "research")).toBe(true);
+    expect(steps.every((step) => step.host === undefined)).toBe(true);
+    expect(steps.every((step) => step.placement === undefined)).toBe(true);
+    expect(JSON.stringify(steps)).not.toContain(".example");
+    expect(steps[0]?.lastAction).toBe("Researching topics");
+    expect(steps.at(-1)?.runStatus).toBe("running");
+    expect(planFakeStep({ ...input, stepIndex: 3, researchBeats: fakeScriptLength() })).toEqual({
+      hold: true,
     });
-    expect(verified?.host?.status).toBe("used");
-    expect(verified?.counters.liveToday).toBe(1);
-    const parked = steps.find((step) => step.kind === "park");
-    expect(parked?.ticket?.reason).toBe("captcha_unsolved");
-    expect(parked?.host).toMatchObject({ status: "parked_operator", parkedFrom: "registering" });
-    expect(parked?.captcha?.outcome).toBe("operator_parked");
-    expect(steps.at(-1)).toMatchObject({ kind: "close", runStatus: "succeeded" });
-    expect(planFakeStep({ ...input, stepIndex: fakeScriptLength() })).toEqual({ done: true });
+  });
+
+  it("treats the offline boards as fixtures and leaves real domains alone", () => {
+    const [forum, fragen, brett] = Object.values(fakeDomains(input.seed));
+    expect(isFixtureHostDomain(forum!)).toBe(true);
+    expect(isFixtureHostDomain(fragen!)).toBe(true);
+    expect(isFixtureHostDomain(brett!)).toBe(true);
+    expect(isFixtureHostDomain("fragen.nordlicht.example")).toBe(false);
+    expect(isFixtureHostDomain("www.vitaminexpress.org")).toBe(false);
   });
 
   it("plans a single step that matches the replay", () => {
     const replayed = replayFakeScript(input);
-    expect(planFakeStep({ ...input, stepIndex: 14 })).toEqual(replayed[14]);
+    expect(planFakeStep({ ...input, stepIndex: 2, researchBeats: 2 })).toEqual(replayed[2]);
   });
 });

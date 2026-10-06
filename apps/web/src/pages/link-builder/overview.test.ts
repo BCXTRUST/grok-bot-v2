@@ -54,36 +54,35 @@ describe("overview feed", () => {
 
   it("appends steps in order and marks the latest one working", () => {
     const items = overviewFeed({
-      steps: [step(1, "Probed brett-1ej2xe.example"), step(0, "Discovered forum-a.example")],
-      lastEvent: "Probed brett-1ej2xe.example",
+      steps: [step(1, "Reading threads"), step(0, "Researching topics")],
+      lastEvent: "Reading threads",
       working: true,
       blockers: [],
     });
-    expect(items.map((item) => item.label)).toEqual([
-      "Discovered forum-a.example",
-      "Probed brett-1ej2xe.example",
-    ]);
+    expect(items.map((item) => item.label)).toEqual(["Researching topics", "Reading threads"]);
     expect(items.map((item) => item.status)).toEqual(["done", "working"]);
-    expect(overviewAction(items, true)).toBe("Probed brett-1ej2xe.example");
+    expect(overviewAction(items, true)).toBe("Reading threads");
   });
 
-  it("shows Starting before any step arrives, and puts blockers after the work", () => {
+  it("drops fixture hosts and starts on research before any step arrives", () => {
     const starting = overviewFeed({
       steps: [],
       lastEvent: null,
       working: true,
       blockers: [],
     });
-    expect(starting).toEqual([{ id: "starting", label: "Starting", status: "working", at: null }]);
+    expect(starting).toEqual([
+      { id: "researching", label: "Researching", status: "working", at: null },
+    ]);
     const blocked = overviewFeed({
-      steps: [step(0, "Discovered forum-a.example")],
+      steps: [step(0, "Reading threads"), step(1, "Discovered forum-a.example")],
       lastEvent: "Discovered forum-a.example",
       working: false,
       blockers: ["Parked 1"],
     });
-    expect(blocked.map((item) => item.label)).toEqual(["Discovered forum-a.example", "Parked 1"]);
+    expect(blocked.map((item) => item.label)).toEqual(["Reading threads", "Parked 1"]);
     expect(blocked[1]?.status).toBe("blocked");
-    expect(overviewAction(blocked, false)).toBe("Discovered forum-a.example");
+    expect(overviewAction(blocked, false)).toBe("Reading threads");
   });
 
   it("follows an explicit start or pause before the server status changes", () => {

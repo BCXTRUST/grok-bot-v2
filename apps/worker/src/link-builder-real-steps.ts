@@ -53,6 +53,8 @@ import {
   HOST_IDLE_GAP,
   type HostEvent,
   insertReference,
+  isExampleRegistrableDomain,
+  isFixtureHostDomain,
   isHardEdgeBlock,
   isWarmupMet,
   marketForHost,
@@ -361,6 +363,17 @@ export function browserPersona(
   return personaFor(ctx, marketOf(ctx.project, host), host, extra);
 }
 
+const CAPTCHA_SKIPPED = "Captell could not solve it. Skipping this forum.";
+
+/** Captell owns captchas. A failed solve leaves the forum and does not open a customer ticket. */
+function skipUnsolvedCaptcha(host: HostRow, extra: Prisma.LbHostUpdateManyMutationInput = {}) {
+  return (tx: Tx) =>
+    moveHost(tx, host, "unsupported_captcha", {
+      statusReason: "captcha_unsolved",
+      ...extra,
+    });
+}
+
 function park(
   ctx: StepContext,
   host: HostRow,
@@ -402,7 +415,12 @@ async function selectHost(ctx: StepContext): Promise<StepResult> {
   const deny = new Set(ctx.project.denyHosts.map((host) => host.toLowerCase()));
   const prefer = new Set(ctx.project.preferHosts.map((host) => host.toLowerCase()));
   const candidates = rows.filter((row) => {
-    if (deny.has(row.registrableDomain) || !boardDriverFor(row.platform as LbHostPlatform)) {
+    if (
+      deny.has(row.registrableDomain) ||
+      isFixtureHostDomain(row.registrableDomain) ||
+      isExampleRegistrableDomain(row.registrableDomain) ||
+      !boardDriverFor(row.platform as LbHostPlatform)
+    ) {
       return false;
     }
     if (row.status === "qualified") return ctx.run.counters.newToday < ctx.project.quotas.newPerDay;
@@ -1129,21 +1147,19 @@ async function imageCaptcha(
   if (!solution.ok) {
     const artifactIds = await screenshot(ctx, entry, "captcha");
     entry.registerFormReady = false;
-    const note =
-      solution.reason === "not_read" ? "Captcha image was not read" : "Captcha crop was rejected";
     return withEvent(
       {
         kind: "step",
-        lastAction: "Parked for the operator",
+        lastAction: CAPTCHA_SKIPPED,
         hostId: host.id,
         artifactIds,
         outcome: { captcha: solution.reason },
-        apply: park(ctx, host, "captcha_unsolved", { note }),
+        apply: skipUnsolvedCaptcha(host),
       },
       captchaEvent(ctx, host, attempt, {
         type: "image_letters",
         door: "https_api",
-        outcome: "operator_parked",
+        outcome: "unsupported",
         credits: 0,
       }),
       0,
@@ -1177,43 +1193,43 @@ async function questionCaptcha(
 ): Promise<StepResult> {
   const question = challenge.question.trim();
   const prompt = question || (await entry.session.pageText()).trim().slice(0, 400);
-  const parkQuestion = async (note: string): Promise<StepResult> => {
+  const skipQuestion = async (): Promise<StepResult> => {
     const artifactIds = await screenshot(ctx, entry, "captcha");
     entry.registerFormReady = false;
     return withEvent(
       {
         kind: "step",
-        lastAction: "Parked for the operator",
+        lastAction: CAPTCHA_SKIPPED,
         hostId: host.id,
         artifactIds,
         outcome: { captcha: "question_unanswered" },
-        apply: park(ctx, host, "captcha_unsolved", { note: note.slice(0, 500) }),
+        apply: skipUnsolvedCaptcha(host),
       },
       captchaEvent(ctx, host, attempt, {
         type: "knowledge_question",
         door: "https_api",
-        outcome: "operator_parked",
+        outcome: "unsupported",
         credits: 0,
       }),
       0,
     );
   };
   if (!prompt || isSecretRegistrationPrompt(prompt) || isLoginPath(await entry.session.url())) {
-    return parkQuestion(question || prompt);
+    return skipQuestion();
   }
   const answer = await ctx.services.captcha.answerQuestion(
     question ? { question } : { pageText: prompt },
     ctx.adapter,
   );
   if ("couldNotAnswer" in answer) {
-    return parkQuestion(question || prompt);
+    return skipQuestion();
   }
   if ("instruction" in answer) {
     const selector = instructionClickSelector(answer.instruction);
-    if (!selector) return parkQuestion(`${question || prompt}\n${answer.instruction}`);
+    if (!selector) return skipQuestion();
     await entry.session.click(selector);
     if (isLoginPath(await entry.session.url())) {
-      return parkQuestion(`${question || prompt}\n${answer.instruction}`);
+      return skipQuestion();
     }
     return finishRegistration(
       ctx,
@@ -1289,21 +1305,21 @@ async function widgetCaptcha(
     const artifactIds = await screenshot(ctx, entry, "captcha");
     entry.registerFormReady = false;
     const event = run.decision.hostEvent;
+    const skipping = !event || event === "parked";
     const apply =
-      event && event !== "parked"
-        ? (tx: Tx) => moveHost(tx, host, event, { captchaType: challenge.type })
-        : park(ctx, host, "captcha_unsolved");
+      skipping || !event
+        ? skipUnsolvedCaptcha(host, { captchaType: challenge.type })
+        : (tx: Tx) => moveHost(tx, host, event, { captchaType: challenge.type });
     return withEvent(
       {
         kind: "step",
         hostId: host.id,
         artifactIds,
         outcome: { helper: run.decision.action, reason: run.decision.reason ?? null },
-        lastAction:
-          event && event !== "parked" ? "Captcha not supported" : "Parked for the operator",
+        lastAction: skipping ? CAPTCHA_SKIPPED : "Captcha not supported",
         apply,
       },
-      captchaEvent(ctx, host, attempt, record),
+      captchaEvent(ctx, host, attempt, skipping ? { ...record, outcome: "unsupported" } : record),
       0,
     );
   }
@@ -1397,23 +1413,17 @@ async function solverFailure(
           ? "unsupported"
           : error.code === "no_token"
             ? "no_token"
-            : "operator_parked";
+            : "unsupported";
   entry.registerFormReady = false;
   const stop = error.code === "missing_site_key" || error.code === "unsupported";
-  const note =
-    error.code === "sandbox"
-      ? "Captell returned a sandbox answer. The desk is not production-configured."
-      : undefined;
   return withEvent(
     {
       kind: "step",
-      lastAction: stop ? "Captcha not supported" : "Parked for the operator",
+      lastAction: stop ? "Captcha not supported" : CAPTCHA_SKIPPED,
       hostId: host.id,
       artifactIds,
       outcome: { captcha: error.code },
-      apply: stop
-        ? (tx) => moveHost(tx, host, "unsupported_captcha")
-        : park(ctx, host, "captcha_unsolved", { note }),
+      apply: stop ? (tx) => moveHost(tx, host, "unsupported_captcha") : skipUnsolvedCaptcha(host),
     },
     captchaEvent(ctx, host, attempt, {
       type: "unsupported",
@@ -1461,11 +1471,11 @@ async function finishRegistration(
     return withEvent(
       {
         kind: "step",
-        lastAction: "Parked for the operator",
+        lastAction: CAPTCHA_SKIPPED,
         hostId: host.id,
         artifactIds: [...artifactIds, ...parkedShot],
         outcome: { registration: result.kind, attempt },
-        apply: park(ctx, host, "captcha_unsolved", { note: "Captcha rejected twice" }),
+        apply: skipUnsolvedCaptcha(host),
       },
       event,
       credits,

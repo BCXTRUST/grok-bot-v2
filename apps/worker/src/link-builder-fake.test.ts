@@ -17,6 +17,8 @@ function run(status: LbRunStatus = "running"): FakeRunRecord {
     workspaceId: "workspace-1",
     status,
     stepCount: 0,
+    researchBeats: 0,
+    counters: { newToday: 0, liveToday: 0, liveWeek: 0, uniqueHosts: 0 },
     seed: "project-1",
     brandName: "Nordlicht",
     targetUrl: "https://nordlicht.example/schlaf",
@@ -46,7 +48,9 @@ function memoryStore(initial: FakeRunRecord): LinkBuilderFakeStore & {
     async apply(record, step) {
       steps.push(step);
       current.stepCount = record.stepCount + 1;
+      if (step.kind === "research") current.researchBeats += 1;
       current.status = step.runStatus;
+      current.counters = step.counters;
     },
     async finishIfOpen(record) {
       current.status = record.status === "queued" ? "cancelled" : "partial";
@@ -63,7 +67,7 @@ describe("link builder fake runner", () => {
     expect(isLinkBuilderFakeEnabled({ LINK_BUILDER_DRIVER: "playwright" })).toBe(false);
   });
 
-  it("emits a seeded LIVE placement and an operator ticket, then stops", async () => {
+  it("researches without creating example hosts, then holds the run open", async () => {
     vi.stubGlobal("fetch", () => {
       throw new Error("network");
     });
@@ -80,17 +84,18 @@ describe("link builder fake runner", () => {
     }
     expect(kinds[0]).toEqual(kinds[1]);
     expect(store.steps).toHaveLength(0);
-    const sample = memoryStore(run());
+    const sample = memoryStore(run("running"));
+    sample.current.researchBeats = 0;
+    sample.current.stepCount = 18;
     for (let guard = 0; guard < 30; guard += 1) {
       if ((await tickLinkBuilderFake(sample, now)) === 0) break;
     }
-    const live = sample.steps.find((step) => step.kind === "verify");
-    const parked = sample.steps.find((step) => step.kind === "park");
-    expect(live?.placement).toMatchObject({ counted: true, status: "nofollow_live" });
-    expect(live?.host?.domain.endsWith(".example")).toBe(true);
-    expect(parked?.ticket?.reason).toBe("captcha_unsolved");
-    expect(sample.current.status).toBe("succeeded");
-    expect(sample.steps).toHaveLength(18);
+    expect(sample.steps.every((step) => step.kind === "research")).toBe(true);
+    expect(sample.steps.every((step) => step.host === undefined)).toBe(true);
+    expect(JSON.stringify(sample.steps)).not.toContain(".example");
+    expect(sample.current.status).toBe("running");
+    expect(sample.steps).toHaveLength(6);
+    expect(sample.steps[0]?.lastAction).toBe("Researching topics");
     vi.unstubAllGlobals();
   });
 });

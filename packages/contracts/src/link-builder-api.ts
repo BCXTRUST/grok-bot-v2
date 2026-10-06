@@ -192,6 +192,13 @@ export const LbProjectStatusViewSchema = z.object({
   liveWeekCap: z.number().int().nullable(),
   lastEvent: z.string().nullable(),
   costs: z.object({ day: LbCostSummarySchema, week: LbCostSummarySchema }),
+  stage: z.enum(["research", "register", "warmup", "place", "verify"]).optional(),
+  credits: z
+    .object({
+      balance: z.number().int().min(0),
+      payment: z.literal("stub"),
+    })
+    .optional(),
 });
 export type LbProjectStatusView = z.infer<typeof LbProjectStatusViewSchema>;
 
@@ -368,6 +375,15 @@ export const linkBuilderContract = {
     stop: oc.input(projectId).output(LbProjectDetailSchema),
     status: oc.input(projectId).output(LbProjectStatusViewSchema),
     seedDemo: oc.output(LbProjectDetailSchema),
+  },
+  credits: {
+    buy: oc.input(projectId).output(
+      z.object({
+        balance: z.number().int().min(0),
+        charged: z.boolean(),
+        reason: z.string(),
+      }),
+    ),
   },
   hosts: {
     list: oc.input(projectId).output(z.array(LbHostViewSchema)),

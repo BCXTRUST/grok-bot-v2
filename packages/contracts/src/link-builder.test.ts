@@ -42,7 +42,7 @@ describe("link builder project config", () => {
     });
     expect(config.quotas.maxLivePerHost).toBe(1);
     expect(config.linkRatio).toEqual({ links: 1, posts: 3 });
-    expect(config.warmup).toEqual({ minPostsBeforeLink: 2, minAccountAgeHours: 24 });
+    expect(config.warmup).toEqual({ minPostsBeforeLink: 3, minAccountAgeHours: 24 });
     expect(config.spamRetry).toEqual({ maxRetries: 1, sentences: [...LB_DEFAULT_SPAM_SENTENCES] });
     expect(config.operator.parkedHostTtlHours).toBe(48);
     expect(config.captchaLowBalanceCredits).toBe(500);

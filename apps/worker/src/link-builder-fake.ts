@@ -9,8 +9,11 @@ import {
 import { Prisma, type PrismaClient } from "@rakazo/db";
 import {
   type FakeStepPlan,
+  isExampleRegistrableDomain,
+  isFixtureHostDomain,
   linkBuilderTopic,
   planFakeStep,
+  type RunCounters,
   transitionRun,
 } from "@rakazo/linkbuilder-core";
 
@@ -29,6 +32,8 @@ export interface FakeRunRecord {
   workspaceId: string;
   status: LbRunStatus;
   stepCount: number;
+  researchBeats: number;
+  counters: RunCounters;
   seed: string;
   brandName: string;
   targetUrl: string;
@@ -53,6 +58,8 @@ export async function tickLinkBuilderFake(store: LinkBuilderFakeStore, now: Date
       const plan = planFakeStep({
         seed: run.seed,
         stepIndex: run.stepCount,
+        researchBeats: run.researchBeats,
+        counters: run.counters,
         now,
         markets: run.markets,
         brandName: run.brandName,
@@ -61,8 +68,15 @@ export async function tickLinkBuilderFake(store: LinkBuilderFakeStore, now: Date
         countNofollow: run.countNofollow,
         lowBalanceCredits: run.lowBalanceCredits,
       });
-      if (plan.done) {
+      if ("hold" in plan) continue;
+      if (!("kind" in plan)) {
         await store.finishIfOpen(run);
+        continue;
+      }
+      if (
+        plan.host &&
+        (isFixtureHostDomain(plan.host.domain) || isExampleRegistrableDomain(plan.host.domain))
+      ) {
         continue;
       }
       const runStatus =
@@ -120,7 +134,11 @@ export function createPrismaFakeStore(
     async runnable() {
       const runs = await prisma.lbRun.findMany({
         where: { status: { in: ["queued", "running", "overtime"] }, project: { status: "active" } },
-        include: { project: true, _count: { select: { steps: true } } },
+        include: {
+          project: true,
+          _count: { select: { steps: true } },
+          steps: { where: { kind: "research" }, select: { id: true } },
+        },
       });
       const records: FakeRunRecord[] = [];
       for (const run of runs) {
@@ -237,6 +255,11 @@ function mapRun(run: {
   workspaceId: string;
   status: string;
   _count: { steps: number };
+  steps: { id: string }[];
+  newToday: number;
+  liveToday: number;
+  liveWeek: number;
+  uniqueHosts: number;
   project: {
     id: string;
     brandName: string;
@@ -260,6 +283,13 @@ function mapRun(run: {
     workspaceId: run.workspaceId,
     status: status.data,
     stepCount: run._count.steps,
+    researchBeats: run.steps.length,
+    counters: {
+      newToday: run.newToday,
+      liveToday: run.liveToday,
+      liveWeek: run.liveWeek,
+      uniqueHosts: run.uniqueHosts,
+    },
     seed: run.project.id,
     brandName: run.project.brandName,
     targetUrl: targets[0]?.url ?? `https://${domain}/`,
@@ -280,6 +310,7 @@ type Tx = Prisma.TransactionClient;
 async function upsertHost(tx: Tx, run: FakeRunRecord, step: FakeStepPlan) {
   const host = step.host;
   if (!host) return null;
+  if (isFixtureHostDomain(host.domain) || isExampleRegistrableDomain(host.domain)) return null;
   const existing = await tx.lbHost.findFirst({
     where: {
       workspaceId: run.workspaceId,

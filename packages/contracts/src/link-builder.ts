@@ -368,7 +368,7 @@ export type LbLinkRatio = z.infer<typeof LbLinkRatioSchema>;
 export const LB_DEFAULT_LINK_RATIO: LbLinkRatio = { links: 1, posts: 3 };
 
 export const LbWarmupSchema = z.object({
-  minPostsBeforeLink: z.number().int().min(0).max(20).default(2),
+  minPostsBeforeLink: z.number().int().min(0).max(20).default(3),
   minAccountAgeHours: z
     .number()
     .int()
@@ -470,7 +470,7 @@ export const LbProjectConfigSchema = z.object({
   facts: z.array(z.string().trim().min(1).max(500)).max(100).default([]),
   denyHosts: z.array(LbRegistrableDomainSchema).max(500).default([]),
   preferHosts: z.array(LbRegistrableDomainSchema).max(500).default([]),
-  warmup: LbWarmupSchema.default({ minPostsBeforeLink: 2, minAccountAgeHours: 24 }),
+  warmup: LbWarmupSchema.default({ minPostsBeforeLink: 3, minAccountAgeHours: 24 }),
   spamRetry: LbSpamRetrySchema.default({
     maxRetries: 1,
     sentences: [...LB_DEFAULT_SPAM_SENTENCES],

@@ -135,6 +135,63 @@ describe("link builder screens", () => {
     expect(renderToStaticMarkup(<OperatorView {...props} />)).toContain('aria-label="Live screen"');
   });
 
+  it("does not ask the customer to solve a captcha", () => {
+    const html = renderToStaticMarkup(
+      <ProjectView
+        project={{ name: "Vitaminexpress" } as LbProjectDetail}
+        status={null}
+        hosts={[]}
+        placements={[]}
+        runs={[]}
+        steps={[]}
+        threads={[]}
+        drafts={[]}
+        captchas={[{ id: "cap-1", outcome: "placed_submitted", domain: "fragen-1ej2xe.example" }]}
+        tickets={[
+          {
+            id: "ticket-1",
+            projectId: "demo",
+            hostId: "host-1",
+            domain: "fragen-1ej2xe.example",
+            runId: "run-1",
+            reason: "captcha_unsolved",
+            screenUrl: null,
+            screenshotArtifactId: null,
+            note: null,
+            status: "open",
+            expiresAt: null,
+            createdAt: "2026-10-05T12:00:00.000Z",
+          },
+          {
+            id: "ticket-2",
+            projectId: "demo",
+            hostId: "host-2",
+            domain: "board.example.org",
+            runId: "run-1",
+            reason: "missing_password",
+            screenUrl: null,
+            screenshotArtifactId: null,
+            note: null,
+            status: "open",
+            expiresAt: null,
+            createdAt: "2026-10-05T12:00:00.000Z",
+          },
+        ]}
+        tab="Captchas"
+        onTab={noop}
+        onStart={noop}
+        onPause={noop}
+        onStop={noop}
+        onVerify={noop}
+        onOpenTicket={noop}
+        busy={false}
+      />,
+    );
+    expect(html).not.toContain("fragen-1ej2xe.example");
+    expect(html).not.toContain("I've solved it");
+    expect(html).toContain("Open computer for board.example.org");
+  });
+
   it("shows a sandbox hint on the Captchas tab", () => {
     const html = renderToStaticMarkup(<LinkBuilderPreview screen="captchas" />);
     expect(html).toContain("placed_submitted");
@@ -220,10 +277,10 @@ describe("link builder screens", () => {
   });
 
   it("shows the computer working and a growing feed instead of NEW/LIVE rings", () => {
-    const discovered = step(0, "discover", []);
-    discovered.lastAction = "Discovered forum-a.example";
-    const probed = step(1, "probe", ["shot-1"]);
-    probed.lastAction = "Probed brett-1ej2xe.example";
+    const discovered = step(0, "research", []);
+    discovered.lastAction = "Researching topics";
+    const probed = step(1, "research", ["shot-1"]);
+    probed.lastAction = "Reading threads";
     const html = renderOverview(statusView({ activity: "running", activityLabel: "running" }), [
       discovered,
       probed,
@@ -239,9 +296,8 @@ describe("link builder screens", () => {
     expect(html).toContain("bui-pixel-on");
     expect(html).toContain('data-status="working"');
     expect(html).toContain('data-frame="artifact"');
-    expect(html.indexOf("Discovered forum-a.example")).toBeLessThan(
-      html.lastIndexOf("Probed brett-1ej2xe.example"),
-    );
+    expect(html).not.toContain("forum-a.example");
+    expect(html.indexOf("Researching topics")).toBeLessThan(html.lastIndexOf("Reading threads"));
     expect(html).not.toContain("Why not");
     expect(html).not.toContain("Proxy ok");
     expect(html).not.toContain("Supply");
@@ -254,13 +310,14 @@ describe("link builder screens", () => {
       statusView({
         activity: "paused",
         activityLabel: "paused",
-        lastEvent: "Probed brett-1ej2xe.example",
+        lastEvent: "Reading threads",
       }),
       [],
     );
     expect(html).not.toContain("bui-pixel-on");
     expect(html).toContain('aria-label="Computer"');
-    expect(html).toContain("Probed brett-1ej2xe.example");
+    expect(html).toContain("Reading threads");
+    expect(html).not.toContain(".example");
     expect(html).toContain("New links today");
     expect(html).not.toContain("Why not");
     expect(html).not.toContain("Parked 0");

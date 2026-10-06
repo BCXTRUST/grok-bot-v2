@@ -505,6 +505,11 @@ export class LinkBuilderRealRunner {
         ? ctx.account.postCount <
           postsRequiredBeforeLink(ctx.project.warmup.minPostsBeforeLink, ctx.host?.platform ?? "")
         : false,
+      minPostsBeforeLink: postsRequiredBeforeLink(
+        ctx.project.warmup.minPostsBeforeLink,
+        ctx.host?.platform ?? "",
+      ),
+      warmupPosts: ctx.account?.postCount ?? 0,
       placement: ctx.placement
         ? { status: ctx.placement.status as never, counted: ctx.placement.counted }
         : null,

@@ -111,6 +111,7 @@ import {
 } from "./computer-status.js";
 import {
   archiveLbProject,
+  buyLbCredits,
   checkLbCaptchaBalance,
   continueLbTicket,
   createLbProject,
@@ -2998,6 +2999,11 @@ export function createRouter(deps: RouterDeps) {
         ),
         seedDemo: authed.linkBuilder.projects.seedDemo.handler(async ({ context }) =>
           seedLbDemo(deps, context.actor),
+        ),
+      },
+      credits: {
+        buy: authed.linkBuilder.credits.buy.handler(async ({ context, input }) =>
+          buyLbCredits(deps, context.actor, input.projectId),
         ),
       },
       hosts: {

@@ -1,4 +1,5 @@
 import type { LbOperatorTicketView, LbRunStepView, LbWhyNot } from "@rakazo/contracts";
+import { mentionsExampleDomain, mentionsFixtureHost } from "@rakazo/linkbuilder-core";
 
 export const OVERVIEW_COUNTS = {
   newToday: "New links today",
@@ -64,8 +65,17 @@ export function overviewFeed(input: {
   lastEvent: string | null;
   working: boolean;
   blockers: string[];
+  /** Customer projects drop leftover `*.example` lines. The Nordlicht demo keeps its own. */
+  hideExampleCopy?: boolean;
 }): OverviewFeedItem[] {
-  const steps = [...input.steps].sort((a, b) => a.stepIndex - b.stepIndex);
+  const steps = [...input.steps]
+    .sort((a, b) => a.stepIndex - b.stepIndex)
+    .filter((step) => {
+      const label = step.lastAction?.trim() || step.kind;
+      if (mentionsFixtureHost(label)) return false;
+      if (input.hideExampleCopy && mentionsExampleDomain(label)) return false;
+      return true;
+    });
   const items: OverviewFeedItem[] = steps.map((step) => ({
     id: step.id,
     label: step.lastAction?.trim() || step.kind,
@@ -74,7 +84,9 @@ export function overviewFeed(input: {
   }));
   const seen = new Set(items.map((item) => item.label));
   const event = input.lastEvent?.trim() ?? "";
-  if (event && !seen.has(event)) {
+  const hiddenEvent =
+    mentionsFixtureHost(event) || (input.hideExampleCopy && mentionsExampleDomain(event));
+  if (event && !seen.has(event) && !hiddenEvent) {
     items.push({ id: `event:${event}`, label: event, status: "done", at: null });
   }
   if (input.working) {
@@ -87,7 +99,7 @@ export function overviewFeed(input: {
     }
     const current = open >= 0 ? items[open] : undefined;
     if (current) current.status = "working";
-    else items.push({ id: "starting", label: "Starting", status: "working", at: null });
+    else items.push({ id: "researching", label: "Researching", status: "working", at: null });
   }
   for (const line of input.blockers) {
     items.push({ id: `blocker:${line}`, label: line, status: "blocked", at: null });

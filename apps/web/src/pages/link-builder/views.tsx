@@ -11,11 +11,20 @@ import type {
   LbRunView,
   LbThreadView,
 } from "@rakazo/contracts";
+import {
+  FIXTURE_DEMO_SLUG,
+  isFixtureHostDomain,
+  showHostToCustomer,
+  stageFromActivity,
+  WORK_STAGE_LABELS,
+  WORK_STAGES,
+} from "@rakazo/linkbuilder-core";
 import { useEffect, useRef, useState } from "react";
 import {
   BuiButton,
   BuiCard,
   LoadingState,
+  Shimmer,
   SuccessPop,
   TaskRow,
 } from "../../components/beautiful-ui/primitives";
@@ -263,6 +272,8 @@ export function ProjectView({
   onDecideDraft,
   loadArtifact,
   busy,
+  creditNote,
+  onBuyCredits,
 }: {
   project: LbProjectDetail;
   status: LbProjectStatusView | null;
@@ -285,6 +296,8 @@ export function ProjectView({
   onDecideDraft?: (draftId: string, decision: "approved" | "discarded") => void;
   loadArtifact?: ArtifactLoader;
   busy: boolean;
+  creditNote?: string | null;
+  onBuyCredits?: () => void;
 }) {
   const [intent, setIntent] = useState<OverviewIntent>(null);
   const serverWorking = status?.activity === "running" || status?.activity === "overtime";
@@ -323,7 +336,15 @@ export function ProjectView({
     >
       <header className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-[22px] font-medium text-[#ECECEE]">{project.name}</h1>
-        {pill ? <Pill label={pill} /> : null}
+        <div className="flex items-start gap-4">
+          {pill ? <Pill label={pill} /> : null}
+          <CreditBudget
+            balance={status?.credits?.balance ?? null}
+            note={creditNote}
+            busy={busy}
+            onBuy={onBuyCredits}
+          />
+        </div>
       </header>
       <div className="flex flex-wrap gap-2" role="tablist" aria-label="Project">
         {tabs.map((name) => (
@@ -354,7 +375,12 @@ export function ProjectView({
         />
       ) : null}
       {tab === "Targets" ? <TargetList project={project} /> : null}
-      {tab === "Hosts" ? <HostBoard hosts={hosts} /> : null}
+      {tab === "Hosts" ? (
+        <HostBoard
+          hosts={hosts.filter((host) => showHostToCustomer(host.registrableDomain, project.slug))}
+          researching={working}
+        />
+      ) : null}
       {tab === "Threads" ? (
         <ThreadList
           threads={threads}
@@ -483,14 +509,23 @@ function Overview({
   const liveToday = status?.run?.liveToday ?? 0;
   const newPerDay = status?.newPerDay ?? project.quotas?.newPerDay ?? 0;
   const livePerDay = status?.livePerDay ?? project.quotas?.livePerDay ?? 0;
+  const hideExampleCopy = project.slug !== FIXTURE_DEMO_SLUG;
   const items = overviewFeed({
     steps,
     lastEvent: status?.lastEvent ?? null,
     working,
     blockers: whyNotFeedLines(status?.whyNot),
+    hideExampleCopy,
   });
   const action = overviewAction(items, working);
   const frame = overviewFrame({ steps, tickets });
+  const stage =
+    status?.stage ??
+    stageFromActivity({
+      runStatus: working ? "running" : (status?.run?.status ?? null),
+      lastAction: status?.run?.lastAction ?? status?.lastEvent ?? null,
+      stepKinds: steps.map((step) => step.kind),
+    });
   return (
     <section className="flex min-h-0 flex-1 flex-col gap-3" aria-label="Overview">
       <div className="flex flex-wrap items-end justify-between gap-4">
@@ -511,7 +546,13 @@ function Overview({
         </div>
       </div>
       <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-[minmax(0,1.5fr)_minmax(280px,380px)]">
-        <ComputerPane working={working} action={action} frame={frame} loadArtifact={loadArtifact} />
+        <ComputerPane
+          working={working}
+          action={working && stage === "research" ? "Researching" : action}
+          stage={stage}
+          frame={frame}
+          loadArtifact={loadArtifact}
+        />
         <div className="flex min-h-[520px] flex-col gap-3 lg:max-h-[calc(100dvh-9rem)]">
           <ActivityFeed items={items} />
           {status?.costs ? <CostNote costs={status.costs} /> : null}
@@ -533,11 +574,13 @@ function TodayCount({ label, value, max }: { label: string; value: number; max: 
 function ComputerPane({
   working,
   action,
+  stage,
   frame,
   loadArtifact,
 }: {
   working: boolean;
   action: string;
+  stage: (typeof WORK_STAGES)[number];
   frame: ReturnType<typeof overviewFrame>;
   loadArtifact?: ArtifactLoader;
 }) {
@@ -554,6 +597,20 @@ function ComputerPane({
           className="h-2 w-2 rounded-full"
           style={{ background: working ? "var(--bui-green)" : "#3a3a40" }}
         />
+        <ol aria-label="Stage" className="flex min-w-0 gap-3 overflow-hidden">
+          {WORK_STAGES.map((name) => {
+            const current = name === stage;
+            return (
+              <li
+                key={name}
+                aria-current={current ? "step" : undefined}
+                className={`text-[12px] ${current ? "text-[#ECECEE]" : "text-[#6C6C70]"}`}
+              >
+                {current ? <Shimmer>{WORK_STAGE_LABELS[name]}</Shimmer> : WORK_STAGE_LABELS[name]}
+              </li>
+            );
+          })}
+        </ol>
       </div>
       <div className="grid min-h-[480px] flex-1 place-items-center px-6">
         {working && !showFrame ? <LoadingState label={action || "Working"} /> : null}
@@ -651,7 +708,14 @@ function TargetList({ project }: { project: LbProjectDetail }) {
   );
 }
 
-function HostBoard({ hosts }: { hosts: LbHostView[] }) {
+function HostBoard({ hosts, researching }: { hosts: LbHostView[]; researching?: boolean }) {
+  if (hosts.length === 0) {
+    return (
+      <section aria-label="Hosts">
+        {researching ? <LoadingState label="Researching" /> : null}
+      </section>
+    );
+  }
   return (
     <section className="flex gap-3 overflow-x-auto" aria-label="Host funnel">
       {FUNNEL_COLUMNS.map((column) => {
@@ -882,9 +946,13 @@ function CaptchaPanel({
   tickets: LbOperatorTicketView[];
   onOpenTicket: (ticketId: string) => void;
 }) {
+  const events = captchas.filter((event) => !isFixtureHostDomain(event.domain ?? ""));
+  const handoff = tickets.filter(
+    (ticket) => ticket.reason !== "captcha_unsolved" && !isFixtureHostDomain(ticket.domain ?? ""),
+  );
   return (
     <div className="flex flex-col gap-3">
-      {captchas.map((event) => (
+      {events.map((event) => (
         <div key={event.id} className="text-[13px] text-[#C9C9CE]">
           <div>
             {event.domain} · {event.outcome}
@@ -896,7 +964,7 @@ function CaptchaPanel({
           ) : null}
         </div>
       ))}
-      {tickets.map((ticket) => (
+      {handoff.map((ticket) => (
         <BuiCard key={ticket.id} className="flex items-center justify-between p-3">
           <span className="text-[14px] text-[#ECECEE]">
             {ticket.domain} · {ticket.status}
@@ -1241,6 +1309,31 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
     <div className="block text-[12.5px] text-[#A6A6AD]">
       <span>{label}</span>
       <div className="mt-1">{children}</div>
+    </div>
+  );
+}
+
+function CreditBudget({
+  balance,
+  note,
+  busy,
+  onBuy,
+}: {
+  balance: number | null;
+  note?: string | null;
+  busy: boolean;
+  onBuy?: () => void;
+}) {
+  return (
+    <div className="flex flex-col items-end gap-1">
+      <div className="text-[13px] text-[#ECECEE]">
+        <span className="tabular-nums">{balance ?? "—"}</span>
+        <span className="text-[#A6A6AD]"> credits</span>
+      </div>
+      <BuiButton label="Add credits" onClick={onBuy} disabled={busy || !onBuy}>
+        Add credits
+      </BuiButton>
+      {note ? <p className="max-w-56 text-right text-[12px] text-[#A6A6AD]">{note}</p> : null}
     </div>
   );
 }

@@ -12,6 +12,7 @@ import type {
   LbRunView,
   LbThreadView,
 } from "@rakazo/contracts";
+import { isFixtureHostDomain } from "@rakazo/linkbuilder-core";
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { LoadingState } from "../../components/beautiful-ui/primitives";
@@ -240,6 +241,7 @@ function ProjectRoute({ projectId }: { projectId: string }) {
   const [tickets, setTickets] = useState<LbOperatorTicketView[]>([]);
   const [leases, setLeases] = useState<LbProxyLeaseView[]>([]);
   const [busy, setBusy] = useState(false);
+  const [creditNote, setCreditNote] = useState<string | null>(null);
   const loadArtifact = useArtifactLoader(projectId);
 
   const reload = useCallback(async () => {
@@ -344,9 +346,9 @@ function ProjectRoute({ projectId }: { projectId: string }) {
       tab={tab}
       onTab={setTab}
       busy={busy}
-      onStart={() => void act("start")}
-      onPause={() => void act("pause")}
-      onStop={() => void act("stop")}
+      onStart={() => act("start")}
+      onPause={() => act("pause")}
+      onStop={() => act("stop")}
       onVerify={(placementId) =>
         void rpc.linkBuilder.placements.verify({ projectId, placementId }).then(() => reload())
       }
@@ -359,23 +361,46 @@ function ProjectRoute({ projectId }: { projectId: string }) {
         void call.then(() => reload());
       }}
       loadArtifact={loadArtifact}
+      creditNote={creditNote}
+      onBuyCredits={() => {
+        setBusy(true);
+        void rpc.linkBuilder.credits
+          .buy({ projectId })
+          .then((result) => {
+            setCreditNote(result.charged ? null : result.reason);
+            return reload();
+          })
+          .finally(() => setBusy(false));
+      }}
     />
   );
 }
 
 function OperatorRoute({ projectId, ticketId }: { projectId: string; ticketId: string }) {
+  const navigate = useNavigate();
   const [ticket, setTicket] = useState<LbOperatorTicketView | null>(null);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<string | null>(null);
   const loadArtifact = useArtifactLoader(projectId);
   useEffect(() => {
+    let cancelled = false;
     void rpc.linkBuilder.operator.tickets({ projectId }).then((tickets) => {
+      if (cancelled) return;
       const found = tickets.find((item) => item.id === ticketId) ?? null;
+      const captcha =
+        found?.reason === "captcha_unsolved" || isFixtureHostDomain(found?.domain ?? "");
+      if (!found || captcha) {
+        navigate(`/link-builder/${projectId}`, { replace: true });
+        return;
+      }
       setTicket(found);
-      setNote(found?.note ?? "");
+      setNote(found.note ?? "");
     });
-  }, [projectId, ticketId]);
+    return () => {
+      cancelled = true;
+    };
+  }, [navigate, projectId, ticketId]);
   if (!ticket) {
     return (
       <div className="grid h-full place-items-center">
