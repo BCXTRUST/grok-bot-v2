@@ -112,70 +112,103 @@ export function WizardView({
 }) {
   const title = WIZARD_STEPS[step] ?? "Review";
   return (
-    <main className="mx-auto flex w-full max-w-xl flex-col gap-4 px-4 py-8">
-      <ol aria-label="Setup steps" className="flex flex-col gap-0.5">
+    <main className="flex h-full min-h-dvh bg-[#050506]">
+      <ol
+        aria-label="Setup steps"
+        className="flex w-56 shrink-0 flex-col gap-0.5 border-r border-[#2A2A31] px-3 py-8"
+      >
         {WIZARD_STEPS.map((label, index) => {
           const current = index === step;
+          const done = index < step;
           return (
             <li key={label}>
               <button
                 type="button"
                 aria-current={current ? "step" : undefined}
-                aria-label={`Step ${index + 1} of ${WIZARD_STEPS.length}: ${label}`}
+                aria-label={`Step ${index + 1} of ${WIZARD_STEPS.length}: ${label}${done ? ", done" : ""}`}
                 disabled={busy || index > step}
                 onClick={() => onGoTo(index)}
                 className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[13px] ${
-                  current ? "bg-[#1C1C20] text-[#ECECEE]" : "text-[#85858A] hover:bg-[#141416]"
+                  current
+                    ? "bg-[#1C1C20] text-[#ECECEE] shadow-[inset_2px_0_0_#7785ff]"
+                    : done
+                      ? "text-[#C8C8CD] hover:bg-[#141416]"
+                      : "text-[#85858A]"
                 } disabled:hover:bg-transparent`}
               >
-                <span className="w-4 tabular-nums">{index + 1}</span>
+                <StepMark index={index} done={done} />
                 <span>{label}</span>
               </button>
             </li>
           );
         })}
       </ol>
-      <h1 className="text-[22px] font-medium text-[#ECECEE]">{title}</h1>
-      <BuiCard className="flex flex-col gap-3 p-4">
-        {step === 0 ? <BrandFields draft={draft} onChange={onChange} /> : null}
-        {step === 1 ? <PersonaFields draft={draft} onChange={onChange} /> : null}
-        {step === 2 ? (
-          <CaptchaFields draft={draft} onChange={onChange} onCheckBalance={onCheckBalance} />
-        ) : null}
-        {step === 3 ? <QuotaFields draft={draft} onChange={onChange} /> : null}
-        {step === 4 ? <TopicFields draft={draft} onChange={onChange} /> : null}
-        {step === 5 ? <PolicyFields draft={draft} onChange={onChange} /> : null}
-        {step === 6 ? <ReviewFields draft={draft} /> : null}
-        {issues.length > 0 ? (
-          <ul className="flex flex-col gap-1 text-[13px] text-[#FF8B8B]" role="alert">
-            {issues.map((issue) => (
-              <li key={issue}>{issue}</li>
-            ))}
-          </ul>
-        ) : null}
-      </BuiCard>
-      <div className="flex items-center justify-between gap-3">
-        <BuiButton label="Back" onClick={onBack} disabled={step === 0 || busy}>
-          Back
-        </BuiButton>
-        {step < 6 ? (
-          <BuiButton tone="accent" label="Continue" onClick={onNext} disabled={busy}>
-            Continue
-          </BuiButton>
-        ) : (
-          <div className="flex flex-col items-end gap-2">
-            {started ? <SuccessPop label="Started" /> : null}
-            <BuiButton tone="accent" label="Start building" onClick={onStart} disabled={busy}>
-              Start building
+      <div className="rk-scroll min-w-0 flex-1 overflow-y-auto">
+        <div className="mx-auto flex w-full max-w-xl flex-col gap-4 px-6 py-8">
+          <h1 className="text-[22px] font-medium text-[#ECECEE]">{title}</h1>
+          <BuiCard className="flex flex-col gap-3 p-4">
+            {step === 0 ? <BrandFields draft={draft} onChange={onChange} /> : null}
+            {step === 1 ? <PersonaFields draft={draft} onChange={onChange} /> : null}
+            {step === 2 ? (
+              <CaptchaFields draft={draft} onChange={onChange} onCheckBalance={onCheckBalance} />
+            ) : null}
+            {step === 3 ? <QuotaFields draft={draft} onChange={onChange} /> : null}
+            {step === 4 ? <TopicFields draft={draft} onChange={onChange} /> : null}
+            {step === 5 ? <PolicyFields draft={draft} onChange={onChange} /> : null}
+            {step === 6 ? <ReviewFields draft={draft} /> : null}
+            {issues.length > 0 ? (
+              <ul className="flex flex-col gap-1 text-[13px] text-[#FF8B8B]" role="alert">
+                {issues.map((issue) => (
+                  <li key={issue}>{issue}</li>
+                ))}
+              </ul>
+            ) : null}
+          </BuiCard>
+          <div className="flex items-center justify-between gap-3">
+            <BuiButton label="Back" onClick={onBack} disabled={step === 0 || busy}>
+              Back
             </BuiButton>
-            <p className="max-w-sm text-right text-[12px] text-[#85858A]">
-              {RESPONSIBILITY_SENTENCE}
-            </p>
+            {step < 6 ? (
+              <BuiButton tone="accent" label="Continue" onClick={onNext} disabled={busy}>
+                Continue
+              </BuiButton>
+            ) : (
+              <div className="flex flex-col items-end gap-2">
+                {started ? <SuccessPop label="Started" /> : null}
+                <BuiButton tone="accent" label="Start building" onClick={onStart} disabled={busy}>
+                  Start building
+                </BuiButton>
+                <p className="max-w-sm text-right text-[12px] text-[#85858A]">
+                  {RESPONSIBILITY_SENTENCE}
+                </p>
+              </div>
+            )}
           </div>
-        )}
+        </div>
       </div>
     </main>
   );
+}
+
+function StepMark({ index, done }: { index: number; done: boolean }) {
+  if (done) {
+    return (
+      <svg
+        width="14"
+        height="14"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="#3dbb72"
+        strokeWidth="2.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden
+      >
+        <path d="M20 6 9 17 4 12" />
+      </svg>
+    );
+  }
+  return <span className="w-3.5 text-center tabular-nums">{index + 1}</span>;
 }
 
 export function ProjectView({

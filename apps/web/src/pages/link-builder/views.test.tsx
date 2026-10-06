@@ -135,6 +135,14 @@ describe("link builder screens", () => {
     const html = renderToStaticMarkup(<LinkBuilderPreview screen="wizard" />);
     expect(html).toContain("Brand &amp; domains");
     expect(html).toContain("nordlicht.example");
+    expect(html).toContain('aria-label="Setup steps"');
+    expect(html).not.toContain("M20 6 9 17 4 12");
     expect(emptyDraft().disclosureMode).toBe("undisclosed_persona");
+  });
+
+  it("marks earlier steps done beside the review form", () => {
+    const html = renderToStaticMarkup(<LinkBuilderPreview screen="review" />);
+    expect(html.split("M20 6 9 17 4 12").length - 1).toBe(6);
+    expect(html).toContain('aria-current="step"');
   });
 });
