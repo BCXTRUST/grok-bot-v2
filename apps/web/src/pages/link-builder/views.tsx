@@ -13,6 +13,8 @@ import type {
 import {
   FIXTURE_DEMO_SLUG,
   formatPackagePrice,
+  mentionsExampleDomain,
+  mentionsFixtureHost,
   showHostToCustomer,
   WORK_STAGE_LABELS,
   WORK_STAGES,
@@ -606,6 +608,14 @@ function Dashboard({
     project.slug,
   );
   const forums = hosts.filter((host) => showHostToCustomer(host.registrableDomain, project.slug));
+  const visibleThreads = threads.filter((thread) =>
+    showHostToCustomer(thread.domain, project.slug),
+  );
+  const visibleDrafts = drafts.filter((draft) => {
+    if (!hideExampleCopy) return true;
+    const text = `${draft.body} ${draft.targetUrl ?? ""} ${draft.anchorText ?? ""}`;
+    return !mentionsExampleDomain(text) && !mentionsFixtureHost(text);
+  });
   const items = overviewFeed({
     steps,
     lastEvent: status?.lastEvent ?? null,
@@ -634,10 +644,10 @@ function Dashboard({
         />
         <div className="flex min-h-0 flex-col gap-3 lg:max-h-[calc(100dvh-11rem)]">
           <ActivityFeed items={items} />
-          <ForumsPicked hosts={forums} threads={threads} />
+          <ForumsPicked hosts={forums} threads={visibleThreads} />
           <LinksPlaced rows={visiblePlacements} />
           <DraftNotes
-            drafts={drafts}
+            drafts={visibleDrafts}
             draftsOnly={project.disclosureMode === "drafts_only"}
             onDecide={onDecideDraft}
           />
@@ -717,12 +727,7 @@ function ComputerPane({
         {frame?.kind === "url" ? (
           <iframe title="Computer" src={frame.url} className="absolute inset-0 h-full w-full" />
         ) : (
-          <WorkingScreen
-            working={working}
-            label={label}
-            stage={stage}
-            closed={session === "closed"}
-          />
+          <WorkingScreen working={working} label={label} stage={stage} />
         )}
         {frame?.kind === "artifact" && loadArtifact ? (
           <ArtifactShot
@@ -746,34 +751,22 @@ function ComputerPane({
 function WorkingScreen({
   working,
   label,
-  closed,
+  stage,
 }: {
   working: boolean;
   label: string;
   stage: (typeof WORK_STAGES)[number];
-  closed: boolean;
 }) {
   return (
-    <section
-      aria-label={label}
-      className="relative flex min-h-[360px] flex-col items-center justify-center bg-[#0c0c0e] px-8 sm:min-h-[500px]"
-    >
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-0"
-        style={{
-          background:
-            "radial-gradient(ellipse 520px 300px at 50% 46%, rgba(119,133,255,0.08), transparent 70%)",
-        }}
-      />
-      <div className="relative flex flex-col items-center gap-4 text-center">
+    <section aria-label={label} className="flex min-h-[360px] bg-[#0c0c0e] p-4 sm:min-h-[500px]">
+      <BuiCard className="flex w-full flex-col justify-center gap-4 px-10 py-12">
+        <p className="text-[13px] text-[#8A8A90]">{WORK_STAGE_LABELS[stage]}</p>
         {working ? (
           <LoadingState label={label} prominent />
         ) : (
-          <p className="text-[18px] font-medium text-[#ECECEE]">{label}</p>
+          <p className="text-[22px] font-medium leading-none text-[#ECECEE]">{label}</p>
         )}
-        {closed ? <p className="text-[12px] text-[#6C6C70]">No session</p> : null}
-      </div>
+      </BuiCard>
     </section>
   );
 }

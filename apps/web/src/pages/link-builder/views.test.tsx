@@ -1,4 +1,5 @@
 import type {
+  LbDraftView,
   LbHostView,
   LbOperatorTicketView,
   LbPlacementView,
@@ -388,7 +389,7 @@ describe("link builder screens", () => {
     expect(html).toContain("Verify");
     expect(html).toContain('aria-label="Reading threads"');
     expect(html).toContain("bui-pixel-on");
-    expect(html).toContain("No session");
+    expect(html).not.toContain("No session");
     expect(html).toContain('data-session="closed"');
     expect(html).toContain('data-pixel="trail"');
     expect(html).toContain('aria-label="Settings"');
@@ -438,6 +439,38 @@ describe("link builder screens", () => {
     expect(html).not.toContain("fragen-");
     expect(html).toContain("New accounts per day");
     expect(html).toContain("Live links today");
+  });
+
+  it("hides a fixture draft on a customer project", () => {
+    const html = renderOverview(
+      statusView({ activity: "running", activityLabel: "running" }),
+      [],
+      [
+        {
+          id: "draft-1",
+          threadCandidateId: "thread-1",
+          body: "Eine feste Uhrzeit hilft oft. Das hier erklärt es ganz gut.",
+          status: "posted",
+          linkSlot: "inline",
+          modelLane: "draft",
+          modelId: "fake-draft",
+          targetUrl: "https://nordlicht.example/schlaf",
+          anchorText: "Nordlicht",
+          confidence: null,
+          qualityChecks: {
+            factsOnly: true,
+            noBannedClaims: true,
+            registerMatches: true,
+            lengthOk: true,
+            singleLink: true,
+            notTestimonial: true,
+            issues: [],
+          },
+        },
+      ],
+    );
+    expect(html).not.toContain("feste Uhrzeit");
+    expect(html).not.toContain("nordlicht.example");
   });
 
   it("keeps a calm computer when the run is paused and hides an all-zero why-not list", () => {
@@ -562,7 +595,11 @@ function statusView(overrides: Partial<LbProjectStatusView> = {}): LbProjectStat
   };
 }
 
-function renderOverview(status: LbProjectStatusView, steps: LbRunStepView[]) {
+function renderOverview(
+  status: LbProjectStatusView,
+  steps: LbRunStepView[],
+  drafts: LbDraftView[] = [],
+) {
   return renderToStaticMarkup(
     <ProjectView
       project={{ name: "Vitaminexpress" } as LbProjectDetail}
@@ -571,7 +608,7 @@ function renderOverview(status: LbProjectStatusView, steps: LbRunStepView[]) {
       placements={[]}
       steps={steps}
       threads={[]}
-      drafts={[]}
+      drafts={drafts}
       tickets={[]}
       surface="dashboard"
       onSurface={noop}
