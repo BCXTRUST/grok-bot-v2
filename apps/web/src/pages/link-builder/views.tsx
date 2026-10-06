@@ -696,7 +696,7 @@ function ComputerPane({
           className="h-2 w-2 shrink-0 rounded-full"
           style={{ background: working ? "var(--bui-green)" : "#3a3a40" }}
         />
-        <ol aria-label="Stage" className="flex min-w-0 flex-1 items-center gap-0.5 overflow-hidden">
+        <ol aria-label="Stage" className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto">
           {WORK_STAGES.map((name, index) => {
             const current = name === stage;
             const done = index < stageIndex;
@@ -704,7 +704,7 @@ function ComputerPane({
               <li
                 key={name}
                 aria-current={current ? "step" : undefined}
-                className={`rounded-full px-2.5 py-1 text-[12.5px] leading-none ${
+                className={`shrink-0 whitespace-nowrap rounded-full px-2 py-1 text-[12px] leading-none sm:px-2.5 sm:text-[12.5px] ${
                   current
                     ? "bg-[#232327] text-[#ECECEE]"
                     : done
@@ -721,7 +721,9 @@ function ComputerPane({
             );
           })}
         </ol>
-        <PixelTrail live={working && session === "closed"} />
+        <span className="hidden shrink-0 sm:flex">
+          <PixelTrail live={working && session === "closed"} />
+        </span>
       </div>
       <div className="relative min-h-[360px] flex-1 sm:min-h-[500px]">
         {frame?.kind === "url" ? (
