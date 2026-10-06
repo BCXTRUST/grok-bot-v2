@@ -1,6 +1,7 @@
 export * from "./activity.js";
-export * from "./billing.js";
 export * from "./alerts.js";
+export * from "./billing.js";
+export * from "./board-qualify.js";
 export * from "./captcha-helper-machine.js";
 export * from "./coherence.js";
 export * from "./credentials.js";
@@ -21,6 +22,7 @@ export * from "./placement-state.js";
 export * from "./plan.js";
 export * from "./policy.js";
 export * from "./probe.js";
+export * from "./problem-queries.js";
 export * from "./project-state.js";
 export * from "./prompts.js";
 export * from "./real-pipeline.js";

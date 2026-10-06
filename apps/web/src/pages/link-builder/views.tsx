@@ -15,6 +15,7 @@ import {
   formatPackagePrice,
   mentionsExampleDomain,
   mentionsFixtureHost,
+  primaryProblemQueryFromProject,
   showHostToCustomer,
   WORK_STAGE_LABELS,
   WORK_STAGES,
@@ -638,6 +639,7 @@ function Dashboard({
     forumName: forums[0]?.registrableDomain ?? null,
     threadName: visibleThreads[0]?.title ?? null,
     searches,
+    searchQuery: primaryProblemQueryFromProject(project),
   });
   const action = overviewAction(items, working);
   const frame = overviewFrame({ steps, tickets, screenUrl });

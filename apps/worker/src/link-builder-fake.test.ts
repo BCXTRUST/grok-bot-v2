@@ -90,10 +90,9 @@ describe("link builder fake runner", () => {
     for (let guard = 0; guard < 5; guard += 1) {
       stepped.push(await tickLinkBuilderFake(sample, now));
     }
-    expect(stepped).toEqual([1, 1, 1, 0, 0]);
+    expect(stepped).toEqual([1, 1, 0, 0, 0]);
     expect(sample.steps.map((step) => step.lastAction)).toEqual([
       "Found forum gutefrage.net",
-      "Looking for threads on gutefrage.net",
       "Found Vitamin D im Winter?",
     ]);
     expect(sample.steps.every((step) => step.kind === "research")).toBe(true);

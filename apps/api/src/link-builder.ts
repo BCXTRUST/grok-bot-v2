@@ -59,6 +59,8 @@ import {
   CREDIT_PACKAGES,
   creditBalanceFromLedger,
   type HostnameResolver,
+  isCannedResearchLine,
+  isStaleResearchLine,
   isWithinWindow,
   linkBuilderTopic,
   localDateKey,
@@ -69,7 +71,6 @@ import {
   PlanLimitError,
   projectActivity,
   quoteCreditPurchase,
-  RESEARCH_OPENING,
   type ScheduleState,
   settleCreditPurchase,
   showHostToCustomer,
@@ -100,6 +101,7 @@ function customerFacingEvent(text: string | null): string | null {
     .trim();
   if (/parked/i.test(cleaned) && /operator/i.test(cleaned)) return null;
   if (/live quota met/i.test(cleaned) || /captcha/i.test(cleaned)) return null;
+  if (isCannedResearchLine(cleaned) || isStaleResearchLine(cleaned)) return null;
   return cleaned || null;
 }
 
@@ -1059,19 +1061,25 @@ async function ensureRunningToday(
         status: "running",
         liveWeek,
         startedAt: new Date(),
-        lastAction: RESEARCH_OPENING,
+        lastAction: null,
       },
     });
     return;
   }
   const status = readRunStatus(existing.status);
   const next = resumeRunStatus(status);
+  const keptAction =
+    existing.lastAction &&
+    !isCannedResearchLine(existing.lastAction) &&
+    !isStaleResearchLine(existing.lastAction)
+      ? existing.lastAction
+      : null;
   await prisma.lbRun.update({
     where: { id: existing.id },
     data: {
       status: next ?? status,
       startedAt: existing.startedAt ?? new Date(),
-      lastAction: RESEARCH_OPENING,
+      lastAction: keptAction,
       currentHostId: null,
       currentUrl: null,
       finishedAt: null,

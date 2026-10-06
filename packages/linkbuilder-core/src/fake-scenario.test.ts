@@ -70,19 +70,15 @@ describe("fake scenario", () => {
     expect(foundThreadLine("Vitamin D im Winter?")).toBe("Found Vitamin D im Winter?");
     expect(
       researchLogLines({ forumName: "gutefrage.net", threadName: "Vitamin D im Winter?" }),
-    ).toEqual([
-      "Checking Google for on-topic forums",
-      "Found forum gutefrage.net",
-      "Looking for threads on gutefrage.net",
-      "Found Vitamin D im Winter?",
-      "Continuing",
-    ]);
+    ).toEqual(["Found forum gutefrage.net", "Found Vitamin D im Winter?"]);
     const invented = researchLogLines({
       forumName: "forum-a.example",
       threadName: "On https://brett-a.example/t/1",
     });
     expect(invented.join("\n")).not.toContain(".example");
     expect(invented.some((line) => line.startsWith("Found"))).toBe(false);
+    expect(invented).not.toContain("Looking for threads");
+    expect(invented).not.toContain("Continuing");
     const named = planFakeStep({
       ...input,
       stepIndex: 1,
@@ -91,19 +87,11 @@ describe("fake scenario", () => {
       forumName: "gutefrage.net",
     });
     expect(named).toMatchObject({ lastAction: "Found forum gutefrage.net" });
-    const looking = planFakeStep({
+    const foundThread = planFakeStep({
       ...input,
       stepIndex: 2,
       researchBeats: 2,
       previousAction: "Found forum gutefrage.net",
-      forumName: "gutefrage.net",
-      threadName: "Vitamin D im Winter?",
-    });
-    expect(looking).toMatchObject({ lastAction: "Looking for threads on gutefrage.net" });
-    const foundThread = planFakeStep({
-      ...input,
-      stepIndex: 3,
-      previousAction: "Looking for threads on gutefrage.net",
       forumName: "gutefrage.net",
       threadName: "Vitamin D im Winter?",
     });
@@ -145,9 +133,22 @@ describe("fake scenario", () => {
     });
     expect(replayed.map((step) => step.lastAction)).toEqual([
       "Found forum gutefrage.net",
-      "Looking for threads on gutefrage.net",
       "Found Vitamin D im Winter?",
     ]);
+    expect(replayed.every((step) => step.host === undefined && step.placement === undefined)).toBe(
+      true,
+    );
+    expect(replayed.every((step) => step.kind === "research")).toBe(true);
+    expect(
+      planFakeStep({
+        ...input,
+        stepIndex: 1,
+        researchBeats: 1,
+        previousAction: replayed[0]?.lastAction,
+        forumName: "gutefrage.net",
+        threadName: "Vitamin D im Winter?",
+      }),
+    ).toEqual(replayed[1]);
     expect(
       planFakeStep({
         ...input,
@@ -157,6 +158,6 @@ describe("fake scenario", () => {
         forumName: "gutefrage.net",
         threadName: "Vitamin D im Winter?",
       }),
-    ).toEqual(replayed[2]);
+    ).toEqual({ hold: true });
   });
 });

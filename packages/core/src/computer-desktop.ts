@@ -39,8 +39,7 @@ export function looksLikeDesktopBrowserApp(application: string): boolean {
 
 const BROWSER_HUNT_SHELL =
   /\b(?:which|whereis|type\s+-a|command\s+-v)\b[\s\S]{0,400}\b(?:firefox|chromium|google-chrome|chrome|brave-browser|msedge)\b/i;
-const BROWSER_LS_SHELL =
-  /\bls\b[\s\S]{0,200}(?:\/usr(?:\/(?:local\/)?bin)?|\/opt|\/snap)\b/i;
+const BROWSER_LS_SHELL = /\bls\b[\s\S]{0,200}(?:\/usr(?:\/(?:local\/)?bin)?|\/opt|\/snap)\b/i;
 
 export const BROWSER_HUNT_SHELL_ERROR =
   "The desktop already has a browser. Use computer_observe, then computer_act or open_path on the page you see. Do not search for browsers with shell.";
@@ -73,7 +72,7 @@ export function prepareKioskDesktopCommand(display: string): string {
   return [
     `export DISPLAY=${quotedDisplay}`,
     "killall -q chrome chromium chromium-browser google-chrome google-chrome-stable >/dev/null 2>&1 || true",
-    "killall -q xfce4-panel xfdesktop pcmanfm lxpanel tint2 plank >/dev/null 2>&1 || true",
+    "killall -q xfce4-panel xfdesktop pcmanfm lxpanel tint2 plank gnome-panel plasmashell xfce4-notifyd >/dev/null 2>&1 || true",
     "sleep 0.3",
   ].join("\n");
 }
@@ -88,8 +87,9 @@ export function detachedBrowserCommand(display: string, url: string): string {
     'rm -rf "$dir"',
     'mkdir -p "$dir/Default"',
     'touch "$dir/First Run"',
-    `printf '%s\\n' '{"browser":{"check_default_browser":false},"distribution":{"skip_first_run_ui":true,"suppress_first_run_default_browser_prompt":true,"make_chrome_default_for_user":false}}' > "$dir/Default/Preferences"`,
-    'flags="--user-data-dir=$dir --kiosk --start-fullscreen --no-first-run --disable-fre --no-default-browser-check --disable-infobars --noerrdialogs --disable-session-crashed-bubble --hide-crash-restore-bubble --disable-features=Translate,InfiniteSessionRestore,ChromeWhatsNewUI --password-store=basic --disable-sync --disable-dev-shm-usage --no-sandbox --window-position=0,0 --window-size=1280,800"',
+    `printf '%s\\n' '{"browser":{"check_default_browser":false,"has_seen_welcome_page":true},"distribution":{"skip_first_run_ui":true,"suppress_first_run_default_browser_prompt":true,"make_chrome_default_for_user":false}}' > "$dir/Default/Preferences"`,
+    'flags="--user-data-dir=$dir --kiosk --start-fullscreen --no-first-run --disable-fre --no-default-browser-check --disable-search-engine-choice-screen --disable-infobars --noerrdialogs --disable-session-crashed-bubble --hide-crash-restore-bubble --disable-component-update --disable-background-networking --disable-features=Translate,InfiniteSessionRestore,ChromeWhatsNewUI,OutdatedBuildDetector --password-store=basic --disable-sync --disable-dev-shm-usage --no-sandbox --window-position=0,0 --window-size=1280,800"',
+    "setsid -f bash -c 'while true; do killall -q xfce4-panel xfdesktop pcmanfm lxpanel tint2 plank gnome-panel plasmashell xfce4-notifyd 2>/dev/null; sleep 1; done' </dev/null >/dev/null 2>&1 || true",
     'if [ -x /usr/bin/google-chrome ]; then exec /usr/bin/google-chrome $flags "$url"; fi',
     'if [ -x /usr/bin/google-chrome-stable ]; then exec /usr/bin/google-chrome-stable $flags "$url"; fi',
     'if [ -x /usr/bin/chromium ]; then exec /usr/bin/chromium $flags "$url"; fi',
@@ -110,7 +110,18 @@ export function raiseBrowserWindowCommand(display: string): string {
     .join(" ");
   return [
     `export DISPLAY=${quotedDisplay}`,
-    "killall -q xfce4-panel xfdesktop pcmanfm lxpanel tint2 plank >/dev/null 2>&1 || true",
+    "killall -q xfce4-panel xfdesktop pcmanfm lxpanel tint2 plank gnome-panel plasmashell xfce4-notifyd >/dev/null 2>&1 || true",
+    "welcome=$(xdotool search --onlyvisible --name \"Welcome to Google Chrome\" 2>/dev/null | awk 'NR==1{print; exit}')",
+    'if [ -n "$welcome" ]; then',
+    '  xdotool windowactivate --sync "$welcome" key Return 2>/dev/null || true',
+    "fi",
+    'for name in "Can\'t update Chrome" "Cannot update Chrome" "Couldn\'t update Chrome"; do',
+    "  dialog=$(xdotool search --onlyvisible --name \"$name\" 2>/dev/null | awk 'NR==1{print; exit}')",
+    '  if [ -n "$dialog" ]; then',
+    '    xdotool windowactivate --sync "$dialog" key Escape 2>/dev/null || true',
+    '    xdotool windowclose "$dialog" 2>/dev/null || true',
+    "  fi",
+    "done",
     "id=",
     "for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do",
     "  welcome=$(xdotool search --onlyvisible --name \"Welcome to Google Chrome\" 2>/dev/null | awk 'NR==1{print; exit}')",
@@ -118,20 +129,27 @@ export function raiseBrowserWindowCommand(display: string): string {
     '    xdotool windowactivate --sync "$welcome" key Return 2>/dev/null || true',
     "    sleep 0.3",
     "  fi",
+    '  for name in "Can\'t update Chrome" "Cannot update Chrome" "Couldn\'t update Chrome"; do',
+    "    dialog=$(xdotool search --onlyvisible --name \"$name\" 2>/dev/null | awk 'NR==1{print; exit}')",
+    '    if [ -n "$dialog" ]; then',
+    '      xdotool windowactivate --sync "$dialog" key Escape 2>/dev/null || true',
+    '      xdotool windowclose "$dialog" 2>/dev/null || true',
+    "    fi",
+    "  done",
     `  for class in ${classes}; do`,
     "    id=$(xdotool search --onlyvisible --class \"$class\" 2>/dev/null | awk 'NR==1{print; exit}')",
     '    if [ -n "$id" ]; then break; fi',
     "  done",
     '  if [ -n "$id" ]; then',
-    "    name=$(xdotool getwindowname \"$id\" 2>/dev/null || true)",
+    '    name=$(xdotool getwindowname "$id" 2>/dev/null || true)',
     '    case "$name" in',
     '      *"Welcome to Google Chrome"*) id=; sleep 0.3; continue ;;',
     "    esac",
     "    read -r width height <<EOF",
     "$(xdotool getdisplaygeometry 2>/dev/null || echo 1280 800)",
     "EOF",
-    '    width=${width:-1280}',
-    '    height=${height:-800}',
+    "    width=${width:-1280}",
+    "    height=${height:-800}",
     '    xdotool windowmove "$id" 0 0 windowsize --sync "$id" "$width" "$height" windowactivate "$id" windowraise "$id" || true',
     '    xdotool windowstate --add FULLSCREEN "$id" 2>/dev/null || true',
     '    if command -v wmctrl >/dev/null 2>&1; then wmctrl -i -r "$id" -b add,fullscreen,above 2>/dev/null || true; fi',

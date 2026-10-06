@@ -125,6 +125,29 @@ describe("overview feed", () => {
     expect(counted.map((item) => item.label).join("\n")).not.toMatch(
       /Checking Google for on-topic forums|Looking for threads|Continuing/,
     );
+    const problem = overviewFeed({
+      steps,
+      lastEvent: "Checking Google for on-topic forums",
+      working: true,
+      blockers: [],
+      searches: 1,
+      searchQuery: "Magnesium Krämpfe Forum",
+    });
+    expect(problem.map((item) => item.label)).toEqual([
+      "Searched Google.de for Magnesium Krämpfe Forum",
+    ]);
+    expect(problem.map((item) => item.label).join("\n")).not.toMatch(
+      /Checking Google|Looking for threads|Continuing|Vitaminexpress|kaufen/,
+    );
+    const uncounted = overviewFeed({
+      steps,
+      lastEvent: "Searched Google.de for Magnesium Krämpfe Forum",
+      working: true,
+      blockers: [],
+      searches: 0,
+      searchQuery: "Magnesium Krämpfe Forum",
+    });
+    expect(uncounted).toEqual([]);
   });
 
   it("drops the canned three-line loop even when those steps are stored", () => {

@@ -140,8 +140,13 @@ describe("project computer screen", () => {
           id: "project-google",
           name: "Vitaminexpress",
           brandName: "Vitaminexpress",
-          topicLanes: [{ tag: "forum-abc.example" }],
-          targets: [{ keywordClusters: ["brett-abc.example"] }],
+          topicLanes: [{ tag: "Magnesium kaufen" }],
+          targets: [
+            {
+              url: "https://www.vitaminexpress.org/de/magnesium",
+              keywordClusters: ["magnesium kaufen", "brett-abc.example"],
+            },
+          ],
         })),
       },
       computer: {
@@ -168,9 +173,10 @@ describe("project computer screen", () => {
       "project-google",
     );
     expect(result).toEqual({ url, error: null });
-    const opened = scripts.find((script) => script.includes("google.com/search"));
-    expect(opened).toContain("Vitaminexpress");
-    expect(opened).toContain("forum");
+    const opened = scripts.find((script) => script.includes("google.de/search"));
+    expect(opened).toContain("Magnesium");
+    expect(opened).toContain("Forum");
+    expect(opened).not.toMatch(/Vitaminexpress|kaufen/i);
     expect(opened).toContain("RAKAZO_DETACH_BROWSER");
     expect(opened).toContain("exec /usr/bin/google-chrome");
     expect(opened).toContain("--kiosk");
@@ -178,6 +184,8 @@ describe("project computer screen", () => {
     expect(opened).toContain("--no-first-run");
     expect(opened).toContain("--disable-fre");
     expect(opened).toContain("--no-default-browser-check");
+    expect(opened).toContain("OutdatedBuildDetector");
+    expect(scripts.some((script) => script.includes("Can't update Chrome"))).toBe(true);
     expect(opened).not.toContain("nohup");
     expect(opened).not.toContain(".example");
     expect(scripts.some((script) => script.includes("FULLSCREEN"))).toBe(true);
@@ -195,8 +203,8 @@ describe("project computer screen", () => {
           id: "project-searching",
           name: "Vitaminexpress",
           brandName: "Vitaminexpress",
-          topicLanes: [],
-          targets: [],
+          topicLanes: [{ tag: "Magnesium kaufen" }],
+          targets: [{ url: "https://www.vitaminexpress.org/de/magnesium", keywordClusters: [] }],
         })),
       },
       computer: {
@@ -212,7 +220,7 @@ describe("project computer screen", () => {
           scripts.push(request.argv.at(-1) ?? "");
           yield {
             type: "stdout" as const,
-            data: "9\t1\tVitaminexpress forum - Google Search\n",
+            data: "9\t1\tMagnesium Krämpfe Forum - Google Suche\n",
           };
           yield { type: "exit" as const, code: 0 };
         },
@@ -220,7 +228,8 @@ describe("project computer screen", () => {
       actor,
       "project-searching",
     );
-    expect(scripts.some((script) => script.includes("google.com/search"))).toBe(false);
+    expect(scripts.some((script) => script.includes("google.de/search"))).toBe(false);
+    expect(scripts.join("\n")).not.toMatch(/Vitaminexpress|kaufen/i);
     expect(scripts.join("\n")).not.toContain("killall -q chrome");
     expect(scripts.some((script) => script.includes("FULLSCREEN"))).toBe(true);
     expect(scripts.some((script) => script.includes("xfce4-panel"))).toBe(true);

@@ -14,17 +14,21 @@ import {
 import { type Actor, SandboxKind } from "@rakazo/contracts";
 import {
   detachedBrowserCommand,
-  prepareKioskDesktopCommand,
   listVisibleWindowsCommand,
   parseVisibleWindows,
+  prepareKioskDesktopCommand,
   raiseBrowserWindowCommand,
 } from "@rakazo/core";
 import { ensureComputerRecord, type PrismaClient, type ThreadEvents } from "@rakazo/db";
 import {
   desktopShowsForumSearch,
+  desktopShowsProblemSearch,
   forumSearchUrlFromProject,
   isCannedResearchLine,
   isStaleResearchLine,
+  primaryProblemQueryFromProject,
+  searchedGoogleLine,
+  shopNames,
 } from "@rakazo/linkbuilder-core";
 import { addScreenProxyCapability, shouldProxyComputerScreen } from "./screen-proxy.js";
 
@@ -358,25 +362,18 @@ async function showForumSearch(
     return;
   }
   const url = forumSearchUrlFromProject(project);
-  if (!url.startsWith("https://www.google.com/search?")) return;
+  if (!url.startsWith("https://www.google.de/search?")) return;
+  const query = primaryProblemQueryFromProject(project);
+  const shops = shopNames(project);
+  const onProblem = (titles: readonly string[]) =>
+    query ? desktopShowsProblemSearch(titles, query, shops) : desktopShowsForumSearch(titles);
   try {
-    let titles: string[] = [];
-    try {
-      const listed = await runDesktop(
-        deps,
-        actor,
-        computer,
-        listVisibleWindowsCommand(DESKTOP_DISPLAY),
-      );
-      titles = parseVisibleWindows(listed).flatMap((window) => (window.title ? [window.title] : []));
-    } catch {
-      titles = [];
-    }
-    if (!desktopShowsForumSearch(titles)) {
+    let titles = await visibleTitles(deps, actor, computer);
+    if (!onProblem(titles)) {
       await runDesktop(deps, actor, computer, prepareKioskDesktopCommand(DESKTOP_DISPLAY));
       await runDesktop(deps, actor, computer, detachedBrowserCommand(DESKTOP_DISPLAY, url));
       titles = await visibleTitles(deps, actor, computer);
-      if (!desktopShowsForumSearch(titles)) {
+      if (!onProblem(titles)) {
         await runDesktop(deps, actor, computer, typeSearchUrlCommand(DESKTOP_DISPLAY, url));
         titles = await visibleTitles(deps, actor, computer);
       }
@@ -386,7 +383,10 @@ async function showForumSearch(
     } catch {
       // The kiosk window can still be opening. The next screen open tries again.
     }
-    if (desktopShowsForumSearch(titles)) await noteDesktopSearch(deps, actor, project.id);
+    titles = await visibleTitles(deps, actor, computer);
+    if (query && desktopShowsProblemSearch(titles, query, shops)) {
+      await noteDesktopSearch(deps, actor, project.id, query);
+    }
   } catch (error) {
     console.error("link builder screen", "forum search", publicScreenError(error));
   }
@@ -417,7 +417,7 @@ function typeSearchUrlCommand(display: string, url: string): string {
   return [
     `export DISPLAY=${quotedDisplay}`,
     "id=$(xdotool search --onlyvisible --class google-chrome 2>/dev/null | awk 'NR==1{print; exit}')",
-    'if [ -z "$id" ]; then id=$(xdotool search --onlyvisible --class Chromium 2>/dev/null | awk \'NR==1{print; exit}\'); fi',
+    "if [ -z \"$id\" ]; then id=$(xdotool search --onlyvisible --class Chromium 2>/dev/null | awk 'NR==1{print; exit}'); fi",
     'if [ -z "$id" ]; then exit 0; fi',
     'xdotool windowactivate --sync "$id"',
     "sleep 0.2",
@@ -434,6 +434,7 @@ async function noteDesktopSearch(
   deps: ProjectScreenDeps,
   actor: Actor,
   projectId: string,
+  query: string,
 ): Promise<void> {
   const create = deps.prisma.lbCostEntry?.create;
   if (!create) return;
@@ -459,11 +460,18 @@ async function noteDesktopSearch(
     orderBy: { date: "desc" },
     select: { id: true, lastAction: true },
   });
+  const line = searchedGoogleLine(query);
   const current = run?.lastAction ?? "";
-  if (!run || (current && !isCannedResearchLine(current) && !isStaleResearchLine(current))) return;
+  const replace =
+    !current ||
+    isCannedResearchLine(current) ||
+    isStaleResearchLine(current) ||
+    /^opened google search$/i.test(current) ||
+    /google/i.test(current);
+  if (!run || !replace || current === line) return;
   await deps.prisma.lbRun.update({
     where: { id: run.id },
-    data: { lastAction: "Opened Google search" },
+    data: { lastAction: line },
   });
 }
 

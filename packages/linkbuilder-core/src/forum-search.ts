@@ -1,14 +1,15 @@
 import { isFixtureHostDomain } from "./fake-scenario.js";
+import {
+  type ProblemQueryInput,
+  primaryProblemQuery,
+  primaryProblemQueryFromProject,
+  shopNames,
+} from "./problem-queries.js";
 
-/** What the team computer shows while it looks for forums. Search only. */
-const SEARCH_ORIGIN = "https://www.google.com/search";
+/** Google.de. The computer searches a problem, never the shop. */
+const SEARCH_ORIGIN = "https://www.google.de/search";
 
-export interface ForumSearchInput {
-  name?: string | null;
-  brandName?: string | null;
-  topic?: string | null;
-  keywords?: readonly string[] | null;
-}
+export interface ForumSearchInput extends ProblemQueryInput {}
 
 /** A search term we can type. Blank text, URLs, and example hosts are not a topic. */
 export function forumSearchTerm(value: unknown): string | null {
@@ -22,32 +23,20 @@ export function forumSearchTerm(value: unknown): string | null {
 }
 
 export function forumSearchQuery(input: ForumSearchInput): string {
-  const picked: string[] = [];
-  const candidates = [input.brandName, input.topic, input.name, ...(input.keywords ?? [])];
-  for (const candidate of candidates) {
-    const term = forumSearchTerm(candidate);
-    if (!term) continue;
-    const folded = term.toLowerCase();
-    if (
-      picked.some((item) => {
-        const current = item.toLowerCase();
-        return current === folded || current.includes(folded) || folded.includes(current);
-      })
-    ) {
-      continue;
-    }
-    picked.push(term);
-    if (picked.length === 3) break;
-  }
-  const base = picked.join(" ");
-  if (!base) return "on-topic forums";
-  return /forum/i.test(base) ? base : `${base} forum`;
+  const query = primaryProblemQuery(input);
+  if (!query) return "on-topic forums";
+  const shops = shopNames(input);
+  const folded = query.toLowerCase();
+  if (shops.some((shop) => folded.includes(shop.toLowerCase()))) return "on-topic forums";
+  return query;
 }
 
 /** Google search for the stored topic. Never a forum host and never an example domain. */
 export function forumSearchUrl(input: ForumSearchInput): string {
   const url = new URL(SEARCH_ORIGIN);
   url.searchParams.set("q", forumSearchQuery(input));
+  url.searchParams.set("hl", "de");
+  url.searchParams.set("gl", "de");
   return url.toString();
 }
 
@@ -85,12 +74,36 @@ export function forumSearchUrlFromProject(project: {
   topicLanes?: unknown;
   targets?: unknown;
 }): string {
+  const fromCatalog = primaryProblemQueryFromProject(project);
   return forumSearchUrl({
     name: project.name,
     brandName: project.brandName,
-    topic: topicFromLanes(project.topicLanes),
-    keywords: keywordsFromTargets(project.targets),
+    topic: fromCatalog ?? topicFromLanes(project.topicLanes),
+    keywords: fromCatalog ? [fromCatalog] : keywordsFromTargets(project.targets),
+    pages: pagesFromTargets(project.targets),
   });
+}
+
+function pagesFromTargets(targets: unknown): ProblemQueryInput["pages"] {
+  if (!Array.isArray(targets)) return [];
+  return targets.flatMap((target) => {
+    if (!target || typeof target !== "object") return [];
+    const record = target as { url?: unknown; description?: unknown; keywordClusters?: unknown };
+    const keyword = Array.isArray(record.keywordClusters)
+      ? record.keywordClusters.filter((item): item is string => typeof item === "string").join(" ")
+      : "";
+    return [
+      {
+        ...(typeof record.url === "string" ? { url: record.url } : {}),
+        ...(typeof record.description === "string" ? { title: record.description } : {}),
+        ...(keyword ? { keyword } : {}),
+      },
+    ];
+  });
+}
+
+function foldTitle(value: string): string {
+  return value.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
 }
 
 /** True when a visible window is already a Google search or results page. */
@@ -98,7 +111,37 @@ export function desktopShowsForumSearch(titles: readonly string[]): boolean {
   for (const title of titles) {
     const text = title.trim();
     if (!text || /sorry|unusual traffic|captcha/i.test(text)) continue;
+    if (/welcome to google chrome|can.?t update|couldn.?t update|reinstall chrome/i.test(text)) {
+      continue;
+    }
     if (/google (?:search|suche)/i.test(text)) return true;
+  }
+  return false;
+}
+
+/**
+ * True when the visible Google results are this problem query.
+ * A shop name in the title is the wrong search and must be replaced.
+ */
+export function desktopShowsProblemSearch(
+  titles: readonly string[],
+  query: string,
+  shopNames: readonly string[] = [],
+): boolean {
+  const needle = foldTitle(query.trim());
+  const words = needle.split(/\s+/).filter((word) => word.length > 2);
+  if (words.length === 0) return false;
+  const shops = shopNames.map((shop) => foldTitle(shop.trim())).filter((shop) => shop.length > 2);
+  for (const title of titles) {
+    const text = title.trim();
+    if (!text || /sorry|unusual traffic|captcha/i.test(text)) continue;
+    if (/welcome to google chrome|can.?t update|couldn.?t update|reinstall chrome/i.test(text)) {
+      continue;
+    }
+    if (!/google (?:search|suche)/i.test(text)) continue;
+    const folded = foldTitle(text);
+    if (shops.some((shop) => folded.includes(shop))) continue;
+    if (words.every((word) => folded.includes(word))) return true;
   }
   return false;
 }

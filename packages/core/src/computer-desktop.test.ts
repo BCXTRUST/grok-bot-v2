@@ -10,6 +10,7 @@ import {
   openHttpUrlCommand,
   openPathDesktopCommand,
   parseVisibleWindows,
+  raiseBrowserWindowCommand,
   refuseBrowserHuntShell,
 } from "./computer-desktop.js";
 
@@ -42,13 +43,19 @@ describe("computer desktop window helpers", () => {
   it("detaches Chrome so the sandbox command can return", () => {
     const command = detachedBrowserCommand(
       ":0",
-      "https://www.google.com/search?q=Vitaminexpress+forum",
+      "https://www.google.de/search?q=Magnesium+Kr%C3%A4mpfe+Forum&hl=de&gl=de",
     );
     expect(command).toContain("RAKAZO_DETACH_BROWSER");
     expect(command).toContain("/usr/bin/google-chrome");
     expect(command).toContain("--no-sandbox");
     expect(command).toContain("--no-first-run");
-    expect(command).toContain("https://www.google.com/search?q=Vitaminexpress+forum");
+    expect(command).toContain("--disable-fre");
+    expect(command).toContain("OutdatedBuildDetector");
+    expect(command).toContain("setsid -f");
+    expect(command).toContain("xfce4-panel");
+    expect(command).toContain(
+      "https://www.google.de/search?q=Magnesium+Kr%C3%A4mpfe+Forum&hl=de&gl=de",
+    );
     expect(command).toContain("--kiosk");
     expect(command).toContain("exec /usr/bin/google-chrome");
     expect(command).not.toContain(">/tmp/rakazo-browser.log");
@@ -56,7 +63,10 @@ describe("computer desktop window helpers", () => {
   });
 
   it("replaces the shell with Chrome so the sandbox cannot reap it", () => {
-    const command = detachedBrowserCommand(":0", "https://www.google.com/search?q=Vitaminexpress+forum");
+    const command = detachedBrowserCommand(
+      ":0",
+      "https://www.google.de/search?q=Magnesium+Kr%C3%A4mpfe+Forum&hl=de&gl=de",
+    );
     expect(command).toContain("RAKAZO_DETACH_BROWSER");
     expect(command).toContain("exec /usr/bin/google-chrome");
     expect(command).toContain("--kiosk");
@@ -64,7 +74,14 @@ describe("computer desktop window helpers", () => {
     expect(command).toContain("--no-first-run");
     expect(command).toContain("--no-default-browser-check");
     expect(command).toContain("First Run");
-    expect(command).toContain("https://www.google.com/search?q=Vitaminexpress+forum");
+    expect(command).toContain(
+      "https://www.google.de/search?q=Magnesium+Kr%C3%A4mpfe+Forum&hl=de&gl=de",
+    );
+    const raised = raiseBrowserWindowCommand(":0");
+    expect(raised).toContain("Can't update Chrome");
+    expect(raised).toContain("Welcome to Google Chrome");
+    expect(raised).toContain("xfce4-panel");
+    expect(raised).toContain("FULLSCREEN");
     expect(command).not.toContain("nohup");
   });
 

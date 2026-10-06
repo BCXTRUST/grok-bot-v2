@@ -170,20 +170,16 @@ export function isCannedResearchLine(label: string): boolean {
   return CANNED_RESEARCH_LINES.has(label.trim());
 }
 
-/** Sentences for one pass. Found lines exist only when the name is real. */
+/** Real finds only. The canned opening, looking, and continuing lines are not events. */
 export function researchLogLines(found?: {
   forumName?: string | null;
   threadName?: string | null;
 }): string[] {
-  const forum = researchResultName(found?.forumName);
-  const thread = researchResultName(found?.threadName);
-  const lines = [RESEARCH_OPENING];
-  const forumLine = foundForumLine(forum);
+  const lines: string[] = [];
+  const forumLine = foundForumLine(found?.forumName);
   if (forumLine) lines.push(forumLine);
-  lines.push(forum ? `Looking for threads on ${forum}` : "Looking for threads");
-  const threadLine = foundThreadLine(thread);
+  const threadLine = foundThreadLine(found?.threadName);
   if (threadLine) lines.push(threadLine);
-  lines.push("Continuing");
   return lines;
 }
 
@@ -196,15 +192,17 @@ export function nextRealResearchEvent(
   found?: { forumName?: string | null; threadName?: string | null },
 ): string | null {
   const forum = foundForumLine(found?.forumName);
-  const forumName = researchResultName(found?.forumName);
-  const looking = forum && forumName ? `Looking for threads on ${forumName}` : null;
   const thread = foundThreadLine(found?.threadName);
-  const sequence = [forum, looking, thread].filter((line): line is string => Boolean(line));
+  const sequence = [forum, thread].filter((line): line is string => Boolean(line));
   if (sequence.length === 0) return null;
   const said = previous?.trim() ?? "";
   const index = sequence.indexOf(said);
   if (index >= 0) return sequence[index + 1] ?? null;
-  return sequence[0] ?? null;
+  if (!said || isCannedResearchLine(said) || isStaleResearchLine(said)) return sequence[0] ?? null;
+  if (/^searched google\.de for /i.test(said) || /^opened google search$/i.test(said)) {
+    return sequence[0] ?? null;
+  }
+  return null;
 }
 
 /** @deprecated The live runner no longer cycles these lines. */

@@ -8,6 +8,7 @@ import {
   mentionsFixtureHost,
   RESEARCH_OPENING,
   researchResultName,
+  searchedGoogleLine,
   showHostToCustomer,
   stageFromActivity,
   type WorkStage,
@@ -117,6 +118,8 @@ export function overviewFeed(input: {
   threadName?: string | null;
   /** Recorded search queries. Zero means a Google line has not happened. */
   searches?: number;
+  /** Problem query that was actually opened. Omitted when no search was counted. */
+  searchQuery?: string | null;
 }): OverviewFeedItem[] {
   const hasPlacement = input.hasPlacement === true;
   let keptOpening = false;
@@ -127,6 +130,7 @@ export function overviewFeed(input: {
       if (isStaleResearchLine(label)) return false;
       if (isCannedResearchLine(label)) return false;
       if (input.searches === 0 && claimsGoogleSearch(label)) return false;
+      if (input.searchQuery && /^opened google search$/i.test(label)) return false;
       if (label === RESEARCH_OPENING) {
         if (keptOpening) return false;
         keptOpening = true;
@@ -161,6 +165,7 @@ export function overviewFeed(input: {
     isStaleResearchLine(event) ||
     isCannedResearchLine(event) ||
     (input.searches === 0 && claimsGoogleSearch(event)) ||
+    Boolean(input.searchQuery && /^opened google search$/i.test(event)) ||
     !visibleFoundLine(event, input.forumName, input.threadName) ||
     mentionsFixtureHost(event) ||
     (!hasPlacement && offlineStage("", event)) ||
@@ -170,6 +175,13 @@ export function overviewFeed(input: {
     items.push({ id: `event:${event}`, label: event, status: "done", at: null });
   }
   placeFoundLines(items, input.forumName, input.threadName);
+  const query = input.searchQuery?.trim() ?? "";
+  if ((input.searches ?? 0) > 0 && query) {
+    const line = searchedGoogleLine(query);
+    if (!items.some((item) => item.label === line)) {
+      items.unshift({ id: `search:${query}`, label: line, status: "done", at: null });
+    }
+  }
   if (input.working) {
     let open = -1;
     for (let index = items.length - 1; index >= 0; index -= 1) {
