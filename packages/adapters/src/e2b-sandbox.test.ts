@@ -226,11 +226,11 @@ describe("E2B computer backend", () => {
       provider.connectScreen(computer, { view: "stream" }, context),
       provider.connectScreen(computer, { view: "stream" }, context),
     ]);
-    expect(screen.url).toMatch(/^https:\/\/6090-desktop\.test\/vnc\.html\?/);
+    expect(screen.url).toMatch(/^https:\/\/desktop\.test\/vnc\.html\?/);
     expect(screen.url).toContain("view_only=true");
-    expect(screen.url).toContain("password=watch-secret");
+    expect(screen.url).not.toContain("password=");
     expect(command.mock.calls.some(([value]) => String(value).includes("screen-primary.lock"))).toBe(
-      true,
+      false,
     );
 
     const control = await provider.connectScreen(
@@ -315,7 +315,7 @@ describe("E2B computer backend", () => {
     const screen = await provider.connectScreen(computer, { view: "stream" }, context);
     expect(screen.url).toMatch(/^https:\/\/6090-desktop\.test\/vnc\.html\?/);
     expect(screen.url).toContain("password=watch-secret");
-    expect(desktop.stream.start).not.toHaveBeenCalled();
+    expect(desktop.stream.start).toHaveBeenCalled();
   });
 
   it("gives Team bots distinct E2B screens and shared files", async () => {
@@ -431,7 +431,8 @@ describe("E2B computer backend", () => {
     await provider.observe(computer, researcher);
     const writerView = await provider.connectScreen(computer, { view: "stream" }, writer);
     const researcherView = await provider.connectScreen(computer, { view: "stream" }, researcher);
-    expect(writerView.url).toContain("6090-desktop.test");
+    expect(writerView.url).toContain("6080-desktop.test");
+    expect(writerView.url).toContain("view_only=true");
     expect(researcherView.url).toContain("6082-desktop.test");
     expect(researcherView.url).toContain("password=test-view-password");
     expect(writerView.url).not.toBe(researcherView.url);

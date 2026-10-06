@@ -292,6 +292,10 @@ export class E2BSandboxProvider implements SandboxProvider {
           close: async () => undefined,
         };
       }
+      const vendor = await this.vendorWatchUrl(desktop);
+      if (vendor) {
+        return { url: vendor, mimeType: "text/html", close: async () => undefined };
+      }
       const viewPassword = await this.ensurePrimaryView(desktop, layout, context);
       const url = new URL(`https://${desktop.getHost(PRIMARY_WATCH_VIEW_PORT)}/vnc.html`);
       url.searchParams.set("autoconnect", "true");
@@ -619,6 +623,34 @@ export class E2BSandboxProvider implements SandboxProvider {
     return extraDisplayLayout(index, desktop.display ?? ":0");
   }
 
+  /** The vendor desktop stream (E2B noVNC). Falls back to the local watcher when it is down. */
+  private async vendorWatchUrl(desktop: Sandbox): Promise<string | null> {
+    const stream = desktop.stream;
+    if (!stream || typeof stream.getUrl !== "function") return null;
+    const read = (): string | null => {
+      try {
+        const raw = stream.getUrl({ autoConnect: true, viewOnly: true, resize: "scale" });
+        if (typeof raw !== "string" || !raw.startsWith("https://")) return null;
+        const url = new URL(raw);
+        if (!url.searchParams.has("autoconnect")) url.searchParams.set("autoconnect", "true");
+        if (!url.searchParams.has("resize")) url.searchParams.set("resize", "scale");
+        url.searchParams.set("view_only", "true");
+        return url.toString();
+      } catch {
+        return null;
+      }
+    };
+    const existing = read();
+    if (existing) return existing;
+    if (typeof stream.start !== "function") return null;
+    try {
+      await stream.start();
+    } catch {
+      return null;
+    }
+    return read();
+  }
+
   private async ensurePrimaryView(
     desktop: Sandbox,
     layout: ReturnType<typeof extraDisplayLayout>,
@@ -626,7 +658,7 @@ export class E2BSandboxProvider implements SandboxProvider {
   ): Promise<string> {
     const result = await desktop.commands.run(
       ensurePrimaryViewCommand(layout, randomBytes(9).toString("base64url")),
-      { timeoutMs: 8_000, signal: context.signal },
+      { timeoutMs: 20_000, signal: context.signal },
     );
     if (result.exitCode !== 0) {
       const detail = String(result.stderr || result.stdout || "");
