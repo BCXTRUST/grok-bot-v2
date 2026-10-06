@@ -173,6 +173,9 @@ describe("project computer screen", () => {
       "project-google",
     );
     expect(result).toEqual({ url, error: null });
+    await vi.waitFor(() => {
+      expect(scripts.some((script) => script.includes("google.de/search"))).toBe(true);
+    });
     const opened = scripts.find((script) => script.includes("google.de/search"));
     expect(opened).toContain("Magnesium");
     expect(opened).toContain("Forum");
@@ -228,6 +231,9 @@ describe("project computer screen", () => {
       actor,
       "project-searching",
     );
+    await vi.waitFor(() => {
+      expect(scripts.some((script) => script.includes("FULLSCREEN"))).toBe(true);
+    });
     expect(scripts.some((script) => script.includes("google.de/search"))).toBe(false);
     expect(scripts.join("\n")).not.toMatch(/Vitaminexpress|kaufen/i);
     expect(scripts.join("\n")).not.toContain("killall -q chrome");

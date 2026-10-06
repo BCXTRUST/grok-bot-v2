@@ -163,19 +163,14 @@ async function openScreen(
     let computer = await teamComputer(deps, actor);
     const cached = computer ? liveCachedUrl(computer) : null;
     if (computer && cached) {
-      try {
-        if (await keepComputerAwake(deps, computer)) {
-          await showForumSearch(deps, actor, project, computer);
-          return { url: cached, error: null };
-        }
-      } catch {
-        // The stored stream is stale. Reconnect the same machine below.
-      }
+      void keepComputerAwake(deps, computer).catch(() => undefined);
+      void showForumSearch(deps, actor, project, computer);
+      return { url: cached, error: null };
     }
     computer = await bootTeamComputer(deps, actor, computer, boot);
     const url = await connectTeamScreen(deps, actor, computer);
     if (!url) return { url: null, error: "Could not open the computer" };
-    await showForumSearch(deps, actor, project, computer);
+    void showForumSearch(deps, actor, project, computer);
     return { url, error: null };
   } catch (error) {
     if (error instanceof ORPCError) throw error;
