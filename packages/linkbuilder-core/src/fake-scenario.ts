@@ -10,9 +10,7 @@ import type {
 import { type RunCounters, startRunCounters } from "./run-state.js";
 import { initialWorkState, transitionWork } from "./work-stage.js";
 
-/** Research beats the offline runner may write. It does not invent hosts. */
-export const CUSTOMER_RESEARCH_BEATS = 6;
-
+/** Distinct research lines. The runner does not repeat them. */
 const RESEARCH_LINES = [
   "Researching topics",
   "Reading on-topic pages",
@@ -20,7 +18,27 @@ const RESEARCH_LINES = [
   "Still researching",
 ] as const;
 
-/** Offline customer runs research only. They do not invent hosts or open a captcha handoff. */
+/**
+ * Visible stage changes after research. Kinds are not the old fixture script
+ * (`register`, `post`, `verify` on invented boards). No host is written.
+ */
+export const CUSTOMER_STAGE_STEPS = [
+  { kind: "lb_register", lastAction: "Register" },
+  { kind: "lb_warmup", lastAction: "Warmup" },
+  { kind: "lb_place", lastAction: "Place" },
+  { kind: "lb_verify", lastAction: "Verify" },
+] as const;
+
+/** Research beats the offline runner may write. It does not invent hosts. */
+export const CUSTOMER_RESEARCH_BEATS = RESEARCH_LINES.length;
+
+const CUSTOMER_STAGE_KINDS = new Set<string>(CUSTOMER_STAGE_STEPS.map((step) => step.kind));
+
+/** Offline customer runs move research → register → warmup → place → verify. They do not invent hosts or open a captcha handoff. */
+
+export function isCustomerStageKind(kind: string): boolean {
+  return CUSTOMER_STAGE_KINDS.has(kind);
+}
 
 export type FakeHostKey = "a" | "b" | "c";
 
@@ -30,6 +48,8 @@ export interface FakeScenarioInput {
   stepIndex: number;
   /** Research beats already stored. Old fixture steps do not count. */
   researchBeats?: number;
+  /** Stage changes already stored (`lb_register` and the steps after it). */
+  stageBeats?: number;
   /** Counters to keep. Research does not invent registrations or LIVE links. */
   counters?: RunCounters;
   now: Date;
@@ -94,7 +114,7 @@ export interface FakeStepPlan {
 export type FakePlan = FakeStepPlan | { done: true } | { hold: true };
 
 export function fakeScriptLength(): number {
-  return CUSTOMER_RESEARCH_BEATS;
+  return CUSTOMER_RESEARCH_BEATS + CUSTOMER_STAGE_STEPS.length;
 }
 
 const FIXTURE_HOST_DOMAIN = /^(?:forum|fragen|brett)-[a-z0-9]+\.example$/;
@@ -113,35 +133,56 @@ export function fakeDomains(seed: string): Record<FakeHostKey, string> {
   };
 }
 
-/** Plans one research beat. Customer runs do not receive invented `*.example` hosts. */
+/** Plans one research beat, then one stage change. Customer runs do not receive invented `*.example` hosts. */
 export function planFakeStep(input: FakeScenarioInput): FakePlan {
   if (!Number.isInteger(input.stepIndex) || input.stepIndex < 0) {
     throw new RangeError("stepIndex must be a non-negative integer");
   }
   const beat = input.researchBeats ?? input.stepIndex;
+  const stageBeat = input.stageBeats ?? 0;
   if (!Number.isInteger(beat) || beat < 0) {
     throw new RangeError("researchBeats must be a non-negative integer");
   }
-  if (beat >= CUSTOMER_RESEARCH_BEATS) return { hold: true };
-  transitionWork(initialWorkState(), "research");
+  if (!Number.isInteger(stageBeat) || stageBeat < 0) {
+    throw new RangeError("stageBeats must be a non-negative integer");
+  }
+  const counters = input.counters ?? startRunCounters(0);
+  if (beat < CUSTOMER_RESEARCH_BEATS) {
+    transitionWork(initialWorkState(), "research");
+    return {
+      done: false,
+      stepIndex: input.stepIndex,
+      kind: "research",
+      lastAction: RESEARCH_LINES[beat]!,
+      runStatus: "running",
+      counters,
+      costs: { credits: 1, tokens: 0, bytes: 0, ms: 400 },
+    };
+  }
+  const stage = CUSTOMER_STAGE_STEPS[stageBeat];
+  if (!stage) return { hold: true };
   return {
     done: false,
     stepIndex: input.stepIndex,
-    kind: "research",
-    lastAction: RESEARCH_LINES[beat % RESEARCH_LINES.length]!,
+    kind: stage.kind,
+    lastAction: stage.lastAction,
     runStatus: "running",
-    counters: input.counters ?? startRunCounters(0),
-    costs: { credits: 1, tokens: 0, bytes: 0, ms: 400 },
+    counters,
+    costs: { credits: 0, tokens: 0, bytes: 0, ms: 400 },
   };
 }
 
-/** Replays the research beats. No host is written. */
+/** Replays research, then register, warmup, place, and verify. No host is written. */
 export function replayFakeScript(input: Omit<FakeScenarioInput, "stepIndex">): FakeStepPlan[] {
   const steps: FakeStepPlan[] = [];
-  for (let index = 0; index < CUSTOMER_RESEARCH_BEATS; index += 1) {
-    const plan = planFakeStep({ ...input, stepIndex: index, researchBeats: index });
+  let researchBeats = 0;
+  let stageBeats = 0;
+  for (let index = 0; index < fakeScriptLength(); index += 1) {
+    const plan = planFakeStep({ ...input, stepIndex: index, researchBeats, stageBeats });
     if (!("kind" in plan)) break;
     steps.push(plan);
+    if (plan.kind === "research") researchBeats += 1;
+    else stageBeats += 1;
   }
   return steps;
 }

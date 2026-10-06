@@ -285,14 +285,19 @@ describe("link builder screens", () => {
       discovered,
       probed,
     ]);
-    expect(html).toContain("New links today");
+    expect(html).toContain("New accounts per day");
     expect(html).toContain("Live links today");
     expect(html).toContain(">0/2</span>");
     expect(html).toContain(">0/1</span>");
-    expect(html).not.toContain("New accounts per day");
+    expect(html).not.toContain("New links today");
     expect(html).not.toContain("NEW ");
     expect(html).not.toContain("LIVE ");
     expect(html).toContain('aria-label="Computer"');
+    expect(html).toContain('aria-label="Stage"');
+    expect(html).toContain("Register");
+    expect(html).toContain("Warmup");
+    expect(html).toContain("Place");
+    expect(html).toContain("Verify");
     expect(html).toContain("bui-pixel-on");
     expect(html).toContain('data-status="working"');
     expect(html).toContain('data-frame="artifact"');
@@ -303,6 +308,41 @@ describe("link builder screens", () => {
     expect(html).not.toContain("Supply");
     expect(html).not.toContain("Live screen");
     expect(html.indexOf('aria-label="Computer"')).toBeLessThan(html.indexOf("12 tokens"));
+  });
+
+  it("shows the stage rail and the current action when no screen exists", () => {
+    const reading = step(0, "research", []);
+    reading.lastAction = "Reading threads";
+    const html = renderOverview(
+      statusView({
+        activity: "running",
+        activityLabel: "running",
+        lastEvent: "Reading threads",
+        run: {
+          id: "run-1",
+          date: "2026-10-06",
+          status: "running",
+          newToday: 0,
+          liveToday: 0,
+          liveWeek: 0,
+          uniqueHosts: 0,
+          lastAction: "Reading threads",
+          lastError: null,
+        },
+      }),
+      [reading],
+    );
+    expect(html).toContain('data-frame="pending"');
+    expect(html).toContain('data-stage="research"');
+    expect(html).toContain('aria-label="Stage"');
+    expect(html).toContain("Research");
+    expect(html).toContain("Register");
+    expect(html).toContain("Warmup");
+    expect(html).toContain("Place");
+    expect(html).toContain("Verify");
+    expect(html).toContain('aria-label="Reading threads"');
+    expect(html).toContain("bui-pixel-on");
+    expect(html).not.toContain("I've solved it");
   });
 
   it("keeps a calm computer when the run is paused and hides an all-zero why-not list", () => {
@@ -318,7 +358,8 @@ describe("link builder screens", () => {
     expect(html).toContain('aria-label="Computer"');
     expect(html).toContain("Reading threads");
     expect(html).not.toContain(".example");
-    expect(html).toContain("New links today");
+    expect(html).toContain("New accounts per day");
+    expect(html).not.toContain("New links today");
     expect(html).not.toContain("Why not");
     expect(html).not.toContain("Parked 0");
     expect(html).not.toContain("Proxy ok");
@@ -326,8 +367,9 @@ describe("link builder screens", () => {
 
   it("puts real blockers in the feed after the computer", () => {
     const html = renderToStaticMarkup(<LinkBuilderPreview screen="overview" />);
-    expect(html).toContain("New links today");
+    expect(html).toContain("New accounts per day");
     expect(html).toContain("Live links today");
+    expect(html).not.toContain("New links today");
     expect(html).toContain("Parked 1");
     expect(html).toContain("Pending email 2");
     expect(html).toContain("Spam blocked 1");
@@ -335,7 +377,7 @@ describe("link builder screens", () => {
     expect(html).not.toContain("Proxy ok");
     expect(html).not.toContain("Unsupported captcha 0");
     expect(html.indexOf('aria-label="Computer"')).toBeLessThan(html.indexOf("Parked 1"));
-    expect(html.indexOf("New links today")).toBeLessThan(html.indexOf("40 tokens"));
+    expect(html.indexOf("New accounts per day")).toBeLessThan(html.indexOf("40 tokens"));
   });
 });
 

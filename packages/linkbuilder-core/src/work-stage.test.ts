@@ -1,7 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { isFixtureHostDomain } from "./fake-scenario.js";
-import { IllegalTransition } from "./errors.js";
-import { hostState } from "./host-state.js";
 import {
   creditBalanceAfterSpend,
   FIXTURE_DEMO_SLUG,
@@ -9,6 +6,9 @@ import {
   settleCreditPurchase,
   showHostToCustomer,
 } from "./customer-hosts.js";
+import { IllegalTransition } from "./errors.js";
+import { isFixtureHostDomain } from "./fake-scenario.js";
+import { hostState } from "./host-state.js";
 import {
   DEFAULT_MIN_POSTS_BEFORE_LINK,
   initialWorkState,
@@ -67,11 +67,38 @@ describe("work stage", () => {
 
   it("starts an open run at research", () => {
     expect(
-      stageFromActivity({ runStatus: "running", lastAction: "Researching", stepKinds: ["discover"] }),
+      stageFromActivity({
+        runStatus: "running",
+        lastAction: "Researching",
+        stepKinds: ["discover"],
+      }),
     ).toBe("research");
     expect(
       stageFromActivity({ runStatus: "running", lastAction: "Posted", stepKinds: ["post"] }),
     ).toBe("place");
+  });
+
+  it("moves past a stale research line when a later step exists", () => {
+    expect(
+      stageFromActivity({
+        runStatus: "running",
+        lastAction: "Researching",
+        stepKinds: ["research", "lb_register"],
+      }),
+    ).toBe("register");
+    expect(
+      stageFromActivity({
+        runStatus: "running",
+        lastAction: "Researching topics",
+        stepKinds: ["research", "lb_warmup"],
+      }),
+    ).toBe("warmup");
+    expect(
+      stageFromActivity({ runStatus: "running", lastAction: "Place", stepKinds: ["lb_place"] }),
+    ).toBe("place");
+    expect(
+      stageFromActivity({ runStatus: "running", lastAction: "Verify", stepKinds: ["lb_verify"] }),
+    ).toBe("verify");
   });
 });
 

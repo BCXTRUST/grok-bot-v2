@@ -24,7 +24,13 @@ export interface WorkState {
   placed: boolean;
 }
 
-export type WorkEvent = "research" | "research_complete" | "register" | "warmup_post" | "place" | "verify";
+export type WorkEvent =
+  | "research"
+  | "research_complete"
+  | "register"
+  | "warmup_post"
+  | "place"
+  | "verify";
 
 export function initialWorkState(): WorkState {
   return {
@@ -64,7 +70,8 @@ export function transitionWork(
     return { ...current, stage: min === 0 ? "place" : "warmup", registered: true };
   }
   if (event === "warmup_post") {
-    if (!current.registered || current.placed) throw new IllegalTransition("work", current.stage, event);
+    if (!current.registered || current.placed)
+      throw new IllegalTransition("work", current.stage, event);
     const warmupPosts = current.warmupPosts + 1;
     const ready = min === 0 || warmupPosts >= min;
     return { ...current, warmupPosts, stage: ready ? "place" : "warmup" };
@@ -126,26 +133,50 @@ const KIND_STAGE: Record<string, WorkStage> = {
   warmup_post: "warmup",
   post: "place",
   verify: "verify",
+  lb_register: "register",
+  lb_warmup: "warmup",
+  lb_place: "place",
+  lb_verify: "verify",
 };
 
-/** Visible stage for the dashboard. An open run with no later step is research. */
+const LABEL_STAGE: ReadonlyArray<readonly [string, WorkStage]> = [
+  ["verify", "verify"],
+  ["place", "place"],
+  ["warmup", "warmup"],
+  ["warming", "warmup"],
+  ["register", "register"],
+  ["research", "research"],
+];
+
+function stageFromLabel(action: string): WorkStage | null {
+  for (const [needle, stage] of LABEL_STAGE) {
+    if (action.includes(needle)) return stage;
+  }
+  return null;
+}
+
+function latestMappedStage(kinds: readonly string[] | undefined): WorkStage | null {
+  const list = kinds ?? [];
+  for (let index = list.length - 1; index >= 0; index -= 1) {
+    const stage = KIND_STAGE[list[index] ?? ""];
+    if (stage) return stage;
+  }
+  return null;
+}
+
+function stageRank(stage: WorkStage | null): number {
+  if (!stage) return -1;
+  return WORK_STAGES.indexOf(stage);
+}
+
+/** Visible stage for the dashboard. A later step wins over a stale research line. */
 export function stageFromActivity(input: {
   runStatus: string | null;
   lastAction: string | null;
   stepKinds?: readonly string[];
 }): WorkStage {
-  const action = (input.lastAction ?? "").toLowerCase();
-  const latest = [...(input.stepKinds ?? [])]
-    .reverse()
-    .map((kind) => KIND_STAGE[kind])
-    .find((stage): stage is WorkStage => stage !== undefined);
-  const open =
-    input.runStatus === "running" ||
-    input.runStatus === "queued" ||
-    input.runStatus === "overtime" ||
-    input.runStatus === "paused";
-  if (open && (action.includes("research") || !latest || latest === "research")) return "research";
-  if (open && latest && !action.includes("research")) return latest;
-  if (action.includes("research")) return "research";
-  return latest ?? "research";
+  const fromSteps = latestMappedStage(input.stepKinds);
+  const fromLabel = stageFromLabel((input.lastAction ?? "").toLowerCase());
+  const chosen = stageRank(fromSteps) >= stageRank(fromLabel) ? fromSteps : fromLabel;
+  return chosen ?? "research";
 }

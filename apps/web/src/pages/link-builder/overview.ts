@@ -2,7 +2,7 @@ import type { LbOperatorTicketView, LbRunStepView, LbWhyNot } from "@rakazo/cont
 import { mentionsExampleDomain, mentionsFixtureHost } from "@rakazo/linkbuilder-core";
 
 export const OVERVIEW_COUNTS = {
-  newToday: "New links today",
+  newToday: "New accounts per day",
   liveToday: "Live links today",
 } as const;
 
@@ -87,12 +87,19 @@ export function overviewFeed(input: {
       }
       return true;
     });
-  const items: OverviewFeedItem[] = steps.map((step) => ({
-    id: step.id,
-    label: step.lastAction?.trim() || step.kind,
-    status: step.error || BLOCKED_KINDS.has(step.kind) ? "blocked" : "done",
-    at: step.createdAt,
-  }));
+  const items: OverviewFeedItem[] = [];
+  for (const step of steps) {
+    const label = step.lastAction?.trim() || step.kind;
+    const at = step.createdAt;
+    const duplicate = items.some((item) => item.label === label && sameMoment(item.at, at));
+    if (duplicate) continue;
+    items.push({
+      id: step.id,
+      label,
+      status: step.error || BLOCKED_KINDS.has(step.kind) ? "blocked" : "done",
+      at,
+    });
+  }
   const seen = new Set(items.map((item) => item.label));
   const event = input.lastEvent?.trim() ?? "";
   const hiddenEvent =
@@ -126,6 +133,22 @@ export function overviewAction(items: OverviewFeedItem[], working: boolean): str
   }
   const last = [...items].reverse().find((item) => item.status !== "blocked");
   return last?.label ?? "";
+}
+
+/** Identical lines in the same displayed minute are one moment, so they do not stack. */
+function sameMoment(left: string | null, right: string | null): boolean {
+  if (left === right) return true;
+  if (!left || !right) return false;
+  const a = new Date(left);
+  const b = new Date(right);
+  if (Number.isNaN(a.getTime()) || Number.isNaN(b.getTime())) return false;
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate() &&
+    a.getHours() === b.getHours() &&
+    a.getMinutes() === b.getMinutes()
+  );
 }
 
 function liveScreen(url: string | null | undefined): string | null {

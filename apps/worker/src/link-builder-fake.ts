@@ -9,6 +9,7 @@ import {
 import { Prisma, type PrismaClient } from "@rakazo/db";
 import {
   type FakeStepPlan,
+  isCustomerStageKind,
   isExampleRegistrableDomain,
   isFixtureHostDomain,
   linkBuilderTopic,
@@ -33,6 +34,7 @@ export interface FakeRunRecord {
   status: LbRunStatus;
   stepCount: number;
   researchBeats: number;
+  stageBeats: number;
   counters: RunCounters;
   seed: string;
   brandName: string;
@@ -59,6 +61,7 @@ export async function tickLinkBuilderFake(store: LinkBuilderFakeStore, now: Date
         seed: run.seed,
         stepIndex: run.stepCount,
         researchBeats: run.researchBeats,
+        stageBeats: run.stageBeats,
         counters: run.counters,
         now,
         markets: run.markets,
@@ -137,7 +140,7 @@ export function createPrismaFakeStore(
         include: {
           project: true,
           _count: { select: { steps: true } },
-          steps: { where: { kind: "research" }, select: { id: true } },
+          steps: { select: { kind: true } },
         },
       });
       const records: FakeRunRecord[] = [];
@@ -255,7 +258,7 @@ function mapRun(run: {
   workspaceId: string;
   status: string;
   _count: { steps: number };
-  steps: { id: string }[];
+  steps: { kind: string }[];
   newToday: number;
   liveToday: number;
   liveWeek: number;
@@ -283,7 +286,8 @@ function mapRun(run: {
     workspaceId: run.workspaceId,
     status: status.data,
     stepCount: run._count.steps,
-    researchBeats: run.steps.length,
+    researchBeats: run.steps.filter((step) => step.kind === "research").length,
+    stageBeats: run.steps.filter((step) => isCustomerStageKind(step.kind)).length,
     counters: {
       newToday: run.newToday,
       liveToday: run.liveToday,

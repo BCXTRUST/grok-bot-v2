@@ -93,6 +93,38 @@ describe("overview feed", () => {
     expect(overviewAction(blocked, false)).toBe("Reading threads");
   });
 
+  it("collapses identical lines from the same minute and keeps later stage changes", () => {
+    const register = step(5, "Register");
+    register.createdAt = "2026-10-06T12:02:08.000Z";
+    const laterResearch = step(6, "Researching topics");
+    laterResearch.createdAt = "2026-10-06T12:05:00.000Z";
+    const items = overviewFeed({
+      steps: [
+        step(0, "Researching topics"),
+        step(1, "Reading on-topic pages"),
+        step(2, "Reading threads"),
+        step(3, "Still researching"),
+        step(4, "Researching topics"),
+        register,
+        laterResearch,
+      ],
+      lastEvent: "Researching topics",
+      working: true,
+      blockers: [],
+      hideExampleCopy: true,
+    });
+    expect(items.map((item) => item.label)).toEqual([
+      "Researching topics",
+      "Reading on-topic pages",
+      "Reading threads",
+      "Still researching",
+      "Register",
+      "Researching topics",
+    ]);
+    expect(items.at(-1)?.status).toBe("working");
+    expect(items.filter((item) => item.label === "Researching topics")).toHaveLength(2);
+  });
+
   it("follows an explicit start or pause before the server status changes", () => {
     expect(overviewWorking({ activity: "paused", intent: "working" })).toBe(true);
     expect(overviewWorking({ activity: "running", intent: "paused" })).toBe(false);

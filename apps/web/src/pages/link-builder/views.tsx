@@ -517,13 +517,11 @@ function Overview({
   });
   const action = overviewAction(items, working);
   const frame = overviewFrame({ steps, tickets });
-  const stage =
-    status?.stage ??
-    stageFromActivity({
-      runStatus: working ? "running" : (status?.run?.status ?? null),
-      lastAction: status?.run?.lastAction ?? status?.lastEvent ?? null,
-      stepKinds: steps.map((step) => step.kind),
-    });
+  const stage = stageFromActivity({
+    runStatus: working ? "running" : (status?.run?.status ?? null),
+    lastAction: status?.run?.lastAction ?? status?.lastEvent ?? action ?? null,
+    stepKinds: steps.map((step) => step.kind),
+  });
   return (
     <section className="flex min-h-0 flex-1 flex-col gap-3" aria-label="Overview">
       <div className="flex flex-wrap items-end justify-between gap-4">
@@ -546,7 +544,7 @@ function Overview({
       <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-[minmax(0,1.5fr)_minmax(280px,380px)]">
         <ComputerPane
           working={working}
-          action={working && stage === "research" ? "Researching" : action}
+          action={action}
           stage={stage}
           frame={frame}
           loadArtifact={loadArtifact}
@@ -582,58 +580,104 @@ function ComputerPane({
   frame: ReturnType<typeof overviewFrame>;
   loadArtifact?: ArtifactLoader;
 }) {
-  const showFrame = frame?.kind === "url" || (frame?.kind === "artifact" && loadArtifact);
+  const label = action || WORK_STAGE_LABELS[stage];
+  const stageIndex = WORK_STAGES.indexOf(stage);
   return (
     <section
       aria-label="Computer"
       data-frame={frame?.kind ?? "pending"}
-      className="relative flex min-h-[520px] flex-col overflow-hidden rounded-[16px] bg-[#101012]"
+      data-stage={stage}
+      className="relative flex min-h-[520px] flex-col overflow-hidden rounded-[16px] border border-[#2A2A31] bg-[#101012]"
       style={{ boxShadow: "var(--bui-shadow-card)" }}
     >
-      <div className="relative z-10 flex h-9 items-center gap-2 border-b border-[#2A2A31] bg-[#101012] px-3">
+      <div className="flex h-10 items-center gap-2 border-b border-[#2A2A31] bg-[#101012] px-3">
         <span
-          className="h-2 w-2 rounded-full"
+          className="h-2 w-2 shrink-0 rounded-full"
           style={{ background: working ? "var(--bui-green)" : "#3a3a40" }}
         />
-        <ol aria-label="Stage" className="flex min-w-0 gap-3 overflow-hidden">
-          {WORK_STAGES.map((name) => {
+        <ol aria-label="Stage" className="flex min-w-0 gap-1 overflow-hidden">
+          {WORK_STAGES.map((name, index) => {
             const current = name === stage;
+            const done = index < stageIndex;
             return (
               <li
                 key={name}
                 aria-current={current ? "step" : undefined}
-                className={`text-[12px] ${current ? "text-[#ECECEE]" : "text-[#6C6C70]"}`}
+                className={`rounded-full px-2 py-0.5 text-[12px] ${
+                  current
+                    ? "bg-[#232327] text-[#ECECEE]"
+                    : done
+                      ? "text-[#C8C8CD]"
+                      : "text-[#8A8A90]"
+                }`}
               >
-                {current ? <Shimmer>{WORK_STAGE_LABELS[name]}</Shimmer> : WORK_STAGE_LABELS[name]}
+                {current && working ? (
+                  <Shimmer>{WORK_STAGE_LABELS[name]}</Shimmer>
+                ) : (
+                  WORK_STAGE_LABELS[name]
+                )}
               </li>
             );
           })}
         </ol>
       </div>
-      <div className="grid min-h-[480px] flex-1 place-items-center px-6">
-        {working && !showFrame ? <LoadingState label={action || "Working"} /> : null}
-        {!working && !showFrame && action ? (
-          <p className="max-w-md text-center text-[13px] text-[#85858A]">{action}</p>
+      <div className="relative min-h-[480px] flex-1">
+        {frame?.kind === "url" ? (
+          <iframe title="Computer" src={frame.url} className="absolute inset-0 h-full w-full" />
+        ) : (
+          <WorkingScreen working={working} label={label} stage={stage} />
+        )}
+        {frame?.kind === "artifact" && loadArtifact ? (
+          <ArtifactShot
+            artifactId={frame.artifactId}
+            load={loadArtifact}
+            label="Computer"
+            untilReady="blank"
+            className="absolute inset-0 z-[1] h-full w-full bg-[#0c0c0e] object-contain"
+          />
+        ) : null}
+        {working && frame?.kind === "url" ? (
+          <div className="absolute bottom-4 left-4 z-20">
+            <LoadingState label={label} />
+          </div>
         ) : null}
       </div>
-      {frame?.kind === "url" ? (
-        <iframe title="Computer" src={frame.url} className="absolute inset-0 z-[1] h-full w-full" />
-      ) : null}
-      {frame?.kind === "artifact" && loadArtifact ? (
-        <ArtifactShot
-          artifactId={frame.artifactId}
-          load={loadArtifact}
-          label="Computer"
-          untilReady="blank"
-          className="absolute inset-0 z-[1] h-full w-full object-contain"
-        />
-      ) : null}
-      {working && showFrame ? (
-        <div className="absolute bottom-4 left-4 z-20">
-          <LoadingState label={action || "Working"} />
-        </div>
-      ) : null}
     </section>
+  );
+}
+
+function WorkingScreen({
+  working,
+  label,
+  stage,
+}: {
+  working: boolean;
+  label: string;
+  stage: (typeof WORK_STAGES)[number];
+}) {
+  return (
+    <div
+      className="grid min-h-[480px] place-items-center p-6"
+      style={{
+        backgroundColor: "#0c0c0e",
+        backgroundImage:
+          "linear-gradient(rgba(255,255,255,0.035) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.035) 1px, transparent 1px)",
+        backgroundSize: "28px 28px",
+      }}
+    >
+      <BuiCard className="w-full max-w-lg p-5" aria-label={label}>
+        <div className="text-[12px] text-[#A6A6AD]">
+          {working ? <Shimmer>{WORK_STAGE_LABELS[stage]}</Shimmer> : WORK_STAGE_LABELS[stage]}
+        </div>
+        <div className="mt-3">
+          {working ? (
+            <LoadingState label={label} />
+          ) : (
+            <p className="text-[15px] text-[#ECECEE]">{label}</p>
+          )}
+        </div>
+      </BuiCard>
+    </div>
   );
 }
 
@@ -673,7 +717,11 @@ function feedMeta(at: string | null): string | undefined {
   if (!at) return undefined;
   const date = new Date(at);
   if (Number.isNaN(date.getTime())) return undefined;
-  return new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit" }).format(date);
+  return new Intl.DateTimeFormat(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).format(date);
 }
 
 function CostNote({ costs }: { costs: NonNullable<LbProjectStatusView["costs"]> }) {
