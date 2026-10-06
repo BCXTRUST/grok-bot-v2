@@ -112,22 +112,15 @@ export function LinkBuilderPreview({ screen }: { screen: string }) {
           status={null}
           hosts={[]}
           placements={[]}
-          runs={[]}
           steps={[]}
           threads={[]}
           drafts={[]}
-          captchas={[
-            { id: "cap-1", outcome: "placed_submitted", domain: "forum.nordlicht.example" },
-            { id: "cap-2", outcome: "sandbox", domain: "fragen.nordlicht.example" },
-          ]}
           tickets={[]}
-          tab="Captchas"
-          onTab={() => undefined}
+          surface="dashboard"
+          onSurface={() => undefined}
           onStart={() => undefined}
           onPause={() => undefined}
           onStop={() => undefined}
-          onVerify={() => undefined}
-          onOpenTicket={() => undefined}
           busy={false}
         />
       </div>
@@ -172,19 +165,15 @@ export function LinkBuilderPreview({ screen }: { screen: string }) {
             },
           ]}
           placements={[]}
-          runs={[]}
           steps={[]}
           threads={[]}
           drafts={[]}
-          captchas={[]}
           tickets={[]}
-          tab="Hosts"
-          onTab={() => undefined}
+          surface="dashboard"
+          onSurface={() => undefined}
           onStart={() => undefined}
           onPause={() => undefined}
           onStop={() => undefined}
-          onVerify={() => undefined}
-          onOpenTicket={() => undefined}
           busy={false}
         />
       </div>
@@ -232,19 +221,15 @@ export function LinkBuilderPreview({ screen }: { screen: string }) {
           status={null}
           hosts={[]}
           placements={[]}
-          runs={[]}
           steps={[]}
           threads={[thread]}
           drafts={[draft]}
-          captchas={[]}
           tickets={[]}
-          tab="Threads"
-          onTab={() => undefined}
+          surface="dashboard"
+          onSurface={() => undefined}
           onStart={() => undefined}
           onPause={() => undefined}
           onStop={() => undefined}
-          onVerify={() => undefined}
-          onOpenTicket={() => undefined}
           onDecideDraft={() => undefined}
           busy={false}
         />
@@ -258,10 +243,36 @@ export function LinkBuilderPreview({ screen }: { screen: string }) {
           project={
             {
               name: "Nordlicht",
-              disclosureMode: "undisclosed_persona",
+              slug: "nordlicht-wellness",
+              brandName: "Nordlicht",
+              allowedDomains: ["nordlicht.example"],
+              persona: { displayName: "Mira Sol", bio: "Calm", register: "du", language: "de" },
+              mailboxAddress: "mira.sol@inbox.example",
+              mailboxId: "mbx-nordlicht-demo",
+              captchaConfigured: true,
+              quotas: { newPerDay: 2, livePerDay: 1, liveWeekCap: 5, maxLivePerHost: 1 },
+              schedule: {
+                timezone: "Europe/Berlin",
+                weekdaysOnly: true,
+                window: { start: "09:00", end: "22:00" },
+                overtimeUntilLiveMet: false,
+                hardStopHour: 24,
+              },
+              targets: [
+                {
+                  url: "https://nordlicht.example/schlaf",
+                  priority: 50,
+                  description: "Abend",
+                  keywordClusters: ["Schlaf"],
+                },
+              ],
+              facts: ["Abend"],
+              topicLanes: [],
               markets: [
                 { country: "DE", language: "de", locale: "de-DE", timezoneId: "Europe/Berlin" },
               ],
+              marketPolicy: "primary_first",
+              disclosureMode: "undisclosed_persona",
               linkRatio: { links: 1, posts: 3 },
               proxyPolicy: "static_isp_per_persona",
               denyHosts: [],
@@ -270,7 +281,6 @@ export function LinkBuilderPreview({ screen }: { screen: string }) {
           status={null}
           hosts={[]}
           placements={[]}
-          runs={[]}
           steps={[]}
           threads={[]}
           drafts={[]}
@@ -292,15 +302,12 @@ export function LinkBuilderPreview({ screen }: { screen: string }) {
               status: "active",
             },
           ]}
-          captchas={[]}
           tickets={[]}
-          tab="Settings"
-          onTab={() => undefined}
+          surface="settings"
+          onSurface={() => undefined}
           onStart={() => undefined}
           onPause={() => undefined}
           onStop={() => undefined}
-          onVerify={() => undefined}
-          onOpenTicket={() => undefined}
           busy={false}
         />
       </div>
@@ -314,7 +321,6 @@ export function LinkBuilderPreview({ screen }: { screen: string }) {
           status={null}
           hosts={[]}
           placements={[]}
-          runs={[]}
           steps={[
             {
               id: "step-1",
@@ -341,15 +347,12 @@ export function LinkBuilderPreview({ screen }: { screen: string }) {
           ]}
           threads={[]}
           drafts={[]}
-          captchas={[]}
           tickets={[]}
-          tab="Runs"
-          onTab={() => undefined}
+          surface="dashboard"
+          onSurface={() => undefined}
           onStart={() => undefined}
           onPause={() => undefined}
           onStop={() => undefined}
-          onVerify={() => undefined}
-          onOpenTicket={() => undefined}
           busy={false}
         />
       </div>
@@ -404,19 +407,15 @@ export function LinkBuilderPreview({ screen }: { screen: string }) {
           status={status}
           hosts={[]}
           placements={[]}
-          runs={[]}
           steps={[]}
           threads={[]}
           drafts={[]}
-          captchas={[]}
           tickets={[]}
-          tab="Overview"
-          onTab={() => undefined}
+          surface="dashboard"
+          onSurface={() => undefined}
           onStart={() => undefined}
           onPause={() => undefined}
           onStop={() => undefined}
-          onVerify={() => undefined}
-          onOpenTicket={() => undefined}
           busy={false}
         />
       </div>

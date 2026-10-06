@@ -43,15 +43,26 @@ function useElapsed(): string {
 }
 
 /** Pixel-grid loader with shimmering label and live elapsed timer. */
-export function LoadingState({ label = "working" }: { label?: string }) {
+export function LoadingState({
+  label = "working",
+  prominent = false,
+}: {
+  label?: string;
+  /** Larger type for the computer pane, where this is the whole screen. */
+  prominent?: boolean;
+}) {
   const elapsed = useElapsed();
+  const cell = prominent ? "h-[5px] w-[5px]" : "h-[4px] w-[4px]";
   return (
-    <span className="flex w-fit items-center gap-2.5">
-      <span aria-hidden className="grid grid-cols-[repeat(3,4px)] gap-[1.5px]">
+    <span className={`flex w-fit items-center ${prominent ? "gap-3.5" : "gap-2.5"}`}>
+      <span
+        aria-hidden
+        className={`grid grid-cols-3 ${prominent ? "gap-[2px]" : "gap-[1.5px]"}`}
+      >
         {CHEVRON_DELAYS.map((delay, i) => (
           <span
             key={i}
-            className="h-[4px] w-[4px] rounded-[1px]"
+            className={`${cell} rounded-[1px]`}
             style={{
               background: "var(--bui-ink)",
               opacity: 0.15,
@@ -60,10 +71,13 @@ export function LoadingState({ label = "working" }: { label?: string }) {
           />
         ))}
       </span>
-      <span className="text-[13.5px] font-medium">
+      <span className={prominent ? "text-[22px] font-medium leading-none" : "text-[13.5px] font-medium"}>
         <Shimmer>{label}</Shimmer>
       </span>
-      <span className="font-mono text-[12px] tabular-nums" style={{ color: "var(--bui-ink-3)" }}>
+      <span
+        className={`font-mono tabular-nums ${prominent ? "text-[14px]" : "text-[12px]"}`}
+        style={{ color: "var(--bui-ink-3)" }}
+      >
         {elapsed}
       </span>
     </span>

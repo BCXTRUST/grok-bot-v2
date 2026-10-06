@@ -1,5 +1,7 @@
 import type {
+  LbHostView,
   LbOperatorTicketView,
+  LbPlacementView,
   LbProjectDetail,
   LbProjectStatusView,
   LbRunStepView,
@@ -36,11 +38,19 @@ describe("link builder screens", () => {
     expect(settings).toContain("static isp");
     expect(settings).toContain("iproyal");
     expect(settings).toContain('aria-label="Proxy leases"');
+    expect(settings).toContain('aria-label="Settings"');
+    expect(settings).toContain('aria-label="Page 1"');
+    expect(settings).toContain('aria-label="Save settings"');
+    expect(settings).toContain("New accounts per day");
+    expect(settings).toContain('aria-label="Name on forums"');
+    expect(settings).toContain('aria-label="Window start"');
     expect(settings).not.toContain("password");
     expect(settings).not.toContain("secret");
+    expect(settings).not.toContain('role="tablist"');
     const runs = renderToStaticMarkup(<LinkBuilderPreview screen="runs" />);
-    expect(runs).toContain("coherence_refused");
-    expect(runs).toContain("edge_block");
+    expect(runs).toContain("Coherence refused");
+    expect(runs).toContain("Edge block");
+    expect(runs).not.toContain('role="tablist"');
   });
 
   it("shows NEW and LIVE rings and an operator pill", () => {
@@ -71,14 +81,13 @@ describe("link builder screens", () => {
     expect(html).toContain("fragen.nordlicht.example");
   });
 
-  it("lets the Runs tab pick a step screenshot, defaulting to the latest", () => {
+  it("shows the latest step screenshot on the dashboard computer", () => {
     const html = renderToStaticMarkup(
       <ProjectView
         project={{ name: "Nordlicht" } as LbProjectDetail}
         status={null}
         hosts={[]}
         placements={[]}
-        runs={[]}
         steps={[
           step(0, "select_host", []),
           step(1, "open_session", ["a1"]),
@@ -86,23 +95,21 @@ describe("link builder screens", () => {
         ]}
         threads={[]}
         drafts={[]}
-        captchas={[]}
         tickets={[]}
-        tab="Runs"
-        onTab={noop}
+        surface="dashboard"
+        onSurface={noop}
         onStart={noop}
         onPause={noop}
         onStop={noop}
-        onVerify={noop}
-        onOpenTicket={noop}
         loadArtifact={loadArtifact}
         busy={false}
       />,
     );
-    expect(html.match(/aria-pressed/g)).toHaveLength(2);
-    expect(html).toContain('aria-pressed="true"');
-    expect(html.indexOf('aria-pressed="true"')).toBeGreaterThan(html.indexOf("2. open_session"));
-    expect(html).toContain("Step 3 screenshot");
+    expect(html).toContain('data-frame="artifact"');
+    expect(html).toContain('aria-label="Computer"');
+    expect(html).not.toContain('role="tablist"');
+    expect(html).not.toContain("aria-pressed");
+    expect(html).not.toContain(">Runs<");
   });
 
   it("shows the parked screenshot on an operator ticket without a live screen", () => {
@@ -142,11 +149,9 @@ describe("link builder screens", () => {
         status={null}
         hosts={[]}
         placements={[]}
-        runs={[]}
         steps={[]}
         threads={[]}
         drafts={[]}
-        captchas={[{ id: "cap-1", outcome: "placed_submitted", domain: "fragen-1ej2xe.example" }]}
         tickets={[
           {
             id: "ticket-1",
@@ -177,25 +182,66 @@ describe("link builder screens", () => {
             createdAt: "2026-10-05T12:00:00.000Z",
           },
         ]}
-        tab="Captchas"
-        onTab={noop}
+        surface="dashboard"
+        onSurface={noop}
         onStart={noop}
         onPause={noop}
         onStop={noop}
-        onVerify={noop}
-        onOpenTicket={noop}
         busy={false}
       />,
     );
     expect(html).not.toContain("fragen-1ej2xe.example");
     expect(html).not.toContain("I've solved it");
-    expect(html).toContain("Open computer for board.example.org");
+    expect(html).not.toContain("Open computer");
+    expect(html).not.toContain('role="tablist"');
+    expect(html).not.toContain(">Captchas<");
   });
 
-  it("shows a sandbox hint on the Captchas tab", () => {
+  it("shows the forums and links the bot picked, and hides fixture boards", () => {
+    const html = renderToStaticMarkup(
+      <ProjectView
+        project={{ name: "Vitaminexpress", slug: "vitaminexpress" } as LbProjectDetail}
+        status={null}
+        hosts={
+          [
+            { id: "host-1", registrableDomain: "fragen-1ej2xe.example", status: "qualified" },
+            { id: "host-2", registrableDomain: "rueckenforum.de", status: "qualified" },
+          ] as LbHostView[]
+        }
+        placements={
+          [
+            { id: "place-1", domain: "brett-1ej2xe.example", status: "live", rel: [] },
+            { id: "place-2", domain: "board.example.org", status: "live", rel: [] },
+          ] as LbPlacementView[]
+        }
+        steps={[]}
+        threads={[]}
+        drafts={[]}
+        tickets={[]}
+        surface="dashboard"
+        onSurface={noop}
+        onStart={noop}
+        onPause={noop}
+        onStop={noop}
+        busy={false}
+      />,
+    );
+    expect(html).toContain('aria-label="Forums"');
+    expect(html).toContain("rueckenforum.de");
+    expect(html).toContain('aria-label="Links placed"');
+    expect(html).toContain("board.example.org");
+    expect(html).not.toContain("fragen-");
+    expect(html).not.toContain("brett-");
+    expect(html).not.toContain(">Hosts<");
+    expect(html).not.toContain(">Placements<");
+  });
+
+  it("does not open a captcha handoff on the dashboard", () => {
     const html = renderToStaticMarkup(<LinkBuilderPreview screen="captchas" />);
-    expect(html).toContain("placed_submitted");
-    expect(html).toContain("Sandbox answer. The solver is not production-configured.");
+    expect(html).not.toContain("placed_submitted");
+    expect(html).not.toContain("Sandbox answer");
+    expect(html).not.toContain(">Captchas<");
+    expect(html).toContain('aria-label="Settings"');
   });
 
   it("gives each page its own box and stops the plus at 10", () => {
@@ -342,6 +388,18 @@ describe("link builder screens", () => {
     expect(html).toContain("Verify");
     expect(html).toContain('aria-label="Reading threads"');
     expect(html).toContain("bui-pixel-on");
+    expect(html).toContain("No session");
+    expect(html).toContain('data-session="closed"');
+    expect(html).toContain('data-pixel="trail"');
+    expect(html).toContain('aria-label="Settings"');
+    expect(html).not.toContain('role="tab"');
+    expect(html).not.toContain(">Overview<");
+    expect(html).not.toContain(">Targets<");
+    expect(html).not.toContain(">Hosts<");
+    expect(html).not.toContain(">Threads<");
+    expect(html).not.toContain(">Placements<");
+    expect(html).not.toContain(">Runs<");
+    expect(html).not.toContain(">Captchas<");
     expect(html).not.toContain("I've solved it");
     expect(html).not.toContain("28px 28px");
   });
@@ -511,19 +569,15 @@ function renderOverview(status: LbProjectStatusView, steps: LbRunStepView[]) {
       status={status}
       hosts={[]}
       placements={[]}
-      runs={[]}
       steps={steps}
       threads={[]}
       drafts={[]}
-      captchas={[]}
       tickets={[]}
-      tab="Overview"
-      onTab={noop}
+      surface="dashboard"
+      onSurface={noop}
       onStart={noop}
       onPause={noop}
       onStop={noop}
-      onVerify={noop}
-      onOpenTicket={noop}
       loadArtifact={loadArtifact}
       busy={false}
     />,

@@ -8,13 +8,11 @@ import type {
   LbProjectStatusView,
   LbProxyLeaseView,
   LbRunStepView,
-  LbRunView,
   LbThreadView,
 } from "@rakazo/contracts";
 import {
   FIXTURE_DEMO_SLUG,
   formatPackagePrice,
-  isFixtureHostDomain,
   showHostToCustomer,
   WORK_STAGE_LABELS,
   WORK_STAGES,
@@ -31,8 +29,7 @@ import {
 import {
   addWizardPage,
   disclosureLabel,
-  FUNNEL_COLUMNS,
-  funnelColumnId,
+  draftFromProject,
   normalizePageUrl,
   PAGE_BOX_LIMIT,
   pageDomains,
@@ -43,6 +40,7 @@ import {
   WIZARD_STEPS,
   type WizardDraft,
   warmupNote,
+  wizardStepIssues,
 } from "./model.js";
 import {
   OVERVIEW_COUNTS,
@@ -332,26 +330,26 @@ function StepMark({ index, done }: { index: number; done: boolean }) {
   return <span className="mt-0.5 w-3.5 shrink-0 text-center tabular-nums">{index + 1}</span>;
 }
 
+export type ProjectSurface = "dashboard" | "settings";
+
 export function ProjectView({
   project,
   status,
   hosts,
   placements,
-  runs,
   steps,
   threads,
   drafts,
   leases = [],
-  captchas,
   tickets,
-  tab,
-  onTab,
+  surface,
+  onSurface,
   onStart,
   onPause,
   onStop,
-  onVerify,
-  onOpenTicket,
   onDecideDraft,
+  onSave,
+  onSuggestPage,
   loadArtifact,
   busy,
   creditNote,
@@ -361,21 +359,22 @@ export function ProjectView({
   status: LbProjectStatusView | null;
   hosts: LbHostView[];
   placements: LbPlacementView[];
-  runs: LbRunView[];
   steps: LbRunStepView[];
   threads: LbThreadView[];
   drafts: LbDraftView[];
   leases?: LbProxyLeaseView[];
-  captchas: { id: string; outcome: string; domain: string | null }[];
   tickets: LbOperatorTicketView[];
-  tab: string;
-  onTab: (tab: string) => void;
+  surface: ProjectSurface;
+  onSurface: (surface: ProjectSurface) => void;
   onStart: () => void;
   onPause: () => void;
   onStop: () => void;
-  onVerify: (placementId: string) => void;
-  onOpenTicket: (ticketId: string) => void;
   onDecideDraft?: (draftId: string, decision: "approved" | "discarded") => void;
+  onSave?: (draft: WizardDraft) => void | Promise<void>;
+  onSuggestPage?: (input: {
+    url: string;
+    allowedDomains: string[];
+  }) => Promise<{ keyword: string; rule: string }>;
   loadArtifact?: ArtifactLoader;
   busy: boolean;
   creditNote?: string | null;
@@ -395,29 +394,41 @@ export function ProjectView({
     const run = kind === "start" ? onStart() : kind === "pause" ? onPause() : onStop();
     void Promise.resolve(run).catch(() => setIntent(null));
   }
-  const tabs = [
-    "Overview",
-    "Targets",
-    "Hosts",
-    "Threads",
-    "Placements",
-    "Runs",
-    "Captchas",
-    "Settings",
-  ];
-  const wide = tab === "Overview";
+  const watching = surface === "dashboard";
   return (
     <main
       className={
-        wide
-          ? "mx-auto flex min-h-dvh w-full max-w-[1400px] flex-col gap-3 px-4 py-4"
-          : "mx-auto flex w-full max-w-5xl flex-col gap-4 px-4 py-8"
+        watching
+          ? "mx-auto flex min-h-dvh w-full max-w-[1400px] flex-col gap-4 px-4 py-4"
+          : "mx-auto flex w-full max-w-3xl flex-col gap-4 px-4 py-6"
       }
     >
       <header className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-[22px] font-medium text-[#ECECEE]">{project.name}</h1>
-        <div className="flex items-start gap-4">
+        {watching ? (
+          <h1 className="text-[22px] font-medium text-[#ECECEE]">{project.name}</h1>
+        ) : (
+          <button
+            type="button"
+            aria-label="Dashboard"
+            className="text-left text-[22px] font-medium text-[#ECECEE]"
+            onClick={() => onSurface("dashboard")}
+          >
+            {project.name}
+          </button>
+        )}
+        <div className="flex flex-wrap items-start gap-3">
           {pill ? <Pill label={pill} /> : null}
+          <button
+            type="button"
+            aria-label="Settings"
+            aria-current={watching ? undefined : "page"}
+            className={`rounded-full px-3 py-1.5 text-[13px] ${
+              watching ? "text-[#A6A6AD]" : "bg-[#232327] text-[#ECECEE]"
+            }`}
+            onClick={() => onSurface("settings")}
+          >
+            Settings
+          </button>
           <CreditBudget
             balance={status?.credits?.balance ?? null}
             note={creditNote}
@@ -426,58 +437,56 @@ export function ProjectView({
           />
         </div>
       </header>
-      <div className="flex flex-wrap gap-2" role="tablist" aria-label="Project">
-        {tabs.map((name) => (
-          <button
-            key={name}
-            type="button"
-            role="tab"
-            aria-selected={tab === name}
-            className={`rounded-full px-3 py-1.5 text-[13px] ${tab === name ? "bg-[#232327] text-[#ECECEE]" : "text-[#8A8A90] hover:text-[#C8C8CD]"}`}
-            onClick={() => onTab(name)}
-          >
-            {name}
-          </button>
-        ))}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <BuiButton tone="accent" label="Start" onClick={() => request("start")} disabled={busy}>
+            Start
+          </BuiButton>
+          <BuiButton label="Pause" onClick={() => request("pause")} disabled={busy}>
+            Pause
+          </BuiButton>
+          <BuiButton label="Stop" onClick={() => request("stop")} disabled={busy}>
+            Stop
+          </BuiButton>
+        </div>
+        {watching ? (
+          <div className="flex flex-wrap items-baseline gap-x-6 gap-y-1">
+            <TodayCount
+              label={OVERVIEW_COUNTS.newToday}
+              value={status?.run?.newToday ?? 0}
+              max={status?.newPerDay ?? project.quotas?.newPerDay ?? 0}
+            />
+            <TodayCount
+              label={OVERVIEW_COUNTS.liveToday}
+              value={status?.run?.liveToday ?? 0}
+              max={status?.livePerDay ?? project.quotas?.livePerDay ?? 0}
+            />
+          </div>
+        ) : null}
       </div>
-      {tab === "Overview" ? (
-        <Overview
+      {watching ? (
+        <Dashboard
           project={project}
           status={status}
-          steps={steps}
+          hosts={hosts}
           placements={placements}
-          tickets={tickets}
-          working={working}
-          busy={busy}
-          loadArtifact={loadArtifact}
-          onStart={() => request("start")}
-          onPause={() => request("pause")}
-          onStop={() => request("stop")}
-        />
-      ) : null}
-      {tab === "Targets" ? <TargetList project={project} /> : null}
-      {tab === "Hosts" ? (
-        <HostBoard
-          hosts={hosts.filter((host) => showHostToCustomer(host.registrableDomain, project.slug))}
-          researching={working}
-        />
-      ) : null}
-      {tab === "Threads" ? (
-        <ThreadList
+          steps={steps}
           threads={threads}
           drafts={drafts}
-          draftsOnly={project.disclosureMode === "drafts_only"}
-          onDecide={onDecideDraft}
+          tickets={tickets}
+          working={working}
+          loadArtifact={loadArtifact}
+          onDecideDraft={onDecideDraft}
         />
-      ) : null}
-      {tab === "Placements" ? <PlacementTable rows={placements} onVerify={onVerify} /> : null}
-      {tab === "Runs" ? (
-        <RunTimeline runs={runs} steps={steps} loadArtifact={loadArtifact} />
-      ) : null}
-      {tab === "Captchas" ? (
-        <CaptchaPanel captchas={captchas} tickets={tickets} onOpenTicket={onOpenTicket} />
-      ) : null}
-      {tab === "Settings" ? <SettingsPanel project={project} leases={leases} /> : null}
+      ) : (
+        <SettingsPanel
+          project={project}
+          leases={leases}
+          busy={busy}
+          onSave={onSave}
+          onSuggestPage={onSuggestPage}
+        />
+      )}
     </main>
   );
 }
@@ -563,40 +572,40 @@ export function OperatorView({
   );
 }
 
-function Overview({
+function Dashboard({
   project,
   status,
-  steps,
+  hosts,
   placements,
+  steps,
+  threads,
+  drafts,
   tickets,
   working,
-  busy,
   loadArtifact,
-  onStart,
-  onPause,
-  onStop,
+  onDecideDraft,
 }: {
   project: LbProjectDetail;
   status: LbProjectStatusView | null;
-  steps: LbRunStepView[];
+  hosts: LbHostView[];
   placements: LbPlacementView[];
+  steps: LbRunStepView[];
+  threads: LbThreadView[];
+  drafts: LbDraftView[];
   tickets: LbOperatorTicketView[];
   working: boolean;
-  busy: boolean;
   loadArtifact?: ArtifactLoader;
-  onStart: () => void;
-  onPause: () => void;
-  onStop: () => void;
+  onDecideDraft?: (draftId: string, decision: "approved" | "discarded") => void;
 }) {
-  const newToday = status?.run?.newToday ?? 0;
-  const liveToday = status?.run?.liveToday ?? 0;
-  const newPerDay = status?.newPerDay ?? project.quotas?.newPerDay ?? 0;
-  const livePerDay = status?.livePerDay ?? project.quotas?.livePerDay ?? 0;
   const hideExampleCopy = project.slug !== FIXTURE_DEMO_SLUG;
+  const visiblePlacements = placements.filter((row) =>
+    showHostToCustomer(row.domain, project.slug),
+  );
   const hasPlacement = overviewHasPlacement(
-    placements.map((row) => row.domain),
+    visiblePlacements.map((row) => row.domain),
     project.slug,
   );
+  const forums = hosts.filter((host) => showHostToCustomer(host.registrableDomain, project.slug));
   const items = overviewFeed({
     steps,
     lastEvent: status?.lastEvent ?? null,
@@ -614,24 +623,7 @@ function Overview({
     hasPlacement,
   });
   return (
-    <section className="flex min-h-0 flex-1 flex-col gap-4" aria-label="Overview">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div className="flex flex-wrap gap-2">
-          <BuiButton tone="accent" label="Start" onClick={onStart} disabled={busy}>
-            Start
-          </BuiButton>
-          <BuiButton label="Pause" onClick={onPause} disabled={busy}>
-            Pause
-          </BuiButton>
-          <BuiButton label="Stop" onClick={onStop} disabled={busy}>
-            Stop
-          </BuiButton>
-        </div>
-        <div className="flex flex-wrap items-baseline gap-6">
-          <TodayCount label={OVERVIEW_COUNTS.newToday} value={newToday} max={newPerDay} />
-          <TodayCount label={OVERVIEW_COUNTS.liveToday} value={liveToday} max={livePerDay} />
-        </div>
-      </div>
+    <section className="flex min-h-0 flex-1 flex-col gap-4" aria-label="Dashboard">
       <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[minmax(0,1.6fr)_minmax(280px,360px)]">
         <ComputerPane
           working={working}
@@ -640,8 +632,15 @@ function Overview({
           frame={frame}
           loadArtifact={loadArtifact}
         />
-        <div className="flex min-h-[560px] flex-col gap-3 lg:max-h-[calc(100dvh-9rem)]">
+        <div className="flex min-h-0 flex-col gap-3 lg:max-h-[calc(100dvh-11rem)]">
           <ActivityFeed items={items} />
+          <ForumsPicked hosts={forums} threads={threads} />
+          <LinksPlaced rows={visiblePlacements} />
+          <DraftNotes
+            drafts={drafts}
+            draftsOnly={project.disclosureMode === "drafts_only"}
+            onDecide={onDecideDraft}
+          />
           {status?.costs ? <CostNote costs={status.costs} /> : null}
         </div>
       </div>
@@ -672,12 +671,14 @@ function ComputerPane({
 }) {
   const label = action || WORK_STAGE_LABELS[stage];
   const stageIndex = WORK_STAGES.indexOf(stage);
+  const session = frame ? "open" : "closed";
   return (
     <section
       aria-label="Computer"
       data-frame={frame?.kind ?? "pending"}
       data-stage={stage}
-      className="relative flex min-h-[560px] flex-col overflow-hidden rounded-[16px] bg-[#0c0c0e]"
+      data-session={session}
+      className="relative flex min-h-[420px] flex-col overflow-hidden rounded-[16px] bg-[#0c0c0e] sm:min-h-[560px]"
       style={{ boxShadow: "var(--bui-shadow-card)" }}
     >
       <div className="flex h-11 items-center gap-3 border-b border-[#2A2A31] px-3.5">
@@ -685,7 +686,7 @@ function ComputerPane({
           className="h-2 w-2 shrink-0 rounded-full"
           style={{ background: working ? "var(--bui-green)" : "#3a3a40" }}
         />
-        <ol aria-label="Stage" className="flex min-w-0 items-center gap-0.5 overflow-hidden">
+        <ol aria-label="Stage" className="flex min-w-0 flex-1 items-center gap-0.5 overflow-hidden">
           {WORK_STAGES.map((name, index) => {
             const current = name === stage;
             const done = index < stageIndex;
@@ -710,12 +711,18 @@ function ComputerPane({
             );
           })}
         </ol>
+        <PixelTrail live={working && session === "closed"} />
       </div>
-      <div className="relative min-h-[500px] flex-1">
+      <div className="relative min-h-[360px] flex-1 sm:min-h-[500px]">
         {frame?.kind === "url" ? (
           <iframe title="Computer" src={frame.url} className="absolute inset-0 h-full w-full" />
         ) : (
-          <WorkingScreen working={working} label={label} stage={stage} />
+          <WorkingScreen
+            working={working}
+            label={label}
+            stage={stage}
+            closed={session === "closed"}
+          />
         )}
         {frame?.kind === "artifact" && loadArtifact ? (
           <ArtifactShot
@@ -728,7 +735,7 @@ function ComputerPane({
         ) : null}
         {working && frame?.kind === "url" ? (
           <div className="absolute bottom-4 left-4 z-20">
-            <LoadingState label={label} />
+            <LoadingState label={label} prominent />
           </div>
         ) : null}
       </div>
@@ -739,34 +746,57 @@ function ComputerPane({
 function WorkingScreen({
   working,
   label,
-  stage,
+  closed,
 }: {
   working: boolean;
   label: string;
   stage: (typeof WORK_STAGES)[number];
+  closed: boolean;
 }) {
   return (
     <section
       aria-label={label}
-      className="relative flex min-h-[500px] flex-col items-center justify-center bg-[#0c0c0e] px-8"
+      className="relative flex min-h-[360px] flex-col items-center justify-center bg-[#0c0c0e] px-8 sm:min-h-[500px]"
     >
       <div
         aria-hidden
         className="pointer-events-none absolute inset-0"
         style={{
           background:
-            "radial-gradient(ellipse 520px 300px at 50% 46%, rgba(119,133,255,0.10), transparent 70%)",
+            "radial-gradient(ellipse 520px 300px at 50% 46%, rgba(119,133,255,0.08), transparent 70%)",
         }}
       />
       <div className="relative flex flex-col items-center gap-4 text-center">
-        <p className="text-[13px] text-[#A6A6AD]">{WORK_STAGE_LABELS[stage]}</p>
         {working ? (
-          <LoadingState label={label} />
+          <LoadingState label={label} prominent />
         ) : (
           <p className="text-[18px] font-medium text-[#ECECEE]">{label}</p>
         )}
+        {closed ? <p className="text-[12px] text-[#6C6C70]">No session</p> : null}
       </div>
     </section>
+  );
+}
+
+/** A few pixels and a short dot trail. A hint, not a maze. */
+function PixelTrail({ live }: { live: boolean }) {
+  return (
+    <span aria-hidden data-pixel="trail" className="flex shrink-0 items-center gap-[5px]">
+      <span
+        className="block h-2 w-2"
+        style={{
+          background: live ? "#C8C8CD" : "#3a3a40",
+          clipPath: "polygon(0 0, 100% 0, 100% 35%, 58% 50%, 100% 65%, 100% 100%, 0 100%)",
+        }}
+      />
+      {[0.7, 0.45, 0.22].map((opacity, index) => (
+        <span
+          key={index}
+          className="block h-[3px] w-[3px] rounded-[1px]"
+          style={{ background: "#C8C8CD", opacity: live ? opacity : 0.25 }}
+        />
+      ))}
+    </span>
   );
 }
 
@@ -825,97 +855,69 @@ function CostNote({ costs }: { costs: NonNullable<LbProjectStatusView["costs"]> 
   );
 }
 
-function TargetList({ project }: { project: LbProjectDetail }) {
-  if (project.targets.length === 0) {
-    return <p className="text-[13px] text-[#85858A]">No pages to link yet</p>;
-  }
+function ForumsPicked({ hosts, threads }: { hosts: LbHostView[]; threads: LbThreadView[] }) {
+  if (hosts.length === 0 && threads.length === 0) return null;
   return (
-    <ul className="flex flex-col gap-2">
-      {project.targets.map((target) => (
-        <li key={target.url} className="text-[14px] text-[#ECECEE]">
-          <div>{target.url}</div>
-          {target.keywordClusters[0] ? (
-            <div className="text-[12.5px] text-[#A6A6AD]">Keyword {target.keywordClusters[0]}</div>
-          ) : null}
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-function HostBoard({ hosts, researching }: { hosts: LbHostView[]; researching?: boolean }) {
-  if (hosts.length === 0) {
-    return (
-      <section aria-label="Hosts">
-        {researching ? <LoadingState label="Researching" /> : null}
-      </section>
-    );
-  }
-  return (
-    <section className="flex gap-3 overflow-x-auto" aria-label="Host funnel">
-      {FUNNEL_COLUMNS.map((column) => {
-        const rows = hosts.filter((host) => funnelColumnId(host.status) === column.id);
-        return (
-          <section key={column.id} className="min-w-40 flex-1" aria-label={column.label}>
-            <h2 className="mb-2 text-[12px] uppercase tracking-wide text-[#85858A]">
-              {column.label}
-            </h2>
-            <div className="flex flex-col gap-2">
-              {rows.map((host) => (
-                <BuiCard key={host.id} className="px-3 py-2 text-[13px] text-[#ECECEE]">
-                  <div>{host.registrableDomain}</div>
-                  <div className="text-[12px] text-[#A6A6AD]">
-                    {host.platform}
-                    {host.captchaType ? ` · ${host.captchaType}` : ""}
-                    {` · ${host.hrefForNewMembers}`}
-                  </div>
-                  <div className="text-[12px] text-[#85858A]">
-                    {[host.country, host.language, host.locale, host.timezoneId]
-                      .filter(Boolean)
-                      .join(" · ")}
-                  </div>
-                  {host.statusReason ? (
-                    <div className="text-[12px] text-[#85858A]">{host.statusReason}</div>
-                  ) : null}
-                </BuiCard>
-              ))}
-            </div>
-          </section>
-        );
-      })}
+    <section aria-label="Forums" className="flex flex-col gap-2">
+      <h2 className="text-[12px] text-[#8A8A90]">Forums</h2>
+      <BuiCard className="flex max-h-40 flex-col overflow-y-auto">
+        {hosts.map((host) => (
+          <div
+            key={host.id}
+            className="flex items-baseline justify-between gap-3 border-b border-[#2A2A31] px-3 py-2 text-[13px] last:border-b-0"
+          >
+            <span className="text-[#ECECEE]">{host.registrableDomain}</span>
+            <span className="text-[12px] text-[#8A8A90]">{host.status.replaceAll("_", " ")}</span>
+          </div>
+        ))}
+        {threads.map((thread) => (
+          <div
+            key={thread.id}
+            className="border-b border-[#2A2A31] px-3 py-2 text-[13px] text-[#C8C8CD] last:border-b-0"
+          >
+            {thread.title}
+          </div>
+        ))}
+      </BuiCard>
     </section>
   );
 }
 
-function ThreadList({
-  threads,
+function LinksPlaced({ rows }: { rows: LbPlacementView[] }) {
+  if (rows.length === 0) return null;
+  return (
+    <section aria-label="Links placed" className="flex flex-col gap-2">
+      <h2 className="text-[12px] text-[#8A8A90]">Links</h2>
+      <BuiCard className="flex max-h-36 flex-col overflow-y-auto">
+        {rows.map((row) => (
+          <div
+            key={row.id}
+            className="flex items-baseline justify-between gap-3 border-b border-[#2A2A31] px-3 py-2 text-[13px] last:border-b-0"
+          >
+            <span className="text-[#ECECEE]">{row.domain}</span>
+            <span className="text-[12px] text-[#8A8A90]">{row.status}</span>
+          </div>
+        ))}
+      </BuiCard>
+    </section>
+  );
+}
+
+function DraftNotes({
   drafts,
   draftsOnly,
   onDecide,
 }: {
-  threads: LbThreadView[];
   drafts: LbDraftView[];
   draftsOnly: boolean;
   onDecide?: (draftId: string, decision: "approved" | "discarded") => void;
 }) {
+  if (drafts.length === 0) return null;
   return (
-    <section className="flex flex-col gap-3" aria-label="Threads and drafts">
-      {threads.map((thread) => (
-        <div key={thread.id} className="text-[14px] text-[#ECECEE]">
-          <div>{thread.title}</div>
-          <div className="text-[12px] text-[#85858A]">{thread.relevance.toFixed(2)}</div>
-        </div>
-      ))}
+    <section aria-label="Drafts" className="flex flex-col gap-2">
       {drafts.map((draft) => (
         <BuiCard key={draft.id} className="flex flex-col gap-2 p-3 text-[13px] text-[#C9C9CE]">
           <p>{draft.body}</p>
-          {draft.qualityChecks.issues.length > 0 ? (
-            <ul aria-label="Fit check">
-              {draft.qualityChecks.issues.map((issue) => (
-                <li key={issue}>{issue}</li>
-              ))}
-            </ul>
-          ) : null}
           {draftsOnly && draft.status === "drafted" && onDecide ? (
             <div className="flex gap-2">
               <BuiButton label="Approve draft" onClick={() => onDecide(draft.id, "approved")}>
@@ -929,51 +931,6 @@ function ThreadList({
         </BuiCard>
       ))}
     </section>
-  );
-}
-
-function PlacementTable({
-  rows,
-  onVerify,
-}: {
-  rows: LbPlacementView[];
-  onVerify: (placementId: string) => void;
-}) {
-  return (
-    <table className="w-full text-left text-[13px] text-[#ECECEE]">
-      <thead className="text-[#85858A]">
-        <tr>
-          <th className="py-2">Host</th>
-          <th>rel</th>
-          <th>Status</th>
-          <th />
-        </tr>
-      </thead>
-      <tbody>
-        {rows.map((row) => (
-          <tr key={row.id} className="border-t border-[#2A2A31]">
-            <td className="py-2">{row.domain}</td>
-            <td>{row.rel.join(" ") || "—"}</td>
-            <td>{row.status}</td>
-            <td className="flex gap-2 py-2">
-              <BuiButton label={`Verify ${row.domain}`} onClick={() => onVerify(row.id)}>
-                Verify
-              </BuiButton>
-              {row.snapshotArtifactId ? (
-                <a
-                  href={`/artifacts/${row.snapshotArtifactId}`}
-                  className="self-center text-[#A6A6AD]"
-                >
-                  Snapshot
-                </a>
-              ) : (
-                <span className="self-center text-[#85858A]">No snapshot</span>
-              )}
-            </td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
   );
 }
 
@@ -1014,138 +971,194 @@ export function ArtifactShot({
   return <img src={src} alt={label} className={className} />;
 }
 
-function RunTimeline({
-  runs,
-  steps,
-  loadArtifact,
-}: {
-  runs: LbRunView[];
-  steps: LbRunStepView[];
-  loadArtifact?: ArtifactLoader;
-}) {
-  const withShots = steps.filter((step) => step.artifactIds.length > 0);
-  const [picked, setPicked] = useState<string | null>(null);
-  const shown =
-    withShots.find((step) => step.id === picked) ?? withShots[withShots.length - 1] ?? null;
-  return (
-    <div className="flex flex-col gap-3">
-      {runs.map((run) => (
-        <div key={run.id} className="text-[13px] text-[#A6A6AD]">
-          {run.date} · {run.status} · {run.lastAction}
-        </div>
-      ))}
-      <ol className="flex flex-col gap-2" aria-label="Run steps">
-        {steps.map((step) => {
-          const text = `${step.stepIndex + 1}. ${step.lastAction ?? step.kind}`;
-          return (
-            <li key={step.id} className="text-[14px] text-[#ECECEE]">
-              {loadArtifact && step.artifactIds.length > 0 ? (
-                <button
-                  type="button"
-                  aria-pressed={shown?.id === step.id}
-                  className={`text-left ${shown?.id === step.id ? "text-[#ECECEE]" : "text-[#A6A6AD]"}`}
-                  onClick={() => setPicked(step.id)}
-                >
-                  {text}
-                </button>
-              ) : (
-                text
-              )}
-              {step.kind === "coherence_refused" || step.kind === "edge_block" ? (
-                <span className="ml-2 text-[13px] text-[#E8B931]">{step.kind}</span>
-              ) : null}
-              {step.error ? (
-                <span className="ml-2 text-[13px] text-[#E5484D]">{step.error}</span>
-              ) : null}
-            </li>
-          );
-        })}
-      </ol>
-      {loadArtifact && shown ? (
-        <ArtifactShot
-          artifactId={shown.artifactIds[0]!}
-          load={loadArtifact}
-          label={`Step ${shown.stepIndex + 1} screenshot`}
-        />
-      ) : null}
-    </div>
-  );
-}
-
-function CaptchaPanel({
-  captchas,
-  tickets,
-  onOpenTicket,
-}: {
-  captchas: Array<{ id: string; outcome: string; domain: string | null }>;
-  tickets: LbOperatorTicketView[];
-  onOpenTicket: (ticketId: string) => void;
-}) {
-  const events = captchas.filter((event) => !isFixtureHostDomain(event.domain ?? ""));
-  const handoff = tickets.filter(
-    (ticket) => ticket.reason !== "captcha_unsolved" && !isFixtureHostDomain(ticket.domain ?? ""),
-  );
-  return (
-    <div className="flex flex-col gap-3">
-      {events.map((event) => (
-        <div key={event.id} className="text-[13px] text-[#C9C9CE]">
-          <div>
-            {event.domain} · {event.outcome}
-          </div>
-          {event.outcome === "sandbox" ? (
-            <div className="text-[12px] text-[#E8B931]">
-              Sandbox answer. The solver is not production-configured.
-            </div>
-          ) : null}
-        </div>
-      ))}
-      {handoff.map((ticket) => (
-        <BuiCard key={ticket.id} className="flex items-center justify-between p-3">
-          <span className="text-[14px] text-[#ECECEE]">
-            {ticket.domain} · {ticket.status}
-            {ticketCountdown(ticket.expiresAt) ? ` · ${ticketCountdown(ticket.expiresAt)}` : ""}
-          </span>
-          {ticket.status === "open" ? (
-            <BuiButton
-              label={`Open computer for ${ticket.domain}`}
-              onClick={() => onOpenTicket(ticket.id)}
-            >
-              Open computer
-            </BuiButton>
-          ) : null}
-        </BuiCard>
-      ))}
-    </div>
-  );
-}
-
 function SettingsPanel({
   project,
   leases,
+  busy,
+  onSave,
+  onSuggestPage,
 }: {
   project: LbProjectDetail;
   leases: LbProxyLeaseView[];
+  busy: boolean;
+  onSave?: (draft: WizardDraft) => void | Promise<void>;
+  onSuggestPage?: (input: {
+    url: string;
+    allowedDomains: string[];
+  }) => Promise<{ keyword: string; rule: string }>;
+}) {
+  const editable = Boolean(project.schedule && project.allowedDomains && project.linkRatio);
+  const [draft, setDraft] = useState<WizardDraft | null>(() =>
+    editable ? draftFromProject(project) : null,
+  );
+  const [issues, setIssues] = useState<string[]>([]);
+  const [saved, setSaved] = useState(false);
+  function edit(next: WizardDraft | ((current: WizardDraft) => WizardDraft)) {
+    setSaved(false);
+    setDraft((current) => {
+      if (!current) return current;
+      return typeof next === "function" ? next(current) : next;
+    });
+  }
+  async function save() {
+    if (!draft || !onSave) return;
+    const found = [0, 1, 2, 3].flatMap((step) => wizardStepIssues(step, draft));
+    setIssues(found);
+    if (found.length > 0) return;
+    try {
+      await onSave(draft);
+      setSaved(true);
+    } catch (err) {
+      setIssues([err instanceof Error ? err.message : "Could not save"]);
+    }
+  }
+  return (
+    <section aria-label="Settings" className="flex flex-col gap-4">
+      {draft ? (
+        <>
+          <div className="flex flex-col gap-3">
+            <h2 className="text-[13px] text-[#A6A6AD]">Pages</h2>
+            <TopicFields draft={draft} onChange={edit} onSuggestPage={onSuggestPage} />
+          </div>
+          <BuiCard className="flex flex-col gap-3 p-4">
+            <h2 className="text-[13px] text-[#A6A6AD]">Quotas</h2>
+            <QuotaFields draft={draft} onChange={(next) => edit(next)} />
+            <ScheduleFields draft={draft} onChange={(next) => edit(next)} />
+          </BuiCard>
+          <BuiCard className="flex flex-col gap-3 p-4">
+            <h2 className="text-[13px] text-[#A6A6AD]">Persona</h2>
+            <PersonaFields draft={draft} onChange={(next) => edit(next)} />
+          </BuiCard>
+          <BuiCard className="flex flex-col gap-3 p-4">
+            <h2 className="text-[13px] text-[#A6A6AD]">Project</h2>
+            <BrandFields draft={draft} onChange={(next) => edit(next)} />
+            <Field label="How posts identify you">
+              <select
+                aria-label="How posts identify you"
+                className={inputClass}
+                value={draft.disclosureMode}
+                onChange={(event) =>
+                  edit({
+                    ...draft,
+                    disclosureMode: event.target.value as WizardDraft["disclosureMode"],
+                  })
+                }
+              >
+                <option value="undisclosed_persona">
+                  {disclosureLabel("undisclosed_persona")}
+                </option>
+                <option value="disclosed_persona">{disclosureLabel("disclosed_persona")}</option>
+                <option value="disclosed_brand">{disclosureLabel("disclosed_brand")}</option>
+                <option value="drafts_only">{disclosureLabel("drafts_only")}</option>
+              </select>
+            </Field>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label="Links">
+                <input
+                  aria-label="Links"
+                  className={inputClass}
+                  value={draft.links}
+                  onChange={(event) => edit({ ...draft, links: event.target.value })}
+                />
+              </Field>
+              <Field label="Posts">
+                <input
+                  aria-label="Posts"
+                  className={inputClass}
+                  value={draft.posts}
+                  onChange={(event) => edit({ ...draft, posts: event.target.value })}
+                />
+              </Field>
+            </div>
+            <Field label="Forums to skip">
+              <input
+                aria-label="Forums to skip"
+                className={inputClass}
+                value={draft.denyHosts}
+                onChange={(event) => edit({ ...draft, denyHosts: event.target.value })}
+              />
+            </Field>
+            <div className="text-[13px] text-[#A6A6AD]">
+              Countries {draft.markets.map((market) => market.country).join(", ") || "none"}
+            </div>
+          </BuiCard>
+          {issues.length > 0 ? (
+            <ul className="flex flex-col gap-1 text-[13px] text-[#FF8B8B]" role="alert">
+              {issues.map((issue) => (
+                <li key={issue}>{issue}</li>
+              ))}
+            </ul>
+          ) : null}
+          <div className="flex items-center gap-3">
+            <BuiButton
+              tone="accent"
+              label="Save settings"
+              disabled={busy}
+              onClick={() => void save()}
+            >
+              Save
+            </BuiButton>
+            {saved ? <SuccessPop label="Saved" /> : null}
+          </div>
+        </>
+      ) : null}
+      <BuiCard className="flex flex-col gap-2 p-4 text-[13px] text-[#C9C9CE]">
+        <div>Proxy {(project.proxyPolicy ?? "").replaceAll("_", " ")}</div>
+        <ul aria-label="Proxy leases" className="flex flex-col gap-1">
+          {leases.length === 0 ? <li>No active lease</li> : null}
+          {leases.map((lease) => (
+            <li key={lease.id}>
+              {lease.country} · {lease.kind.replaceAll("_", " ")} ·{" "}
+              {lease.expiresAt ? lease.expiresAt.slice(0, 16) : "open"} · {lease.providerId}
+            </li>
+          ))}
+        </ul>
+      </BuiCard>
+    </section>
+  );
+}
+
+function ScheduleFields({
+  draft,
+  onChange,
+}: {
+  draft: WizardDraft;
+  onChange: (draft: WizardDraft) => void;
 }) {
   return (
-    <BuiCard className="flex flex-col gap-2 p-4 text-[13px] text-[#C9C9CE]">
-      <div>How posts identify you: {disclosureLabel(project.disclosureMode)}</div>
-      <div>Countries {project.markets.map((market) => market.country).join(", ")}</div>
-      <div>
-        {project.linkRatio.links} {project.linkRatio.links === 1 ? "link" : "links"} in every{" "}
-        {project.linkRatio.posts} posts
+    <>
+      <Field label="Days">
+        <select
+          aria-label="Days"
+          className={inputClass}
+          value={draft.weekdaysOnly ? "weekdays" : "every day"}
+          onChange={(event) =>
+            onChange({ ...draft, weekdaysOnly: event.target.value === "weekdays" })
+          }
+        >
+          <option value="weekdays">Weekdays</option>
+          <option value="every day">Every day</option>
+        </select>
+      </Field>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Field label="Window start">
+          <input
+            aria-label="Window start"
+            className={inputClass}
+            value={draft.windowStart}
+            onChange={(event) => onChange({ ...draft, windowStart: event.target.value })}
+          />
+        </Field>
+        <Field label="Window end">
+          <input
+            aria-label="Window end"
+            className={inputClass}
+            value={draft.windowEnd}
+            onChange={(event) => onChange({ ...draft, windowEnd: event.target.value })}
+          />
+        </Field>
       </div>
-      <div>Proxy {project.proxyPolicy.replaceAll("_", " ")}</div>
-      <div>Forums to skip {project.denyHosts.join(", ") || "none"}</div>
-      <ul aria-label="Proxy leases" className="flex flex-col gap-1">
-        {leases.length === 0 ? <li>No active lease</li> : null}
-        {leases.map((lease) => (
-          <li key={lease.id}>
-            {lease.country} · {lease.kind.replaceAll("_", " ")} ·{" "}
-            {lease.expiresAt ? lease.expiresAt.slice(0, 16) : "open"} · {lease.providerId}
-          </li>
-        ))}
-      </ul>
-    </BuiCard>
+    </>
   );
 }
 

@@ -1,6 +1,5 @@
 import type {
   LbBillingOffer,
-  LbCaptchaEventView,
   LbDraftView,
   LbHostView,
   LbOperatorTicketView,
@@ -10,7 +9,6 @@ import type {
   LbProjectStatusView,
   LbProxyLeaseView,
   LbRunStepView,
-  LbRunView,
   LbThreadView,
 } from "@rakazo/contracts";
 import { isFixtureHostDomain } from "@rakazo/linkbuilder-core";
@@ -32,7 +30,13 @@ import {
   withPersonaPrefill,
   wizardStepIssues,
 } from "./model.js";
-import { CreditPackagesView, DashboardView, OperatorView, ProjectView, WizardView } from "./views.js";
+import {
+  CreditPackagesView,
+  DashboardView,
+  OperatorView,
+  ProjectView,
+  WizardView,
+} from "./views.js";
 
 function useArtifactLoader(projectId: string) {
   return useCallback(
@@ -204,12 +208,7 @@ function NewProjectGate() {
   const billing = useBillingOffer();
   if (!billing.offer) {
     return (
-      <BillingBody
-        offer={null}
-        error={billing.error}
-        busy={billing.busy}
-        onBuy={() => undefined}
-      />
+      <BillingBody offer={null} error={billing.error} busy={billing.busy} onBuy={() => undefined} />
     );
   }
   if (billing.offer.entitled) return <WizardEditor />;
@@ -349,16 +348,14 @@ function WizardEditor({ projectId }: { projectId?: string }) {
 
 function ProjectRoute({ projectId }: { projectId: string }) {
   const navigate = useNavigate();
-  const [tab, setTab] = useState("Overview");
+  const [surface, setSurface] = useState<"dashboard" | "settings">("dashboard");
   const [project, setProject] = useState<LbProjectDetail | null>(null);
   const [status, setStatus] = useState<LbProjectStatusView | null>(null);
   const [hosts, setHosts] = useState<LbHostView[]>([]);
   const [placements, setPlacements] = useState<LbPlacementView[]>([]);
-  const [runs, setRuns] = useState<LbRunView[]>([]);
   const [steps, setSteps] = useState<LbRunStepView[]>([]);
   const [threads, setThreads] = useState<LbThreadView[]>([]);
   const [drafts, setDrafts] = useState<LbDraftView[]>([]);
-  const [captchas, setCaptchas] = useState<LbCaptchaEventView[]>([]);
   const [tickets, setTickets] = useState<LbOperatorTicketView[]>([]);
   const [leases, setLeases] = useState<LbProxyLeaseView[]>([]);
   const [busy, setBusy] = useState(false);
@@ -373,7 +370,6 @@ function ProjectRoute({ projectId }: { projectId: string }) {
       nextRuns,
       nextThreads,
       nextDrafts,
-      nextCaptchas,
       nextTickets,
       nextLeases,
     ] = await Promise.all([
@@ -384,7 +380,6 @@ function ProjectRoute({ projectId }: { projectId: string }) {
       rpc.linkBuilder.runs.list({ projectId }),
       rpc.linkBuilder.threads.list({ projectId }),
       rpc.linkBuilder.drafts.list({ projectId }),
-      rpc.linkBuilder.captcha.events({ projectId }),
       rpc.linkBuilder.operator.tickets({ projectId }),
       rpc.linkBuilder.proxyLeases.list({ projectId }),
     ]);
@@ -392,10 +387,8 @@ function ProjectRoute({ projectId }: { projectId: string }) {
     setStatus(nextStatus);
     setHosts(nextHosts);
     setPlacements(nextPlacements);
-    setRuns(nextRuns);
     setThreads(nextThreads);
     setDrafts(nextDrafts);
-    setCaptchas(nextCaptchas);
     setTickets(nextTickets);
     setLeases(nextLeases);
     const latest = nextRuns[0];
@@ -450,29 +443,37 @@ function ProjectRoute({ projectId }: { projectId: string }) {
     }
   }
 
+  async function save(draft: WizardDraft) {
+    setBusy(true);
+    try {
+      const patch = patchFromDraft(draft);
+      delete patch.captchaToken;
+      await rpc.linkBuilder.projects.update({ projectId, ...patch });
+      await reload();
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <ProjectView
       project={project}
       status={status}
       hosts={hosts}
       placements={placements}
-      runs={runs}
       steps={steps}
       threads={threads}
       drafts={drafts}
-      captchas={captchas}
       leases={leases}
       tickets={tickets}
-      tab={tab}
-      onTab={setTab}
+      surface={surface}
+      onSurface={setSurface}
       busy={busy}
       onStart={() => act("start")}
       onPause={() => act("pause")}
       onStop={() => act("stop")}
-      onVerify={(placementId) =>
-        void rpc.linkBuilder.placements.verify({ projectId, placementId }).then(() => reload())
-      }
-      onOpenTicket={(ticketId) => navigate(`/link-builder/${projectId}/operator/${ticketId}`)}
+      onSave={(draft) => save(draft)}
+      onSuggestPage={suggestPage}
       onDecideDraft={(draftId, decision) => {
         const call =
           decision === "approved"
