@@ -1,9 +1,29 @@
-/**
- * Operator tickets open at /link-builder-ticket. Push deep links are not wired:
- * the existing Expo push payload is a bot-thread notification, and extending it
- * is left for the operations milestone.
- */
+/** Operator tickets open at /link-builder-ticket. Push payloads use this path in `data.url`. */
 export const OPERATOR_TICKET_PATH = "/link-builder-ticket";
+
+export function linkBuilderPushRoute(data: {
+  url?: string;
+  projectId?: string;
+  ticketId?: string;
+}): { pathname: "/link-builder-ticket"; params: { projectId: string; ticketId?: string } } | null {
+  if (!data.url?.startsWith(OPERATOR_TICKET_PATH)) return null;
+  const projectId = data.projectId;
+  if (!projectId) return null;
+  return {
+    pathname: "/link-builder-ticket",
+    params: data.ticketId ? { projectId, ticketId: data.ticketId } : { projectId },
+  };
+}
+
+export function ticketCountdown(expiresAt: string | null, now = Date.now()): string | null {
+  if (!expiresAt) return null;
+  const remaining = Date.parse(expiresAt) - now;
+  if (Number.isNaN(remaining)) return null;
+  if (remaining <= 0) return "Expired";
+  const hours = Math.floor(remaining / 3_600_000);
+  const minutes = Math.floor((remaining % 3_600_000) / 60_000);
+  return hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
+}
 
 export interface MobileLbCard {
   id: string;
@@ -27,6 +47,7 @@ export interface MobileLbTicket {
   note: string | null;
   screenUrl: string | null;
   screenshotArtifactId: string | null;
+  expiresAt: string | null;
 }
 
 export interface MobileLbArtifact {

@@ -262,6 +262,16 @@ export function ProjectView({
   );
 }
 
+export function ticketCountdown(expiresAt: string | null, now = Date.now()): string | null {
+  if (!expiresAt) return null;
+  const remaining = Date.parse(expiresAt) - now;
+  if (Number.isNaN(remaining)) return null;
+  if (remaining <= 0) return "Expired";
+  const hours = Math.floor(remaining / 3_600_000);
+  const minutes = Math.floor((remaining % 3_600_000) / 60_000);
+  return hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
+}
+
 export function OperatorView({
   ticket,
   note,
@@ -271,6 +281,7 @@ export function OperatorView({
   onContinue,
   onSkip,
   loadArtifact,
+  now,
 }: {
   ticket: LbOperatorTicketView;
   note: string;
@@ -280,12 +291,16 @@ export function OperatorView({
   onContinue: () => void;
   onSkip: () => void;
   loadArtifact?: ArtifactLoader;
+  now?: number;
 }) {
   const embed = ticket.screenUrl?.startsWith("/novnc/") || ticket.screenUrl?.startsWith("https://");
   const shot = !embed && loadArtifact ? ticket.screenshotArtifactId : null;
   return (
     <main className="mx-auto flex w-full max-w-3xl flex-col gap-4 px-4 py-8">
       <h1 className="text-[22px] font-medium text-[#ECECEE]">{ticket.domain}</h1>
+      {ticketCountdown(ticket.expiresAt, now) ? (
+        <p className="text-[13px] text-[#A6A6AD]">{ticketCountdown(ticket.expiresAt, now)}</p>
+      ) : null}
       {shot && loadArtifact ? (
         <ArtifactShot artifactId={shot} load={loadArtifact} label="Screenshot" />
       ) : (
@@ -369,14 +384,40 @@ function Overview({
         />
       </div>
       <div className="text-[13px] text-[#A6A6AD]">{status?.lastEvent ?? project.status}</div>
-      {status?.whyNot && status.whyNot.reasons.length > 0 ? (
+      {status?.whyNot && (status.run?.liveToday ?? 0) < (status.livePerDay ?? 0) ? (
         <section aria-label="Why not">
           <div className="text-[12px] text-[#85858A]">Why not</div>
           <ul className="mt-1 text-[13px] text-[#ECECEE]">
-            {status.whyNot.reasons.map((reason) => (
-              <li key={reason}>{reason.replaceAll("_", " ")}</li>
-            ))}
+            <li>
+              Supply {status.whyNot.supply.qualified} qualified, {status.whyNot.supply.ready} ready
+            </li>
+            <li>Parked {status.whyNot.parked}</li>
+            <li>Spam blocked {status.whyNot.spamBlocked}</li>
+            <li>Unsupported captcha {status.whyNot.unsupportedCaptcha}</li>
+            <li>Pending email {status.whyNot.pendingEmail}</li>
+            <li>Pending admin {status.whyNot.pendingAdmin}</li>
+            <li>Model errors {status.whyNot.modelErrors}</li>
+            <li>
+              Captell balance{" "}
+              {status.whyNot.captchaBalance === null ? "unknown" : status.whyNot.captchaBalance}
+            </li>
+            <li>Proxy {status.whyNot.proxy}</li>
           </ul>
+        </section>
+      ) : null}
+      {status?.costs ? (
+        <section aria-label="Costs">
+          <div className="text-[12px] text-[#85858A]">Costs</div>
+          <p className="mt-1 text-[13px] text-[#ECECEE]">
+            Today {status.costs.day.captellCredits} credits · {status.costs.day.modelTokens} tokens
+            · {status.costs.day.searchQueries} searches · {status.costs.day.proxyLeaseDays} proxy
+            days
+          </p>
+          <p className="text-[13px] text-[#A6A6AD]">
+            Week {status.costs.week.captellCredits} credits · {status.costs.week.modelTokens} tokens
+            · {status.costs.week.searchQueries} searches · {status.costs.week.proxyLeaseDays} proxy
+            days
+          </p>
         </section>
       ) : null}
       <div
@@ -647,6 +688,7 @@ function CaptchaPanel({
         <BuiCard key={ticket.id} className="flex items-center justify-between p-3">
           <span className="text-[14px] text-[#ECECEE]">
             {ticket.domain} · {ticket.status}
+            {ticketCountdown(ticket.expiresAt) ? ` · ${ticketCountdown(ticket.expiresAt)}` : ""}
           </span>
           {ticket.status === "open" ? (
             <BuiButton
