@@ -71,6 +71,7 @@ describe("project computer screen", () => {
       lbProject: { findFirst: vi.fn(async () => ({ id: "project-1" })) },
       computer: {
         findFirst: vi.fn(async () => computer({ screenUrl: url })),
+        findMany: vi.fn(async () => [computer({ screenUrl: url })]),
         updateMany: vi.fn(async () => ({ count: 1 })),
       },
       bot: { findFirst: vi.fn() },
@@ -97,6 +98,9 @@ describe("project computer screen", () => {
         findFirst: vi.fn(async () =>
           computer({ state: "stopped", providerRef: null, screenUrl: null }),
         ),
+        findMany: vi.fn(async () => [
+          computer({ state: "stopped", providerRef: null, screenUrl: null }),
+        ]),
         findUnique: vi.fn(async () => computer({ state: "running", providerRef: "sandbox-1" })),
         update: vi.fn(async ({ data }: { data: { screenUrl?: string } }) => {
           stored.screenUrl = data.screenUrl;
@@ -151,6 +155,7 @@ describe("project computer screen", () => {
       },
       computer: {
         findFirst: vi.fn(async () => computer({ screenUrl: url })),
+        findMany: vi.fn(async () => [computer({ screenUrl: url })]),
         updateMany: vi.fn(async () => ({ count: 1 })),
       },
       bot: { findFirst: vi.fn() },
@@ -216,6 +221,7 @@ describe("project computer screen", () => {
       },
       computer: {
         findFirst: vi.fn(async () => computer({ screenUrl: url })),
+        findMany: vi.fn(async () => [computer({ screenUrl: url })]),
         updateMany: vi.fn(async () => ({ count: 1 })),
       },
       bot: { findFirst: vi.fn() },

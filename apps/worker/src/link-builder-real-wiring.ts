@@ -28,6 +28,7 @@ import {
   type ProxyResolver,
   SandboxBrowserSessionFactory,
 } from "@rakazo/linkbuilder-browser";
+import { choosePersonaComputer } from "@rakazo/linkbuilder-core";
 import { sealProxyUsername } from "./link-builder-proxy.js";
 
 function dirs(value: string | undefined): string[] {
@@ -122,11 +123,12 @@ export function browserFactoryFromEnv(input: {
         select: { workspaceId: true },
       });
       if (!project) throw new Error("Link builder project not found");
-      const computer = await prisma.computer.findFirst({
-        where: { workspaceId: project.workspaceId, scope: "team", providerRef: { not: null } },
+      const computers = await prisma.computer.findMany({
+        where: { workspaceId: project.workspaceId },
         orderBy: { updatedAt: "desc" },
       });
-      if (!computer) throw new Error("The workspace has no team computer for the persona browser");
+      const computer = choosePersonaComputer(computers);
+      if (!computer) throw new Error("The workspace has no computer for the persona browser");
       return toComputerRef(computer);
     },
   });

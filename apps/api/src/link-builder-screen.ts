@@ -22,6 +22,7 @@ import {
 } from "@rakazo/core";
 import { ensureComputerRecord, type PrismaClient, type ThreadEvents } from "@rakazo/db";
 import {
+  choosePersonaComputer,
   desktopShowsForumSearch,
   desktopShowsProblemSearch,
   forumSearchUrlFromProject,
@@ -192,10 +193,13 @@ function liveCachedUrl(computer: TeamComputer): string | null {
 }
 
 async function teamComputer(deps: ProjectScreenDeps, actor: Actor): Promise<TeamComputer | null> {
-  return deps.prisma.computer.findFirst({
-    where: { workspaceId: actor.workspaceId, scope: "team" },
+  const rows = await deps.prisma.computer.findMany({
+    where: { workspaceId: actor.workspaceId },
     orderBy: { updatedAt: "desc" },
   });
+  return (
+    choosePersonaComputer(rows) ?? rows.find((row) => row.scope === "team") ?? rows[0] ?? null
+  );
 }
 
 async function bootTeamComputer(
