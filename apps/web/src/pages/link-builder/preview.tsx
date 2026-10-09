@@ -7,6 +7,7 @@ import type {
   LbProjectStatusView,
   LbThreadView,
 } from "@rakazo/contracts";
+import { useState } from "react";
 import { emptyDraft, WIZARD_STEPS } from "./model.js";
 import { DashboardView, OperatorView, ProjectView, WizardView } from "./views.js";
 
@@ -46,9 +47,67 @@ const ticket: LbOperatorTicketView = {
 
 const PREVIEW_NOW = Date.parse("2026-10-05T12:00:00.000Z");
 
+const vitaminexpressCard: LbProjectCard = {
+  id: "vitaminexpress",
+  name: "Vitaminexpress",
+  slug: "vitaminexpress",
+  status: "active",
+  brandName: "Vitaminexpress",
+  activity: "running",
+  activityLabel: "running",
+  newToday: 0,
+  liveToday: 0,
+  liveWeek: 0,
+  newPerDay: 2,
+  livePerDay: 1,
+  liveWeekCap: 8,
+  runStatus: "running",
+  lastEvent: "Searched Google.de for Magnesium Krämpfe Forum",
+  operatorQueue: 0,
+};
+
+const vitaminexpressProject = {
+  name: "Vitaminexpress",
+  slug: "vitaminexpress",
+  brandName: "Vitaminexpress",
+  allowedDomains: ["vitaminexpress.org"],
+  persona: { displayName: "Lena Kraft", bio: "Ruhig", register: "du", language: "de" },
+  mailboxAddress: "lena.kraft@inbox.example",
+  mailboxId: "mbx-vitaminexpress-demo",
+  captchaConfigured: true,
+  quotas: { newPerDay: 2, livePerDay: 1, liveWeekCap: 8, maxLivePerHost: 1 },
+  schedule: {
+    timezone: "Europe/Berlin",
+    weekdaysOnly: true,
+    window: { start: "09:00", end: "22:00" },
+    overtimeUntilLiveMet: false,
+    hardStopHour: 24,
+  },
+  targets: [
+    {
+      url: "https://www.vitaminexpress.org/de/magnesium",
+      priority: 50,
+      description: "Krämpfe",
+      keywordClusters: ["magnesium kaufen"],
+    },
+  ],
+  facts: ["Magnesium"],
+  topicLanes: [{ id: "lane-mg", tag: "Magnesium kaufen", description: "Krämpfe" }],
+  markets: [{ country: "DE", language: "de", locale: "de-DE", timezoneId: "Europe/Berlin" }],
+  marketPolicy: "primary_first",
+  disclosureMode: "undisclosed_persona",
+  linkRatio: { links: 1, posts: 3 },
+  proxyPolicy: "static_isp_per_persona",
+  denyHosts: [],
+} as unknown as LbProjectDetail;
+
 /** Dev-only fixture screens for visual checks. Not linked from the product. */
 export function LinkBuilderPreview({ screen }: { screen: string }) {
-  if (screen === "wizard") {
+  const [current, setCurrent] = useState(screen);
+  if (current === "computer") {
+    return <VitaminexpressComputer onProjects={() => setCurrent("dashboard")} />;
+  }
+  if (current === "wizard") {
     const draft = emptyDraft();
     draft.name = "Nordlicht";
     draft.brandName = "Nordlicht";
@@ -70,7 +129,7 @@ export function LinkBuilderPreview({ screen }: { screen: string }) {
       </div>
     );
   }
-  if (screen === "review") {
+  if (current === "review") {
     const draft = emptyDraft();
     draft.name = "Nordlicht";
     draft.brandName = "Nordlicht";
@@ -104,7 +163,7 @@ export function LinkBuilderPreview({ screen }: { screen: string }) {
       </div>
     );
   }
-  if (screen === "captchas") {
+  if (current === "captchas") {
     return (
       <div className="min-h-screen bg-[#050506]">
         <ProjectView
@@ -126,7 +185,7 @@ export function LinkBuilderPreview({ screen }: { screen: string }) {
       </div>
     );
   }
-  if (screen === "hosts") {
+  if (current === "hosts") {
     const host: LbHostView = {
       id: "host-1",
       registrableDomain: "rueckenforum.example",
@@ -179,7 +238,7 @@ export function LinkBuilderPreview({ screen }: { screen: string }) {
       </div>
     );
   }
-  if (screen === "threads") {
+  if (current === "threads") {
     const thread: LbThreadView = {
       id: "thread-1",
       hostId: "host-1",
@@ -236,7 +295,7 @@ export function LinkBuilderPreview({ screen }: { screen: string }) {
       </div>
     );
   }
-  if (screen === "settings") {
+  if (current === "settings") {
     return (
       <div className="min-h-screen bg-[#050506]">
         <ProjectView
@@ -313,7 +372,7 @@ export function LinkBuilderPreview({ screen }: { screen: string }) {
       </div>
     );
   }
-  if (screen === "runs") {
+  if (current === "runs") {
     return (
       <div className="min-h-screen bg-[#050506]">
         <ProjectView
@@ -358,7 +417,7 @@ export function LinkBuilderPreview({ screen }: { screen: string }) {
       </div>
     );
   }
-  if (screen === "overview") {
+  if (current === "overview") {
     const status: LbProjectStatusView = {
       projectId: "demo",
       projectStatus: "active",
@@ -421,7 +480,7 @@ export function LinkBuilderPreview({ screen }: { screen: string }) {
       </div>
     );
   }
-  if (screen === "operator") {
+  if (current === "operator") {
     return (
       <div className="min-h-screen bg-[#050506]">
         <OperatorView
@@ -440,10 +499,121 @@ export function LinkBuilderPreview({ screen }: { screen: string }) {
   return (
     <div className="min-h-screen bg-[#050506]">
       <DashboardView
-        cards={[card]}
+        cards={[card, vitaminexpressCard]}
         loading={false}
-        onOpen={() => undefined}
-        onNew={() => undefined}
+        onOpen={(item) => setCurrent(item.slug === "vitaminexpress" ? "computer" : "overview")}
+        onNew={() => setCurrent("wizard")}
+      />
+    </div>
+  );
+}
+
+function VitaminexpressComputer({ onProjects }: { onProjects: () => void }) {
+  const [surface, setSurface] = useState<"dashboard" | "settings">("dashboard");
+  const status: LbProjectStatusView = {
+    projectId: "vitaminexpress",
+    projectStatus: "active",
+    activity: "running",
+    activityLabel: "running",
+    run: {
+      id: "run-vx",
+      date: "2026-10-06",
+      status: "running",
+      newToday: 0,
+      liveToday: 0,
+      liveWeek: 0,
+      uniqueHosts: 0,
+      lastAction: "Opened Google search",
+      lastError: null,
+    },
+    whyNot: {
+      supply: { qualified: 0, ready: 0 },
+      parked: 0,
+      spamBlocked: 0,
+      unsupportedCaptcha: 0,
+      pendingEmail: 0,
+      pendingAdmin: 0,
+      modelErrors: 0,
+      modelRefusals: 0,
+      captchaBalance: 0,
+      proxy: "ok",
+      reasons: [],
+    },
+    operatorQueue: 0,
+    scheduleActive: true,
+    scheduleReason: "in_window",
+    newPerDay: 2,
+    livePerDay: 1,
+    liveWeekCap: 8,
+    lastEvent: "Checking Google for on-topic forums",
+    costs: {
+      day: { captellCredits: 0, modelTokens: 0, searchQueries: 1, proxyLeaseDays: 0 },
+      week: { captellCredits: 0, modelTokens: 0, searchQueries: 1, proxyLeaseDays: 0 },
+    },
+  };
+  return (
+    <div className="min-h-screen bg-[#050506]">
+      {surface === "dashboard" ? (
+        <div className="mx-auto flex w-full max-w-[1400px] px-4 pt-4">
+          <button
+            type="button"
+            aria-label="Projects"
+            className="text-[13px] text-[#A6A6AD]"
+            onClick={onProjects}
+          >
+            Projects
+          </button>
+        </div>
+      ) : null}
+      <ProjectView
+        project={vitaminexpressProject}
+        status={status}
+        hosts={[]}
+        placements={[]}
+        steps={[
+          {
+            id: "step-check",
+            stepIndex: 0,
+            kind: "research",
+            hostId: null,
+            lastAction: "Checking Google for on-topic forums",
+            error: null,
+            costs: { credits: 0, tokens: 0, bytes: 0, ms: 0 },
+            artifactIds: [],
+            createdAt: "2026-10-06T12:00:00.000Z",
+          },
+          {
+            id: "step-look",
+            stepIndex: 1,
+            kind: "research",
+            hostId: null,
+            lastAction: "Looking for threads",
+            error: null,
+            costs: { credits: 0, tokens: 0, bytes: 0, ms: 0 },
+            artifactIds: [],
+            createdAt: "2026-10-06T12:00:20.000Z",
+          },
+          {
+            id: "step-open",
+            stepIndex: 2,
+            kind: "research",
+            hostId: null,
+            lastAction: "Opened Google search",
+            error: null,
+            costs: { credits: 0, tokens: 0, bytes: 0, ms: 0 },
+            artifactIds: [],
+            createdAt: "2026-10-06T12:01:00.000Z",
+          },
+        ]}
+        threads={[]}
+        drafts={[]}
+        tickets={[]}
+        surface={surface}
+        onSurface={setSurface}
+        onStart={() => undefined}
+        onPause={() => undefined}
+        onStop={() => undefined}
+        busy={false}
       />
     </div>
   );

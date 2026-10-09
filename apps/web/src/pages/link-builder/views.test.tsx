@@ -12,7 +12,13 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { emptyDraft, emptyPage, PAGE_BOX_LIMIT } from "./model.js";
 import { LinkBuilderPreview } from "./preview.js";
-import { CreditPackagesView, OperatorView, ProjectView, watchingFrameSrc, WizardView } from "./views.js";
+import {
+  CreditPackagesView,
+  OperatorView,
+  ProjectView,
+  WizardView,
+  watchingFrameSrc,
+} from "./views.js";
 
 const noop = () => undefined;
 const loadArtifact = async () => "data:image/png;base64,iVBO";
@@ -138,9 +144,7 @@ describe("link builder screens", () => {
     expect(html).toContain(`src="${watchingFrameSrc(stream).replaceAll("&", "&amp;")}"`);
     expect(watchingFrameSrc(stream)).toContain("autoconnect=true");
     expect(watchingFrameSrc(stream)).toContain("reconnect=true");
-    expect(watchingFrameSrc(stream)).toContain(
-      "path=novnc%2Fremote%2Fview%2F9.abc%2Fwebsockify",
-    );
+    expect(watchingFrameSrc(stream)).toContain("path=novnc%2Fremote%2Fview%2F9.abc%2Fwebsockify");
     expect(html).toContain('title="Computer"');
     expect(html).toContain("allow-scripts allow-same-origin");
     expect(html).not.toContain("No session");
@@ -507,6 +511,76 @@ describe("link builder screens", () => {
     expect(html).not.toContain("fragen-");
     expect(html).toContain("New accounts per day");
     expect(html).toContain("Live links today");
+  });
+
+  it("shows the counted German problem search and keeps Verify off the working row", () => {
+    const checking = step(0, "research", []);
+    checking.lastAction = "Checking Google for on-topic forums";
+    const looking = step(1, "research", []);
+    looking.lastAction = "Looking for threads";
+    const continuing = step(2, "research", []);
+    continuing.lastAction = "Continuing";
+    const opened = step(3, "research", []);
+    opened.lastAction = "Opened Google search";
+    const html = renderToStaticMarkup(
+      <ProjectView
+        project={
+          {
+            name: "Vitaminexpress",
+            brandName: "Vitaminexpress",
+            slug: "vitaminexpress",
+            topicLanes: [{ tag: "Magnesium kaufen" }],
+            targets: [
+              {
+                url: "https://www.vitaminexpress.org/de/magnesium",
+                keywordClusters: ["magnesium kaufen"],
+              },
+            ],
+          } as LbProjectDetail
+        }
+        status={statusView({
+          activity: "running",
+          activityLabel: "running",
+          lastEvent: "Opened Google search",
+          run: {
+            id: "run-1",
+            date: "2026-10-06",
+            status: "running",
+            newToday: 0,
+            liveToday: 0,
+            liveWeek: 0,
+            uniqueHosts: 0,
+            lastAction: "Opened Google search",
+            lastError: null,
+          },
+        })}
+        hosts={[]}
+        placements={[]}
+        steps={[checking, looking, continuing, opened]}
+        threads={[]}
+        drafts={[]}
+        tickets={[]}
+        surface="dashboard"
+        onSurface={noop}
+        onStart={noop}
+        onPause={noop}
+        onStop={noop}
+        busy={false}
+      />,
+    );
+    expect(html).toContain("Searched Google.de for Magnesium Krämpfe Forum");
+    expect(html).not.toContain("Opened Google search");
+    expect(html).not.toContain("Checking Google for on-topic forums");
+    expect(html).not.toContain("Looking for threads");
+    expect(html).not.toContain("Continuing");
+    expect(html).not.toContain("kaufen");
+    expect(html).toContain('data-stage="research"');
+    const workingAt = html.indexOf('data-status="working"');
+    const nextStatus = html.indexOf("data-status=", workingAt + 12);
+    const row = html.slice(workingAt, nextStatus === -1 ? undefined : nextStatus);
+    expect(row).toContain("Searched Google.de for Magnesium Krämpfe Forum");
+    expect(row).not.toContain("Verify");
+    expect(html).not.toContain('data-status="done"');
   });
 
   it("hides a fixture draft on a customer project", () => {

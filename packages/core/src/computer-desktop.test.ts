@@ -91,8 +91,20 @@ describe("computer desktop window helpers", () => {
     expect(command).toContain("--disable-component-update");
     expect(command).toContain("--disable-translate");
     expect(command).toContain("--lang=de");
+    expect(command).toContain("LANG=de_DE.UTF-8");
+    expect(command).toContain("TranslateEnabled");
+    expect(command).toContain("translate_blocked_languages");
+    expect(command).toContain("app_locale");
+    expect(command).toContain("rakazo-chrome-kiosk-v3");
+    expect(command).toContain("Translate this page");
+    expect(command).toContain("Diese Seite übersetzen");
+    expect(command).toContain("Toolbar");
+    expect(command).not.toContain("rakazo-chrome-kiosk-v2");
     expect(command).toContain("TranslateUI");
     expect(raised).toContain("Google Translate");
+    expect(raised).toContain("Translate this page");
+    expect(raised).not.toContain("key --window");
+    expect(raised).not.toContain("key Escape");
     expect(command).not.toContain("nohup");
   });
 

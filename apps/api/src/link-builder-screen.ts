@@ -13,6 +13,7 @@ import {
 } from "@rakazo/adapters";
 import { type Actor, SandboxKind } from "@rakazo/contracts";
 import {
+  chromeKioskStampCommand,
   detachedBrowserCommand,
   listVisibleWindowsCommand,
   parseVisibleWindows,
@@ -364,12 +365,9 @@ async function showForumSearch(
     query ? desktopShowsProblemSearch(titles, query, shops) : desktopShowsForumSearch(titles);
   try {
     let titles = await visibleTitles(deps, actor, computer);
-    const stamp = await runDesktop(
-      deps,
-      actor,
-      computer,
-      "test -f /tmp/rakazo-chrome-kiosk-v2 && printf '%s\\n' ok || true",
-    ).catch(() => "");
+    const stamp = await runDesktop(deps, actor, computer, chromeKioskStampCommand()).catch(
+      () => "",
+    );
     if (!onProblem(titles) || !stamp.includes("ok")) {
       await runDesktop(deps, actor, computer, prepareKioskDesktopCommand(DESKTOP_DISPLAY));
       await runDesktop(deps, actor, computer, detachedBrowserCommand(DESKTOP_DISPLAY, url));
