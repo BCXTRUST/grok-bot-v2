@@ -32,6 +32,17 @@ describe("sandbox idle", () => {
     expect(harness.jobs.enqueue).toHaveBeenCalledOnce();
   });
 
+  it("does not suspend the desktop while link builder is active", async () => {
+    const harness = idleHarness();
+    harness.prisma.lbProject.findFirst.mockResolvedValueOnce({ id: "project" });
+
+    await sleepComputerIfIdle(harness.deps, harness.computer.id);
+
+    expect(harness.home.commit).not.toHaveBeenCalled();
+    expect(harness.sandbox.stop).not.toHaveBeenCalled();
+    expect(harness.jobs.enqueue).toHaveBeenCalledOnce();
+  });
+
   it("does not let an abandoned waiting takeover prevent idle suspension", async () => {
     const harness = idleHarness();
     harness.prisma.run.findFirst.mockImplementation(async ({ where }) =>
@@ -162,6 +173,7 @@ function idleHarness(options: { exportError?: Error } = {}) {
       update: vi.fn().mockResolvedValue(undefined),
     },
     run: { findFirst: vi.fn().mockResolvedValue(null) },
+    lbProject: { findFirst: vi.fn().mockResolvedValue(null) },
     agentHome: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
     bot: {
       findMany: vi.fn().mockResolvedValue([{ id: "bot", thread: { id: "thread" } }]),

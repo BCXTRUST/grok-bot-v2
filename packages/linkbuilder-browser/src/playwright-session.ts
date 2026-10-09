@@ -193,8 +193,28 @@ export class PlaywrightBrowserSession implements BrowserSession {
 
   async click(selector: string): Promise<void> {
     await this.paceAction();
-    await deadline(this.first(selector).click({ timeout: 8_000 }));
-    await this.page.waitForLoadState("domcontentloaded", { timeout: 8_000 }).catch(() => undefined);
+    // Click in the page. Playwright's actionability check waits until a captcha iframe stops
+    // moving, which it does not, so a submit that already landed is reported as a timeout.
+    const clicked = this.page
+      .evaluate((sel) => {
+        const root = globalThis as unknown as {
+          document: { querySelector: (selector: string) => { click?: () => void } | null };
+        };
+        const node = root.document.querySelector(sel);
+        if (!node || typeof node.click !== "function") return false;
+        node.click();
+        return true;
+      }, selector)
+      .catch(() => false);
+    // A submit starts a navigation that destroys the page context, so the evaluate may never
+    // resolve. The click has already been sent. The caller waits for the result panel.
+    const ok = await Promise.race([
+      clicked,
+      new Promise<boolean>((resolve) => setTimeout(() => resolve(true), 1_500)),
+    ]);
+    if (ok === false) {
+      await deadline(this.first(selector).click({ timeout: 4_000, noWaitAfter: true, force: true }));
+    }
   }
 
   async text(selector: string): Promise<string | null> {
@@ -475,6 +495,10 @@ export async function launchPlaywrightSession(
           `--load-extension=${helperDirs.join(",")}`,
         ]
       : []),
+    // A restored crash bubble sits over the forum form and the controlled page stops answering.
+    "--disable-session-crashed-bubble",
+    "--hide-crash-restore-bubble",
+    "--disable-infobars",
     // Chromium skips the proxy for loopback unless this token removes that bypass.
     ...(options.proxy ? ["--proxy-bypass-list=<-loopback>"] : []),
   ];

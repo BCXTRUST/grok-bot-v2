@@ -56,6 +56,10 @@ export async function sleepComputerIfIdle(
     scheduleComputerSleep(deps.jobs, computerId);
     return;
   }
+  if (await linkBuilderOwnsDesktop(deps.prisma, computer.workspaceId)) {
+    scheduleComputerSleep(deps.jobs, computerId);
+    return;
+  }
 
   const ctx = {
     operationId: "computer.sleep",
@@ -171,6 +175,14 @@ function loadComputer(prisma: PrismaClient, computerId: string) {
       controlBotId: true,
       updatedAt: true,
     },
+  });
+}
+
+/** An active link builder is driving this workspace desktop. Sleep would close that Chrome. */
+function linkBuilderOwnsDesktop(prisma: PrismaClient, workspaceId: string) {
+  return prisma.lbProject.findFirst({
+    where: { workspaceId, status: "active", archivedAt: null },
+    select: { id: true },
   });
 }
 
