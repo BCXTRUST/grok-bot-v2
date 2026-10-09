@@ -127,6 +127,28 @@ export class HtmlBrowserSession {
     await this.fill(selector, token);
   }
 
+  async listText(selector: string): Promise<string[]> {
+    this.assertOpen();
+    return this.$(selector)
+      .map((_, node) => this.$(node).text().replace(/\s+/g, " ").trim())
+      .get()
+      .filter(Boolean);
+  }
+
+  async drag(sourceSelector: string, targetSelector: string): Promise<void> {
+    this.assertOpen();
+    const textIs = sourceSelector.match(/:text-is\("([^"]*)"\)$/);
+    const el = textIs
+      ? this.$(sourceSelector.slice(0, sourceSelector.length - textIs[0].length)).filter(
+          (_, node) => this.$(node).text().replace(/\s+/g, " ").trim() === textIs[1],
+        )
+      : this.$(sourceSelector);
+    const node = el.first();
+    if (!node.length) return;
+    this.$(targetSelector).first().append(node);
+    this.raw = this.$.html();
+  }
+
   async clickables(): Promise<ClickableControl[]> {
     this.assertOpen();
     const controls: ClickableControl[] = [];

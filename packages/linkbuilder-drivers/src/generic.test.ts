@@ -2,7 +2,12 @@ import { createServer, type IncomingMessage } from "node:http";
 import { describe, expect, it } from "vitest";
 import type { FormFieldInfo } from "@rakazo/adapter-kit";
 import { UnmappedFormError } from "./driver.js";
-import { GenericFormDriver, planRegistration, registrationProfile } from "./generic.js";
+import {
+  arrangeSortableCaptcha,
+  GenericFormDriver,
+  planRegistration,
+  registrationProfile,
+} from "./generic.js";
 import { startCustomForumFixture } from "./testing/custom-forum-fixture.js";
 import { HtmlBrowserSession } from "./testing/html-session.js";
 
@@ -120,6 +125,25 @@ describe("generic form driver", () => {
     ]);
   });
 
+  it("moves decoys out of the phpBB property list before submit", async () => {
+    const board = await startSortableQuestionBoard();
+    const session = new HtmlBrowserSession();
+    try {
+      await session.goto(board.origin);
+      await arrangeSortableCaptcha(session);
+      const html = session.html();
+      const matching = html.slice(html.indexOf('id="sortable1"'), html.indexOf('id="sortable2"'));
+      const other = html.slice(html.indexOf('id="sortable2"'));
+      expect(matching).toContain("Deutschsprachig");
+      expect(matching).toContain("phpBB-Download");
+      expect(matching).not.toContain("Dating Website");
+      expect(other).toContain("Dating Website");
+      expect(other).toContain("Crypto Währung");
+    } finally {
+      await board.close();
+    }
+  });
+
   it("clicks the header register link and only then reads the form", async () => {
     const board = await startHeaderRegisterLinkBoard();
     const driver = new GenericFormDriver();
@@ -152,6 +176,39 @@ describe("generic form driver", () => {
     }
   });
 });
+
+function startSortableQuestionBoard(): Promise<{ origin: string; close: () => Promise<void> }> {
+  const page = `<!DOCTYPE html><html><body>
+<p>Welche Eigenschaften passen zu www.phpBB.de?</p>
+<p>Zieh die richtigen Optionen in die korrekte Liste.</p>
+<h3>Passen zu phpBB.de</h3>
+<ul id="sortable1">
+  <li>Deutschsprachig</li>
+  <li>Dating Website</li>
+  <li>Deutsche Übersetzung</li>
+  <li>Supportforum</li>
+  <li>phpBB-Download</li>
+  <li>Crypto Währung</li>
+</ul>
+<h3>Passen NICHT zu phpBB.de</h3>
+<ul id="sortable2"></ul>
+</body></html>`;
+  const server = createServer((_request, response) => {
+    response.writeHead(200, { "content-type": "text/html" });
+    response.end(page);
+  });
+  return new Promise((resolve) => {
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      const port = typeof address === "object" && address ? address.port : 0;
+      resolve({
+        origin: `http://127.0.0.1:${port}/`,
+        close: () =>
+          new Promise((done, reject) => server.close((error) => (error ? reject(error) : done()))),
+      });
+    });
+  });
+}
 
 function startHeaderRegisterLinkBoard(): Promise<{
   origin: string;

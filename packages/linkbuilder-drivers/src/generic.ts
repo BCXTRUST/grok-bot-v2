@@ -434,6 +434,31 @@ async function fieldsIn(
   return session.formFields(selector);
 }
 
+const PHPBB_PROPERTY_KEEP = new Set([
+  "deutschsprachig",
+  "deutsche übersetzung",
+  "supportforum",
+  "phpbb-download",
+]);
+
+/**
+ * phpBB.de asks which properties belong on the board and which do not.
+ * The decoys start in the matching list, so the submit is refused until they move.
+ */
+export async function arrangeSortableCaptcha(session: BrowserSession): Promise<void> {
+  if (!session.listText || !session.drag) return;
+  if (!(await session.exists("#sortable1")) || !(await session.exists("#sortable2"))) return;
+  const page = ((await session.pageText()) ?? "").toLowerCase();
+  if (!page.includes("welche eigenschaften passen zu www.phpbb.de")) return;
+  const items = await session.listText("#sortable1 li");
+  for (const item of items) {
+    const label = item.replace(/\s+/g, " ").trim();
+    if (!label || PHPBB_PROPERTY_KEEP.has(label.toLowerCase())) continue;
+    const escaped = label.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+    await session.drag(`#sortable1 li:text-is("${escaped}")`, "#sortable2");
+  }
+}
+
 /** XenForo keeps the register button on a short timer. Clicking early does not submit. */
 async function waitForRegisterTimer(session: BrowserSession): Promise<void> {
   if (!(await session.exists("#js-regTimer"))) return;
@@ -641,6 +666,7 @@ export class GenericFormDriver implements BoardDriver {
 
   async submitRegistration(session: BrowserSession): Promise<RegistrationResult> {
     if (!this.submitSelector) throw new UnmappedFormError("register");
+    await arrangeSortableCaptcha(session);
     await waitForRegisterTimer(session);
     await session.click(this.submitSelector);
     return this.readRegistrationResult(session, { waitMs: 15_000 });

@@ -133,6 +133,10 @@ export interface BrowserSession {
    * at a form. Hidden controls are omitted.
    */
   clickables?(): Promise<ClickableControl[]>;
+  /** Visible text of every match, in order. One read. */
+  listText?(selector: string): Promise<string[]>;
+  /** Moves a control onto another, for a sortable confirmation the page asks the reader to drag. */
+  drag?(sourceSelector: string, targetSelector: string): Promise<void>;
   /** Status and headers of the last document response, when the engine recorded one. */
   navigationMeta?(): Promise<{ status: number | null; headers: Record<string, string> }>;
   close(): Promise<void>;

@@ -46,6 +46,14 @@ export const BrowserRpcRequestSchema = z.discriminatedUnion("method", [
   z.object({ method: z.literal("navigationMeta") }).strict(),
   z.object({ method: z.literal("formFields"), selector }).strict(),
   z.object({ method: z.literal("clickables") }).strict(),
+  z.object({ method: z.literal("listText"), selector }).strict(),
+  z
+    .object({
+      method: z.literal("drag"),
+      sourceSelector: selector,
+      targetSelector: selector,
+    })
+    .strict(),
   z
     .object({
       method: z.literal("waitFor"),
@@ -138,6 +146,11 @@ export class BrowserRpcServer {
         return session.formFields(request.selector);
       case "clickables":
         return session.clickables ? session.clickables() : [];
+      case "listText":
+        return session.listText ? session.listText(request.selector) : [];
+      case "drag":
+        if (!session.drag) return null;
+        return session.drag(request.sourceSelector, request.targetSelector);
       case "waitFor":
         return session.waitFor(request.selector, { timeoutMs: request.timeoutMs });
       case "screenshotPng":
@@ -244,6 +257,14 @@ export class RpcBrowserSession implements BrowserSession {
     return z
       .object({ status: z.number().nullable(), headers: z.record(z.string(), z.string()) })
       .parse(await this.call({ method: "navigationMeta" }));
+  }
+
+  async listText(selector: string): Promise<string[]> {
+    return z.array(z.string()).parse(await this.call({ method: "listText", selector }));
+  }
+
+  async drag(sourceSelector: string, targetSelector: string): Promise<void> {
+    await this.call({ method: "drag", sourceSelector, targetSelector });
   }
 
   async clickables(): Promise<ClickableControl[]> {

@@ -416,6 +416,21 @@ export class PlaywrightBrowserSession implements BrowserSession {
     return deadline(this.page.locator("body").innerText({ timeout: 8_000 }));
   }
 
+  async listText(selector: string): Promise<string[]> {
+    const texts = await deadline(this.page.locator(selector).allTextContents());
+    return texts.map((text) => text.replace(/\s+/g, " ").trim()).filter(Boolean);
+  }
+
+  async drag(sourceSelector: string, targetSelector: string): Promise<void> {
+    await this.paceAction();
+    await deadline(
+      this.page.locator(sourceSelector).first().dragTo(this.page.locator(targetSelector).first(), {
+        timeout: 4_000,
+        force: true,
+      }),
+    );
+  }
+
   async clickables(): Promise<ClickableControl[]> {
     return this.page.evaluate(() => {
       const quote = (value: string) => value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
