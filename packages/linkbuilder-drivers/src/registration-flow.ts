@@ -112,7 +112,9 @@ export async function runGenericRegistrationJourney(
   }
 
   if (latest.kind !== "pending_email" && latest.kind !== "active") {
-    return parked(latest.kind, null, registration, detected, solved);
+    const messages =
+      latest.kind === "form_error" || latest.kind === "unknown" ? latest.messages.join(" ") : "";
+    return parked(latest.kind, messages.slice(0, 500) || null, registration, detected, solved);
   }
 
   let activation: GenericJourneyResult["activation"] = null;

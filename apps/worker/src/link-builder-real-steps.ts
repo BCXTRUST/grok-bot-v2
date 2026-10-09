@@ -1197,10 +1197,13 @@ function genericJourneyStep(
     });
   }
   if (reason === "form_error" || journey.registration.at(-1) === "form_error") {
+    const detail = (journey.parkLabel || "").slice(0, 500);
     return withSolve({
       ...base,
       lastAction: "The board refused the registration",
-      apply: (tx) => moveHost(tx, host, "failed", { statusReason: reason.slice(0, 500) }),
+      apply: detail
+        ? (tx) => moveHost(tx, host, "failed", { statusReason: detail })
+        : undefined,
     });
   }
   const note = [reason, journey.parkLabel].filter(Boolean).join(": ");

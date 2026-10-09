@@ -60,9 +60,12 @@ interface Rank {
 }
 
 const REGISTER_TEXT =
-  /registrieren|register|sign ?up|konto erstellen|mitglied werden/i;
+  /registrieren|registration|register|sign[\s-]?up|join|mitglied werden|konto (?:erstellen|anlegen)|create (?:an )?account|neu hier/i;
 const LOGIN_TEXT = /log ?in|sign ?in|anmelden|einloggen/i;
-const NOT_REGISTER = /unregister|login|log ?in|sign ?in|anmelden/i;
+const NOT_REGISTER = /unregister|login|log ?in|sign ?in|anmelden|suche|search/i;
+/** The address is the registration page even when the visible words are not. */
+const REGISTER_HREF =
+  /mode=register|\/register\/?|\/signup|action=register|do=register|cmd=register/i;
 
 function blob(field: FormFieldInfo): string {
   return `${field.name ?? ""} ${field.id ?? ""} ${field.label} ${field.group ?? ""} ${field.autocomplete ?? ""} ${field.placeholder ?? ""}`.toLowerCase();
@@ -432,6 +435,27 @@ function scoreCaptchaAnswer(field: FormFieldInfo): number {
   return 0;
 }
 
+/** XenForo prints these on every page. They are not the registration result. */
+const BOARD_CHROME =
+  /javascript ist deaktiviert|veralteten browser|please enable javascript|outdated browser/i;
+
+const RESULT_SELECTORS =
+  ".blockMessage--error, .formRow--error, .inputValidationError, .error, #message, .blockMessage";
+
+/** A search box or a login form is not the registration form. */
+async function registrationFormStillOpen(session: BrowserSession): Promise<boolean> {
+  const fields = await fieldsIn(session, "form");
+  if (!fields?.length) return false;
+  return planRegistration(
+    fields,
+    registrationProfile({
+      username: "member",
+      email: "member@example.com",
+      password: "password",
+    }),
+  ).ok;
+}
+
 async function fieldsIn(
   session: BrowserSession,
   selector: string,
@@ -511,20 +535,29 @@ async function waitForRegisterTimer(session: BrowserSession): Promise<void> {
   }
 }
 
-function registerControlScore(control: ClickableControl): number {
+function registerControlScore(control: ClickableControl, allowBodySubmit: boolean): number {
   const text = control.text.replace(/\s+/g, " ").trim();
+  const href = control.href ?? "";
   if (!text || text.length > 80) return 0;
-  if (NOT_REGISTER.test(text) || !REGISTER_TEXT.test(text)) return 0;
+  if (/nicht einverstanden|not agree|do not agree|decline|abbrechen|cancel/.test(text)) return 0;
+  const hrefHit = REGISTER_HREF.test(href);
+  if ((NOT_REGISTER.test(text) || !REGISTER_TEXT.test(text)) && !hrefHit) return 0;
   const submitsForm =
     (control.tag === "input" || control.tag === "button") &&
-    (control.type === "submit" || control.type === null) &&
+    (control.type === "submit" || control.type === null || control.type === "button") &&
     control.tag !== "a";
-  if (submitsForm && !control.inHeader) return 0;
+  // A submit on a page that already asks for a password is the form itself, not the way in.
+  if (submitsForm && !control.inHeader && !allowBodySubmit) return 0;
   let score = 2;
+  if (hrefHit) score += 4;
   if (
-    /^(registrieren|register|sign ?up|konto erstellen|mitglied werden)\b/i.test(text)
+    /^(registrieren|register|sign ?up|konto erstellen|mitglied werden|jetzt mitmachen)\b/i.test(
+      text,
+    )
   ) {
     score += 3;
+  } else if (REGISTER_TEXT.test(text)) {
+    score += 2;
   }
   if (control.inHeader) score += 2;
   if (control.tag === "a" || control.role === "link" || control.role === "menuitem") score += 2;
@@ -534,19 +567,46 @@ function registerControlScore(control: ClickableControl): number {
 /** Clicks the register link a person would use. Returns false when that link is not on the page. */
 async function clickRegisterControl(session: BrowserSession): Promise<boolean> {
   if (!session.clickables) return false;
+  const fields = await fieldsIn(session, "form");
+  const allowBodySubmit = !fields?.some((field) => field.type === "password");
   const controls = await session.clickables();
   let best: ClickableControl | null = null;
   let bestScore = 0;
   for (const control of controls) {
-    const score = registerControlScore(control);
+    const score = registerControlScore(control, allowBodySubmit);
     if (score > bestScore) {
       best = control;
       bestScore = score;
     }
   }
+  if (!best) best = accountSibling(controls);
   if (!best) return false;
   await session.click(best.selector);
   return true;
+}
+
+/**
+ * Boards put the way in beside the login link and name it however they like.
+ * When that pair is the only extra header link, it is the register control.
+ */
+function accountSibling(controls: readonly ClickableControl[]): ClickableControl | null {
+  const login = controls.find((control) => control.inHeader && LOGIN_TEXT.test(control.text));
+  if (!login) return null;
+  const siblings = controls.filter((control) => {
+    if (!control.inHeader || control === login || control.tag !== "a") return false;
+    const text = control.text.replace(/\s+/g, " ").trim();
+    if (!text || text.length > 40) return false;
+    if (NOT_REGISTER.test(text) || LOGIN_TEXT.test(text)) return false;
+    if (
+      /faq|regeln|rules|search|suche|home|startseite|forum|members|mitglieder|kalender|calendar|impressum|datenschutz|privacy|hilfe|help|kontakt/i.test(
+        text,
+      )
+    ) {
+      return false;
+    }
+    return true;
+  });
+  return siblings.length === 1 ? (siblings[0] ?? null) : null;
 }
 
 async function ensureOnSite(session: BrowserSession, homepageUrl: string): Promise<void> {
@@ -636,18 +696,36 @@ export class GenericFormDriver implements BoardDriver {
   async openRegistration(session: BrowserSession, homepageUrl: string): Promise<RegistrationPage> {
     this.lastPark = null;
     await ensureOnSite(session, homepageUrl);
-    await acceptCookieWall(session);
-    const opened = await clickRegisterControl(session);
-    if (!opened) {
-      await session.goto(homepageUrl);
-      await acceptCookieWall(session);
-      await clickRegisterControl(session);
+    // Same shape as the computer agent: look at this page, take one step, look again.
+    // The words and the path differ on every board, so there is no fixed click sequence.
+    let triedEntry = false;
+    let previous = "";
+    for (let step = 0; step < 6; step += 1) {
+      const here = await session.url();
+      const text = await session.pageText();
+      const signature = `${here}\n${text.slice(0, 500)}`;
+      if (signature === previous) break;
+      previous = signature;
+      if (registrationClosed(text)) return "closed";
+      if ((await this.mapOpenRegistration(session)) === "form") return "form";
+      if ((await acceptCookieWall(session)) === "accepted") continue;
+      if (await this.acceptTermsGate(session)) continue;
+      if (await clickRegisterControl(session)) continue;
+      if (!triedEntry) {
+        triedEntry = true;
+        const entry = this.registerUrl(homepageUrl);
+        if (here !== entry) {
+          await session.goto(entry);
+          continue;
+        }
+      }
+      break;
     }
-    await acceptCookieWall(session);
-    const page = await this.revealRegistration(session);
-    if (page === "form" || page === "closed") return page;
-    this.lastPark = { reason: "unmapped" };
-    return "unknown";
+    if (registrationClosed(await session.pageText())) return "closed";
+    const page = await this.mapOpenRegistration(session);
+    if (page === "form") return "form";
+    this.lastPark = this.lastPark ?? { reason: "unmapped" };
+    return page === "closed" ? "closed" : "unknown";
   }
 
   /** Classifies the current page without navigating. */
@@ -723,9 +801,13 @@ export class GenericFormDriver implements BoardDriver {
     session: BrowserSession,
     options: { waitMs?: number } = {},
   ): Promise<RegistrationResult> {
-    if (options.waitMs) await session.waitFor("#message, .error", { timeoutMs: options.waitMs });
+    if (options.waitMs) {
+      await session.waitFor("#message, .error, .blockMessage--error, .formRow--error", {
+        timeoutMs: options.waitMs,
+      });
+    }
     const messages = await this.pageMessages(session);
-    return classifyRegistration(messages.join("\n"), await session.exists("form"));
+    return classifyRegistration(messages.join("\n"), await registrationFormStillOpen(session));
   }
 
   async activationResult(session: BrowserSession): Promise<ActivationResult> {
@@ -877,22 +959,22 @@ export class GenericFormDriver implements BoardDriver {
   }
 
   async pageMessages(session: BrowserSession): Promise<string[]> {
-    const error = await session.text(".error, .blockMessage, .formRow--error, .inputValidationError");
-    const panel = await session.text("#message");
-    return [error, panel].map((text) => text?.trim() ?? "").filter(Boolean);
+    const listed = session.listText ? await session.listText(RESULT_SELECTORS) : [];
+    const raw = listed.length > 0 ? listed : [(await session.text(RESULT_SELECTORS)) ?? ""];
+    const seen = new Set<string>();
+    const messages: string[] = [];
+    for (const item of raw) {
+      const text = item.replace(/\s+/g, " ").trim();
+      if (!text || text.length > 600 || BOARD_CHROME.test(text) || seen.has(text)) continue;
+      seen.add(text);
+      messages.push(text);
+    }
+    return messages;
   }
 
   /** True when the open form tells the reader an administrator must activate the account. */
   async formRequiresAdmin(session: BrowserSession): Promise<boolean> {
     return adminActivationNotice(await session.pageText());
-  }
-
-  private async revealRegistration(session: BrowserSession): Promise<RegistrationPage> {
-    for (let attempt = 0; attempt < 2; attempt += 1) {
-      if (!(await this.acceptTermsGate(session))) break;
-    }
-    if (registrationClosed(await session.pageText())) return "closed";
-    return this.mapOpenRegistration(session);
   }
 
   private async acceptTermsGate(session: BrowserSession): Promise<boolean> {

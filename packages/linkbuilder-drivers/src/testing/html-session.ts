@@ -170,7 +170,11 @@ export class HtmlBrowserSession {
     this.$("a, button, [role='link'], [role='button'], [role='menuitem']").each((_, node) => {
       if (node.type !== "tag") return;
       const el = this.$(node);
-      const text = el.text().replace(/\s+/g, " ").trim();
+      const text = (
+        el.text().replace(/\s+/g, " ").trim() ||
+        (el.attr("aria-label") ?? "").replace(/\s+/g, " ").trim() ||
+        (el.attr("title") ?? "").replace(/\s+/g, " ").trim()
+      );
       if (!text || text.length > 80) return;
       const style = el.attr("style") ?? "";
       if (el.attr("hidden") !== undefined || /display\s*:\s*none/i.test(style)) return;

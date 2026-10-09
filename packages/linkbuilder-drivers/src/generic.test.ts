@@ -1,6 +1,6 @@
 import { createServer, type IncomingMessage } from "node:http";
 import { describe, expect, it } from "vitest";
-import type { FormFieldInfo } from "@rakazo/adapter-kit";
+import type { BrowserSession, FormFieldInfo } from "@rakazo/adapter-kit";
 import { UnmappedFormError } from "./driver.js";
 import {
   arrangeSortableCaptcha,
@@ -63,6 +63,61 @@ describe("generic form driver", () => {
     } finally {
       await fixture.close();
     }
+  });
+
+  it("reads a XenForo confirmation behind the browser warning", async () => {
+    const driver = new GenericFormDriver();
+    const confirmation =
+      "Danke. Eine E-Mail wurde an sophie@inbox.example gesendet. Bitte klicke auf den Link.";
+    const session = xenforoPage(
+      [
+        "JavaScript ist deaktiviert. Für eine bessere Darstellung aktiviere bitte JavaScript in deinem Browser, bevor du fortfährst.",
+        "Du verwendest einen veralteten Browser. Es ist möglich, dass diese oder andere Websites nicht korrekt angezeigt werden.",
+        confirmation,
+      ],
+      [field({ selector: "#q", name: "keywords", label: "Suche" })],
+    );
+    expect(await driver.pageMessages(session)).toEqual([confirmation]);
+    expect(await driver.readRegistrationResult(session)).toEqual({ kind: "pending_email" });
+  });
+
+  it("keeps the XenForo form error and drops the browser warning", async () => {
+    const driver = new GenericFormDriver();
+    const refusal = "Der Benutzername ist bereits vergeben.";
+    const session = xenforoPage(
+      [
+        "Du verwendest einen veralteten Browser.",
+        refusal,
+      ],
+      [
+        field({
+          selector: "#real-user",
+          name: "hasheduser",
+          label: "Benutzername",
+          autocomplete: "username",
+          required: true,
+        }),
+        field({
+          selector: "#email",
+          name: "hashedmail",
+          type: "email",
+          label: "E-Mail",
+          autocomplete: "email",
+          required: true,
+        }),
+        field({
+          selector: "#password",
+          name: "hashedpass",
+          type: "password",
+          label: "Passwort",
+          autocomplete: "new-password",
+          required: true,
+        }),
+        field({ selector: "#submit", tag: "button", type: "submit", label: "Registrieren" }),
+      ],
+    );
+    const result = await driver.readRegistrationResult(session);
+    expect(result).toEqual({ kind: "form_error", messages: [refusal] });
   });
 
   it("maps a XenForo register form and ignores the username decoy", () => {
@@ -204,6 +259,18 @@ describe("generic form driver", () => {
       expect(await driver.openRegistration(session, board.origin)).toBe("form");
       expect(await session.url()).toContain("/mitglied");
       expect(board.sawHome).toBe(true);
+    } finally {
+      await board.close();
+    }
+  });
+
+  it("follows the header link beside login when the words are not Register", async () => {
+    const board = await startNamedRegisterLinkBoard();
+    const driver = new GenericFormDriver();
+    const session = new HtmlBrowserSession();
+    try {
+      expect(await driver.openRegistration(session, board.origin)).toBe("form");
+      expect(await session.url()).toContain("/mitmachen");
     } finally {
       await board.close();
     }
@@ -369,6 +436,15 @@ function startHeaderRegisterLinkBoard(): Promise<{
   });
 }
 
+function xenforoPage(messages: string[], fields: FormFieldInfo[]): BrowserSession {
+  return {
+    listText: async () => messages,
+    text: async () => messages[0] ?? null,
+    exists: async () => true,
+    formFields: async () => fields,
+  } as unknown as BrowserSession;
+}
+
 function field(partial: Partial<FormFieldInfo> & Pick<FormFieldInfo, "selector">): FormFieldInfo {
   return {
     tag: "input",
@@ -385,6 +461,43 @@ function field(partial: Partial<FormFieldInfo> & Pick<FormFieldInfo, "selector">
 
 function page(title: string, content: string): string {
   return `<!DOCTYPE html><html><body><h1>${title}</h1>${content}</body></html>`;
+}
+
+function startNamedRegisterLinkBoard(): Promise<{
+  origin: string;
+  close: () => Promise<void>;
+}> {
+  const home = `<!DOCTYPE html><html><body>
+<header><nav>
+<a href="/faq">FAQ</a>
+<a href="/mitmachen">Jetzt mitmachen</a>
+<a href="/login">Anmelden</a>
+</nav></header>
+</body></html>`;
+  const form = `<!DOCTYPE html><html><body>
+<form id="register" method="post" action="/mitmachen">
+<label for="username">Benutzername</label><input id="username" name="username" type="text">
+<label for="email">E-Mail-Adresse</label><input id="email" name="email" type="email">
+<label for="new_password">Passwort</label><input id="new_password" name="new_password" type="password">
+<input type="submit" name="go" value="Registrieren">
+</form>
+</body></html>`;
+  const server = createServer((request, response) => {
+    const url = new URL(request.url ?? "/", "http://127.0.0.1");
+    response.writeHead(200, { "content-type": "text/html" });
+    response.end(url.pathname === "/mitmachen" ? form : home);
+  });
+  return new Promise((resolve) => {
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      const port = typeof address === "object" && address ? address.port : 0;
+      resolve({
+        origin: `http://127.0.0.1:${port}`,
+        close: () =>
+          new Promise((done, reject) => server.close((error) => (error ? reject(error) : done()))),
+      });
+    });
+  });
 }
 
 function startSearchThenAgreementBoard(): Promise<{

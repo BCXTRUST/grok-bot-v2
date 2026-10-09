@@ -6,7 +6,7 @@ import type { RegistrationResult } from "./driver.js";
  */
 
 const PENDING_EMAIL =
-  /activation key has been sent|check your e-?mail|aktivierungs-?schlüssel|freischalten|e-?mail.*(aktivier|bestätig)|benutzer ist momentan inaktiv/i;
+  /activation key has been sent|check your e-?mail|confirmation e-?mail has been sent|aktivierungs-?schlüssel|freischalten|e-?mail.*(aktivier|bestätig)|e-?mail wurde .{0,120}gesendet|registrierung ist (?:fast )?abgeschlossen|benutzer ist momentan inaktiv/i;
 const PENDING_ADMIN =
   /administrator (must|will) (activate|approve)|activation by an administrator|(?:vom|von einem|durch einen) administrator (freigeschaltet|aktiviert)/i;
 const ACTIVE =

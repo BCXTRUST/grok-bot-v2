@@ -470,7 +470,11 @@ export class PlaywrightBrowserSession implements BrowserSession {
       for (const el of root.document.querySelectorAll(
         "a, button, [role='link'], [role='button'], [role='menuitem']",
       )) {
-        const text = (el.textContent ?? "").replace(/\s+/g, " ").trim();
+        const text = (
+          (el.textContent ?? "").replace(/\s+/g, " ").trim() ||
+          (el.getAttribute("aria-label") ?? "").replace(/\s+/g, " ").trim() ||
+          (el.getAttribute("title") ?? "").replace(/\s+/g, " ").trim()
+        );
         if (!text || text.length > 80) continue;
         const view = el.ownerDocument.defaultView;
         const style = view ? view.getComputedStyle(el) : null;

@@ -49,6 +49,12 @@ describe("registration notices", () => {
     ).toBe("pending_email");
     expect(
       classifyRegistration(
+        "Danke. Eine E-Mail wurde an sophie@inbox.example gesendet. Bitte klicke auf den Link.",
+        true,
+      ).kind,
+    ).toBe("pending_email");
+    expect(
+      classifyRegistration(
         "An administrator will activate your account before you can log in.",
         false,
       ).kind,
