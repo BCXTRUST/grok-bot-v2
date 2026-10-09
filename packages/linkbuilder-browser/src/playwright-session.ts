@@ -9,6 +9,7 @@ import {
   rateLimitWaitMs,
 } from "@rakazo/linkbuilder-core";
 import type { BrowserContext, BrowserType, Page, Request } from "playwright";
+import { clickControl } from "./page-click.js";
 
 /** Playwright resets its own action timeout when a page navigates, so a reloading board can wait forever. */
 const ACTION_DEADLINE_MS = 12_000;
@@ -226,21 +227,7 @@ export class PlaywrightBrowserSession implements BrowserSession {
     const navigation = this.watchNavigation();
     // Click in the page. Playwright's actionability check waits until a captcha iframe stops
     // moving, which it does not, so a submit that already landed is reported as a timeout.
-    const clicked = this.page
-      .evaluate((sel) => {
-        const root = globalThis as unknown as {
-          document: { querySelector: (selector: string) => { click?: () => void } | null };
-        };
-        let node: { click?: () => void } | null = null;
-        try {
-          node = root.document.querySelector(sel);
-        } catch {
-          return false;
-        }
-        if (!node || typeof node.click !== "function") return false;
-        node.click();
-        return true;
-      }, selector)
+    const clicked = this.page.evaluate(clickControl, selector)
       // A rejected evaluate here means the click started a navigation that destroyed the page
       // context; the click itself has already landed, so it must not be sent again.
       .catch(() => true);
