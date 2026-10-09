@@ -533,6 +533,7 @@ export class PlaywrightBrowserSession implements BrowserSession {
         textContent: string | null;
         getAttribute: (name: string) => string | null;
         hasAttribute: (name: string) => boolean;
+        getClientRects: () => { length: number };
       }
       const hasControl = (form: DomNode, probe: string) => {
         try {
@@ -632,7 +633,11 @@ export class PlaywrightBrowserSession implements BrowserSession {
           placeholder: el.getAttribute("placeholder"),
           group: legend?.textContent?.replace(/\s+/g, " ").trim() || null,
           hidden:
-            type === "hidden" || el.hasAttribute("hidden") || /display\s*:\s*none/i.test(style),
+            type === "hidden" ||
+            el.hasAttribute("hidden") ||
+            /display\s*:\s*none/i.test(style) ||
+            el.getClientRects().length === 0 ||
+            Boolean(el.closest(".formRow--limited")),
           value: el.getAttribute("value"),
           options,
         };

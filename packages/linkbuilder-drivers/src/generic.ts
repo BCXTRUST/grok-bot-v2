@@ -877,7 +877,7 @@ export class GenericFormDriver implements BoardDriver {
   }
 
   async pageMessages(session: BrowserSession): Promise<string[]> {
-    const error = await session.text(".error");
+    const error = await session.text(".error, .blockMessage, .formRow--error, .inputValidationError");
     const panel = await session.text("#message");
     return [error, panel].map((text) => text?.trim() ?? "").filter(Boolean);
   }
