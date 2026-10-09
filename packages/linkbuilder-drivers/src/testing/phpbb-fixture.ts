@@ -309,6 +309,10 @@ export async function startPhpbbFixture(options: PhpbbFixtureOptions): Promise<P
         email: values.email ?? "",
         confirmId,
         error: values.error ? `<p class="error">${escapeHtml(values.error)}</p>` : "",
+        notice:
+          activation === "admin"
+            ? `<p class="notice" id="activation-notice">An administrator must activate your account before you can log in.</p>`
+            : "",
         captchaBlock: captchaBlock(confirmId),
         extraFields: extraRequired ? extraFieldsBlock() : "",
       }),

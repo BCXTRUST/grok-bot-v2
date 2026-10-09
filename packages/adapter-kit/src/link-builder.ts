@@ -144,6 +144,15 @@ export interface FormFieldInfo {
   label: string;
   role: string | null;
   required: boolean;
+  placeholder?: string | null;
+  /** Fieldset legend, when the control sits in one. */
+  group?: string | null;
+  /** True for hidden and `display:none` controls. Those stay empty. */
+  hidden?: boolean;
+  /** Current value, including a radio or checkbox value. */
+  value?: string | null;
+  /** Select options, in document order. */
+  options?: readonly { value: string; label: string }[];
 }
 
 export interface BrowserSessionProvider {

@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { captchaRejected, classifyRegistration } from "./messages.js";
+import {
+  adminActivationNotice,
+  captchaRejected,
+  classifyRegistration,
+  formErrorFixable,
+} from "./messages.js";
 
 describe("registration notices", () => {
   it("treats a refused captcha as retryable, not as a board refusal", () => {
@@ -29,5 +34,28 @@ describe("registration notices", () => {
       expect(captchaRejected(text), text).toBe(false);
       expect(classifyRegistration(text, true).kind).toBe("form_error");
     }
+  });
+
+  it("classifies the registration answers the generic flow retries or stops on", () => {
+    expect(classifyRegistration("Please enter your birthday.", true).kind).toBe("form_error");
+    expect(formErrorFixable(["Please enter your birthday."])).toBe(true);
+    expect(formErrorFixable(["The username you entered is already in use."])).toBe(true);
+    expect(
+      classifyRegistration(
+        "An activation key has been sent to the email address you provided.",
+        false,
+      ).kind,
+    ).toBe("pending_email");
+    expect(
+      classifyRegistration(
+        "An administrator will activate your account before you can log in.",
+        false,
+      ).kind,
+    ).toBe("pending_admin");
+    expect(classifyRegistration("Your account has now been activated.", false).kind).toBe("active");
+    expect(
+      adminActivationNotice("An administrator must activate your account before you can log in."),
+    ).toBe(true);
+    expect(adminActivationNotice("An activation key has been sent to your email.")).toBe(false);
   });
 });

@@ -137,7 +137,7 @@ export class HtmlBrowserSession {
         if (parent.length) label = parent.text().replace(/\s+/g, " ").trim();
       }
       if (!label && (tag === "button" || el.attr("type") === "submit")) {
-        label = el.text().replace(/\s+/g, " ").trim();
+        label = (el.text() || el.attr("value") || "").replace(/\s+/g, " ").trim();
       }
       if (!label) label = (el.attr("aria-label") ?? "").trim();
       const control = id
@@ -147,16 +147,40 @@ export class HtmlBrowserSession {
         : name
           ? `[name="${name.replace(/"/g, "")}"]`
           : `${tag}:nth-of-type(${index + 1})`;
+      const type =
+        el.attr("type") ?? (tag === "textarea" ? null : tag === "button" ? "submit" : null);
+      const legend = el.closest("fieldset").children("legend").first();
+      const options =
+        tag === "select"
+          ? el
+              .find("option")
+              .toArray()
+              .map((optionNode) => {
+                const option = this.$(optionNode);
+                return {
+                  value: option.attr("value") ?? option.text().trim(),
+                  label: option.text().replace(/\s+/g, " ").trim(),
+                };
+              })
+          : undefined;
       fields.push({
         selector: control,
         tag,
-        type: el.attr("type") ?? (tag === "textarea" ? null : tag === "button" ? "submit" : null),
+        type,
         name,
         id,
         autocomplete: el.attr("autocomplete") ?? null,
         label,
         role: el.attr("role") ?? (tag === "textarea" ? "textbox" : null),
         required: el.attr("required") !== undefined,
+        placeholder: el.attr("placeholder") ?? null,
+        group: legend.length ? legend.text().replace(/\s+/g, " ").trim() : null,
+        hidden:
+          type === "hidden" ||
+          el.attr("hidden") !== undefined ||
+          /display\s*:\s*none/i.test(el.attr("style") ?? ""),
+        value: el.attr("value") ?? null,
+        options,
       });
     });
     return fields;

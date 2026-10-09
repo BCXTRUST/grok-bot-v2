@@ -415,7 +415,10 @@ export class PlaywrightBrowserSession implements BrowserSession {
           ? rootDoc.document.querySelector(`label[for="${cssEscape(id)}"]`)
           : null;
         const parent = el.closest("label");
-        const own = tag === "button" || el.getAttribute("type") === "submit" ? el.textContent : "";
+        const own =
+          tag === "button" || el.getAttribute("type") === "submit"
+            ? el.textContent || el.getAttribute("value") || ""
+            : "";
         const label = (
           labelFor?.textContent ||
           parent?.textContent ||
@@ -430,16 +433,33 @@ export class PlaywrightBrowserSession implements BrowserSession {
           : name
             ? `[name="${cssEscape(name)}"]`
             : `${tag}:nth-of-type(${index + 1})`;
+        const type = el.getAttribute("type");
+        const fieldset = el.closest("fieldset");
+        const legend = fieldset?.querySelector("legend");
+        const style = el.getAttribute("style") ?? "";
+        const options =
+          tag === "select"
+            ? [...el.querySelectorAll("option")].map((option) => ({
+                value: option.getAttribute("value") ?? (option.textContent ?? "").trim(),
+                label: (option.textContent ?? "").replace(/\s+/g, " ").trim(),
+              }))
+            : undefined;
         return {
           selector: control,
           tag,
-          type: el.getAttribute("type"),
+          type,
           name,
           id,
           autocomplete: el.getAttribute("autocomplete"),
           label,
           role: el.getAttribute("role") ?? (tag === "textarea" ? "textbox" : null),
           required: el.hasAttribute("required"),
+          placeholder: el.getAttribute("placeholder"),
+          group: legend?.textContent?.replace(/\s+/g, " ").trim() || null,
+          hidden:
+            type === "hidden" || el.hasAttribute("hidden") || /display\s*:\s*none/i.test(style),
+          value: el.getAttribute("value"),
+          options,
         };
       });
     }, selector);
