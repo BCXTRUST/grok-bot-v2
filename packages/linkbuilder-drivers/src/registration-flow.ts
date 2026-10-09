@@ -97,6 +97,20 @@ export async function runGenericRegistrationJourney(
     break;
   }
 
+  if (latest.kind === "pending_admin") {
+    return {
+      outcome: "pending_admin",
+      fromForm: false,
+      parkReason: null,
+      parkLabel: null,
+      registration,
+      detected,
+      solved,
+      activation: null,
+      permalink: null,
+    };
+  }
+
   if (latest.kind !== "pending_email" && latest.kind !== "active") {
     return parked(latest.kind, null, registration, detected, solved);
   }

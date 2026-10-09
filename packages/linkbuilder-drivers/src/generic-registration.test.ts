@@ -6,6 +6,7 @@ import { boardDriverFor } from "./index.js";
 import { runGenericRegistrationJourney } from "./registration-flow.js";
 import { startCustomForumFixture } from "./testing/custom-forum-fixture.js";
 import { HtmlBrowserSession } from "./testing/html-session.js";
+import { startPhpbbFixture } from "./testing/phpbb-fixture.js";
 import {
   startAdminActivationFixture,
   startCustomPhpBoardFixture,
@@ -294,6 +295,39 @@ describe("generic registration flow", () => {
       expect(result.activation).toBe("login_form");
       expect(result.outcome).toBe("posted");
       expect(result.permalink).toMatch(/\/thread\/1#post/);
+    } finally {
+      await session.close();
+      await board.close();
+    }
+  });
+
+  it("treats a German administrator hold as pending admin even when the search form stays", async () => {
+    const mail = await mailbox();
+    const board = await startPhpbbFixture({
+      boardName: "Admin After Submit",
+      challenge: "widget",
+      widget: "hcaptcha",
+      activation: "admin",
+      adminNotice: "result",
+      deliverMail: mail.deliverMail,
+    });
+    const solver = new FakeCaptchaSolver();
+    const session = new HtmlBrowserSession("admin-result");
+    try {
+      const result = await runGenericRegistrationJourney(
+        session,
+        board.origin,
+        profile,
+        solver,
+        context,
+        mail.emulator,
+        mail.inboxId,
+        reply,
+      );
+      expect(result.outcome).toBe("pending_admin");
+      expect(result.fromForm).toBe(false);
+      expect(result.registration).toEqual(["pending_admin"]);
+      expect(result.permalink).toBeNull();
     } finally {
       await session.close();
       await board.close();

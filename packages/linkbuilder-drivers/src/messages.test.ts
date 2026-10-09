@@ -54,6 +54,17 @@ describe("registration notices", () => {
     ).toBe("pending_admin");
     expect(classifyRegistration("Your account has now been activated.", false).kind).toBe("active");
     expect(
+      classifyRegistration(
+        "Information Dein Benutzerkonto wurde erstellt. Es muss jedoch erst durch einen Administrator freigeschaltet werden. Die Administratoren wurden per E-Mail informiert.",
+        true,
+      ).kind,
+    ).toBe("pending_admin");
+    expect(
+      adminActivationNotice(
+        "Dein Benutzerkonto wurde erstellt. Es muss jedoch erst durch einen Administrator freigeschaltet werden.",
+      ),
+    ).toBe(true);
+    expect(
       adminActivationNotice("An administrator must activate your account before you can log in."),
     ).toBe(true);
     expect(adminActivationNotice("An activation key has been sent to your email.")).toBe(false);

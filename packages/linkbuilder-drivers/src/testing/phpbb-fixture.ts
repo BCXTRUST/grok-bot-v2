@@ -44,6 +44,11 @@ export interface PhpbbFixtureOptions {
   /** How posted links are rendered. */
   rel?: FixtureRel;
   activation?: "email" | "none" | "admin";
+  /**
+   * `form` prints the admin sentence on the register form. `result` hides it until the
+   * account is created, which is what phpBB does when activation is "by an administrator".
+   */
+  adminNotice?: "form" | "result";
   /** Registration submits that return the spam-protection sentence before a real result. */
   spamRejects?: number;
   cookieWall?: boolean;
@@ -310,7 +315,7 @@ export async function startPhpbbFixture(options: PhpbbFixtureOptions): Promise<P
         confirmId,
         error: values.error ? `<p class="error">${escapeHtml(values.error)}</p>` : "",
         notice:
-          activation === "admin"
+          activation === "admin" && options.adminNotice !== "result"
             ? `<p class="notice" id="activation-notice">An administrator must activate your account before you can log in.</p>`
             : "",
         captchaBlock: captchaBlock(confirmId),
@@ -475,17 +480,23 @@ export async function startPhpbbFixture(options: PhpbbFixtureOptions): Promise<P
         };
         users.set(username.toLowerCase(), user);
         if (activation === "admin") {
+          const germanResult = options.adminNotice === "result";
           await options.deliverMail({
             to: email,
             from: `noreply@${new URL(origin).hostname}`,
             subject: `Account approval on “${boardName}”`,
-            textBody: `Hello ${username},\n\nYour account has been created. An administrator must activate your account before you can log in.\n`,
+            textBody: germanResult
+              ? `Hallo ${username},\n\nDein Benutzerkonto wurde erstellt. Es muss jedoch erst durch einen Administrator freigeschaltet werden.\n`
+              : `Hello ${username},\n\nYour account has been created. An administrator must activate your account before you can log in.\n`,
           });
           return message(
             response,
             request,
             "Information",
-            "Your account has been created. An administrator will activate your account before you can log in.",
+            germanResult
+              ? "Dein Benutzerkonto wurde erstellt. Es muss jedoch erst durch einen Administrator freigeschaltet werden. Die Administratoren wurden per E-Mail informiert."
+              : "Your account has been created. An administrator will activate your account before you can log in.",
+            germanResult ? `<form id="search"><input name="keywords" /></form>` : "",
           );
         }
         if (activation === "none") {
