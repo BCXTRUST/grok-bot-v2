@@ -116,6 +116,8 @@ export function browserFactoryFromEnv(input: {
   return new SandboxBrowserSessionFactory({
     sandbox: input.sandbox,
     helperDirs: dirs(env.LINK_BUILDER_SANDBOX_HELPER_DIR),
+    // E2B's desktop user is `user`. The Docker computer image uses `/home/rakazo`.
+    ...(env.SANDBOX_PROVIDER === "e2b" ? { profileRoot: "/home/user/.browser-profiles" } : {}),
     proxyResolver: input.proxyResolver,
     async resolveComputer(persona) {
       const project = await prisma.lbProject.findUnique({

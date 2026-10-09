@@ -5,7 +5,11 @@ import { LocalBrowserRefused } from "@rakazo/linkbuilder-browser";
 import { describe, expect, it } from "vitest";
 import { isLinkBuilderFakeEnabled } from "./link-builder-fake.js";
 import { isLinkBuilderRealEnabled } from "./link-builder-real.js";
-import { helperConnectionPlan, templateReply } from "./link-builder-real-steps.js";
+import {
+  helperConnectionPlan,
+  observedPageHelper,
+  templateReply,
+} from "./link-builder-real-steps.js";
 import { browserFactoryFromEnv, proxyResolverFor } from "./link-builder-real-wiring.js";
 
 const prisma = {} as PrismaClient;
@@ -17,6 +21,26 @@ describe("link builder real driver wiring", () => {
     expect(helperConnectionPlan("")).toBe("api");
     expect(helperConnectionPlan("2026.10.4.16")).toBe("connected");
     expect(helperConnectionPlan("1999.1.1")).toBe("park");
+  });
+
+  it("ignores desktop extensions that are not the Page Helper", () => {
+    const unrelated = { id: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", version: "1.0" };
+    expect(observedPageHelper([unrelated])).toBeNull();
+    expect(
+      observedPageHelper([
+        unrelated,
+        { id: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", version: "2026.10.4.16" },
+      ]),
+    ).toEqual({
+      version: "2026.10.4.16",
+      extensionId: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    });
+    expect(
+      observedPageHelper([{ id: "kaddlbmbmgfolcpajhnfpcbekblekifn", version: "1999.1.1" }]),
+    ).toEqual({
+      version: "1999.1.1",
+      extensionId: "kaddlbmbmgfolcpajhnfpcbekblekifn",
+    });
   });
 
   it("runs only behind LINK_BUILDER_DRIVER=real and leaves the fake runner off", () => {

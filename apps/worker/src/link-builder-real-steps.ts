@@ -689,17 +689,27 @@ async function openSession(ctx: StepContext): Promise<StepResult> {
   };
 }
 
+/**
+ * The pinned store build, or any loaded copy of that version. Other Chrome extensions
+ * (a desktop image often has one at version 1.0) are not the Page Helper.
+ */
+export function observedPageHelper(
+  loaded: ReadonlyArray<{ id: string; version: string }>,
+): { version: string | null; extensionId: string } | null {
+  const pinned = loaded.find((item) => item.id === PAGE_HELPER_EXTENSION_ID);
+  if (pinned) return { version: pinned.version || null, extensionId: pinned.id };
+  const match = loaded.find((item) => item.version === PAGE_HELPER_VERSION);
+  if (match) return { version: match.version, extensionId: match.id };
+  return null;
+}
+
 async function readHelperVersion(session: BrowserSession): Promise<{
   version: string | null;
   extensionId: string | null;
 }> {
   const loaded = (await session.extensionVersions?.()) ?? [];
-  const pinned = loaded.find((item) => item.id === PAGE_HELPER_EXTENSION_ID);
-  if (pinned) return { version: pinned.version || null, extensionId: pinned.id };
-  if (loaded.length > 0) {
-    const match = loaded.find((item) => item.version === PAGE_HELPER_VERSION) ?? loaded[0]!;
-    return { version: match.version || null, extensionId: match.id };
-  }
+  const helper = observedPageHelper(loaded);
+  if (helper) return helper;
   await session.waitFor("html[data-page-helper-version]", { timeoutMs: 5_000 });
   return {
     version: await session.attribute("html", "data-page-helper-version"),
