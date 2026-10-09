@@ -617,6 +617,11 @@ export class PlaywrightBrowserSession implements BrowserSession {
         const fieldset = el.closest("fieldset");
         const legend = fieldset?.querySelector("legend");
         const style = el.getAttribute("style") ?? "";
+        const rowText = (el.closest(".formRow, .form-row")?.textContent ?? "")
+          .replace(/\s+/g, " ")
+          .toLowerCase();
+        const decoy =
+          /bitte lasse dieses feld frei|leave this field (?:blank|empty)|do not fill/.test(rowText);
         const options =
           tag === "select"
             ? [...el.querySelectorAll("option")].map((option) => ({
@@ -641,7 +646,8 @@ export class PlaywrightBrowserSession implements BrowserSession {
             el.hasAttribute("hidden") ||
             /display\s*:\s*none/i.test(style) ||
             el.getClientRects().length === 0 ||
-            Boolean(el.closest(".formRow--limited")),
+            Boolean(el.closest(".formRow--limited")) ||
+            decoy,
           value: el.getAttribute("value"),
           options,
         };

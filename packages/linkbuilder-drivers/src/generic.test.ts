@@ -264,6 +264,29 @@ describe("generic form driver", () => {
     }
   });
 
+  it("does not type into a field the page says to leave empty", async () => {
+    const board = await startDecoyNameBoard();
+    const driver = new GenericFormDriver();
+    const session = new HtmlBrowserSession();
+    try {
+      await session.goto(board.origin);
+      const fields = await session.formFields("form");
+      const decoy = fields.find((field) => field.name === "username");
+      const real = fields.find((field) => field.autocomplete === "username");
+      expect(decoy?.hidden).toBe(true);
+      expect(real?.hidden).toBe(false);
+      await driver.fillRegistration(session, {
+        username: "sophiebraun",
+        email: "sophie@inbox.example",
+        password: "Fx-Pass-Word-77",
+      });
+      expect(await session.attribute("#real-user", "value")).toBe("sophiebraun");
+      expect(await session.attribute("#decoy-user", "value")).toBeNull();
+    } finally {
+      await board.close();
+    }
+  });
+
   it("follows the header link beside login when the words are not Register", async () => {
     const board = await startNamedRegisterLinkBoard();
     const driver = new GenericFormDriver();
@@ -461,6 +484,34 @@ function field(partial: Partial<FormFieldInfo> & Pick<FormFieldInfo, "selector">
 
 function page(title: string, content: string): string {
   return `<!DOCTYPE html><html><body><h1>${title}</h1>${content}</body></html>`;
+}
+
+function startDecoyNameBoard(): Promise<{ origin: string; close: () => Promise<void> }> {
+  const html = `<!DOCTYPE html><html><body>
+<form method="post" action="/register">
+<dl class="formRow formRow--limited"><label for="decoy-user">Benutzername</label>
+<input id="decoy-user" name="username" autocomplete="off"><div>Bitte lasse dieses Feld frei.</div></dl>
+<dl class="formRow"><label for="real-user">Benutzername</label>
+<input id="real-user" name="hashed" autocomplete="username" required></dl>
+<label for="email">E-Mail</label><input id="email" name="email" type="email" autocomplete="email">
+<label for="password">Passwort</label><input id="password" name="pass" type="password" autocomplete="new-password">
+<button type="submit">Registrieren</button>
+</form></body></html>`;
+  const server = createServer((_request, response) => {
+    response.writeHead(200, { "content-type": "text/html" });
+    response.end(html);
+  });
+  return new Promise((resolve) => {
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      const port = typeof address === "object" && address ? address.port : 0;
+      resolve({
+        origin: `http://127.0.0.1:${port}`,
+        close: () =>
+          new Promise((done, reject) => server.close((error) => (error ? reject(error) : done()))),
+      });
+    });
+  });
 }
 
 function startNamedRegisterLinkBoard(): Promise<{

@@ -310,7 +310,10 @@ export class HtmlBrowserSession {
         hidden:
           type === "hidden" ||
           el.attr("hidden") !== undefined ||
-          /display\s*:\s*none/i.test(el.attr("style") ?? ""),
+          /display\s*:\s*none/i.test(el.attr("style") ?? "") ||
+          /bitte lasse dieses feld frei|leave this field (?:blank|empty)|do not fill/i.test(
+            el.closest(".formRow, .form-row").text(),
+          ),
         value: el.attr("value") ?? null,
         options,
       });
