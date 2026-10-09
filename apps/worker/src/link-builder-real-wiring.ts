@@ -3,6 +3,7 @@ import type {
   AdapterContext,
   BrowserSessionFactory,
   CaptchaSolver,
+  ComputerRef,
   ProxyEndpoint,
   ProxyProvider,
   SandboxProvider,
@@ -43,6 +44,45 @@ function dirs(value: string | undefined): string[] {
  * runs it on this host instead; the local factory refuses that in production without
  * `LINK_BUILDER_ALLOW_LOCAL_BROWSER=true`.
  */
+/**
+ * A running computer is used as-is. A suspended or stopped one is resumed through the sandbox
+ * so a paused project can continue after the desktop sleeps.
+ */
+export async function resolvePersonaComputer(input: {
+  prisma: PrismaClient;
+  sandbox: SandboxProvider;
+  projectId: string;
+  context: AdapterContext;
+  dataDir: string;
+}): Promise<ComputerRef> {
+  const project = await input.prisma.lbProject.findUnique({
+    where: { id: input.projectId },
+    select: { workspaceId: true },
+  });
+  if (!project) throw new Error("Link builder project not found");
+  const computers = await input.prisma.computer.findMany({
+    where: { workspaceId: project.workspaceId },
+    orderBy: { updatedAt: "desc" },
+  });
+  const computer = choosePersonaComputer(computers);
+  if (!computer) throw new Error("The workspace has no computer for the persona browser");
+  if (computer.state === "running" || computer.state === "booting") return toComputerRef(computer);
+  const ref = await input.sandbox.provision(
+    {
+      botId: computer.homeKey,
+      homePath: join(input.dataDir, "computer-home", computer.homeKey),
+      providerRef: computer.providerRef ?? undefined,
+      providerKind: computer.kind as ComputerRef["kind"],
+    },
+    input.context,
+  );
+  await input.prisma.computer.update({
+    where: { id: computer.id },
+    data: { state: "running", providerRef: ref.providerRef, kind: ref.kind },
+  });
+  return ref;
+}
+
 /** Recorded fixtures, or DataForSEO when `LINK_BUILDER_SEARCH=dataforseo` and a `lb_search` secret exists. */
 export function searchProviderFromEnv(input: {
   env: NodeJS.ProcessEnv;
@@ -119,19 +159,14 @@ export function browserFactoryFromEnv(input: {
     // E2B's desktop user is `user`. The Docker computer image uses `/home/rakazo`.
     ...(env.SANDBOX_PROVIDER === "e2b" ? { profileRoot: "/home/user/.browser-profiles" } : {}),
     proxyResolver: input.proxyResolver,
-    async resolveComputer(persona) {
-      const project = await prisma.lbProject.findUnique({
-        where: { id: persona.projectId },
-        select: { workspaceId: true },
+    resolveComputer(persona, context) {
+      return resolvePersonaComputer({
+        prisma,
+        sandbox: input.sandbox,
+        projectId: persona.projectId,
+        context,
+        dataDir: input.dataDir,
       });
-      if (!project) throw new Error("Link builder project not found");
-      const computers = await prisma.computer.findMany({
-        where: { workspaceId: project.workspaceId },
-        orderBy: { updatedAt: "desc" },
-      });
-      const computer = choosePersonaComputer(computers);
-      if (!computer) throw new Error("The workspace has no computer for the persona browser");
-      return toComputerRef(computer);
     },
   });
 }

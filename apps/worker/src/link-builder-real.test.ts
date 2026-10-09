@@ -12,7 +12,11 @@ import {
   selectsGenericRegistrationJourney,
   templateReply,
 } from "./link-builder-real-steps.js";
-import { browserFactoryFromEnv, proxyResolverFor } from "./link-builder-real-wiring.js";
+import {
+  browserFactoryFromEnv,
+  proxyResolverFor,
+  resolvePersonaComputer,
+} from "./link-builder-real-wiring.js";
 
 const prisma = {} as PrismaClient;
 const sandbox = new FakeSandboxProvider();
@@ -104,6 +108,66 @@ describe("link builder real driver wiring", () => {
       secrets: { load: () => "", redact: () => undefined } as never,
     });
     expect(unused.mode).toBe("sandbox");
+  });
+
+  it("wakes a suspended computer before the persona browser opens", async () => {
+    const provisioned: Array<{ providerRef?: string; providerKind?: string }> = [];
+    const updates: Array<{ state?: string; providerRef?: string }> = [];
+    const prisma = {
+      lbProject: { findUnique: async () => ({ workspaceId: "ws" }) },
+      computer: {
+        findMany: async () => [
+          {
+            id: "comp-1",
+            scope: "dedicated",
+            state: "suspended",
+            providerRef: "sb-old",
+            kind: "e2b",
+            homeKey: "home-1",
+          },
+        ],
+        update: async ({ data }: { data: { state?: string; providerRef?: string } }) => {
+          updates.push(data);
+          return data;
+        },
+      },
+    } as unknown as PrismaClient;
+    const sandbox = {
+      provision: async (request: { providerRef?: string; providerKind?: string }) => {
+        provisioned.push(request);
+        return {
+          id: "sb-old",
+          botId: "home-1",
+          kind: "e2b" as const,
+          providerRef: "sb-old",
+          fresh: false,
+        };
+      },
+    } as unknown as FakeSandboxProvider;
+    const context = {
+      operationId: "op",
+      traceId: "tr",
+      workspaceId: "ws",
+      userId: "user",
+      signal: new AbortController().signal,
+    } satisfies AdapterContext;
+    const ref = await resolvePersonaComputer({
+      prisma,
+      sandbox,
+      projectId: "project-1",
+      context,
+      dataDir: "/tmp/data",
+    });
+    expect(provisioned).toEqual([
+      {
+        botId: "home-1",
+        homePath: "/tmp/data/computer-home/home-1",
+        providerRef: "sb-old",
+        providerKind: "e2b",
+      },
+    ]);
+    expect(ref.providerRef).toBe("sb-old");
+    expect(updates).toEqual([{ state: "running", providerRef: "sb-old", kind: "e2b" }]);
   });
 });
 
