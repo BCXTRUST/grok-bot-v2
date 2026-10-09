@@ -61,6 +61,12 @@ describe("registration notices", () => {
     ).toBe("pending_email");
     expect(
       classifyRegistration(
+        "Vielen Dank für deine Anmeldung. Um deine Registrierung abzuschließen, musst du dem Link in der E-Mail folgen, die dir zugesandt wurde.",
+        false,
+      ).kind,
+    ).toBe("pending_email");
+    expect(
+      classifyRegistration(
         "An administrator will activate your account before you can log in.",
         false,
       ).kind,
