@@ -322,15 +322,47 @@ export class PlaywrightBrowserSession implements BrowserSession {
     try {
       await this.page.evaluate(
         ({ name, value }) => {
+          interface TokenField {
+            value?: string;
+            closest?: (selector: string) => TokenForm | null;
+          }
+          interface TokenForm {
+            appendChild: (node: TokenField) => void;
+          }
           const root = globalThis as unknown as {
             document: {
-              querySelectorAll: (selector: string) => Iterable<{ value?: string }>;
-              querySelector: (
-                selector: string,
-              ) => { getAttribute: (attribute: string) => string | null } | null;
+              querySelectorAll: (selector: string) => Iterable<TokenField>;
+              querySelector: (selector: string) =>
+                | (TokenField &
+                    TokenForm & {
+                      getAttribute: (attribute: string) => string | null;
+                    })
+                | null;
+              createElement: (tag: string) => TokenField & {
+                type?: string;
+                name?: string;
+              };
             };
           };
-          for (const field of root.document.querySelectorAll(`[name="${name}"]`)) {
+          const fields = [...root.document.querySelectorAll(`[name="${name}"]`)];
+          if (fields.length === 0) {
+            const host = root.document.querySelector(
+              "[data-xf-init='turnstile'], .cf-turnstile, .g-recaptcha, .h-captcha",
+            );
+            const form =
+              host?.closest?.("form") ??
+              root.document.querySelector("form:has(input[type='password'])") ??
+              root.document.querySelector("form");
+            if (form) {
+              const input = root.document.createElement("input");
+              input.type = "hidden";
+              input.name = name;
+              input.value = value;
+              form.appendChild(input);
+              fields.push(input);
+            }
+          }
+          for (const field of fields) {
             field.value = value;
           }
           const callback = root.document

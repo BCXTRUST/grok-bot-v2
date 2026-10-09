@@ -150,17 +150,17 @@ function scoreEmailConfirm(field: FormFieldInfo): number {
 
 function scorePassword(field: FormFieldInfo, kind: "register" | "login"): number {
   if (field.type !== "password") return 0;
-  if (/confirm|repeat|again|match|password2|password-confirm/.test(blob(field))) return 0;
+  if (/confirm|repeat|again|match|password2|password-confirm|bestätig/.test(blob(field))) return 0;
   let score = 0;
   if (kind === "register" && field.autocomplete === "new-password") score += 4;
   if (kind === "login" && field.autocomplete === "current-password") score += 4;
-  if (/password|secret|\bpass\b/.test(blob(field))) score += 3;
+  if (/password|passwort|secret|\bpass\b/.test(blob(field))) score += 3;
   return score;
 }
 
 function scoreConfirm(field: FormFieldInfo): number {
   if (field.type !== "password") return 0;
-  return /confirm|repeat|again|match|password2|password-confirm/.test(blob(field)) ? 4 : 0;
+  return /confirm|repeat|again|match|password2|password-confirm|bestätig/.test(blob(field)) ? 4 : 0;
 }
 
 function scoreBody(field: FormFieldInfo): number {
@@ -239,10 +239,10 @@ function pickSubmit(
   if (submits.length === 1) return submits[0] ?? null;
   const hint =
     purpose === "register"
-      ? /register|sign ?up|join|create|submit/
+      ? /register|registrier|sign ?up|join|create|submit/
       : purpose === "login"
-        ? /log ?in|sign ?in|submit/
-        : /reply|post|submit|comment/;
+        ? /log ?in|sign ?in|anmelden|submit/
+        : /reply|antworten|post|submit|comment/;
   const matched = submits.filter((field) => hint.test(blob(field)));
   return matched.length === 1 ? (matched[0] ?? null) : null;
 }
@@ -425,12 +425,52 @@ function scoreCaptchaAnswer(field: FormFieldInfo): number {
   return 0;
 }
 
+/**
+ * A board header often puts search or quick-login ahead of the account form.
+ * Prefer the form that can actually register, confirm terms, or accept a reply.
+ */
+const ACCOUNT_FORM_SELECTORS = [
+  "form:has(input[type='password']):has(input[type='email'])",
+  "form:has(input[type='password']):has(input[name='email'])",
+  "form:has(input[name='agreed'])",
+  "form:has(input[name='not_agreed'])",
+  "form:has(#agreed)",
+  "form#agreement",
+  "form[action*='mode=register']",
+  "form[action*='register']",
+  "form:has(textarea)",
+  "form:has(input[type='password'])",
+  "form:has(input[type='email'])",
+  "form",
+] as const;
+
 async function fieldsIn(
   session: BrowserSession,
   selector: string,
 ): Promise<FormFieldInfo[] | null> {
   if (!session.formFields) return null;
-  return session.formFields(selector);
+  if (selector !== "form") return session.formFields(selector);
+  for (const candidate of ACCOUNT_FORM_SELECTORS) {
+    try {
+      if (!(await session.exists(candidate))) continue;
+      const fields = await session.formFields(candidate);
+      if (fields.length > 0) return fields;
+    } catch {
+      continue;
+    }
+  }
+  return session.formFields("form");
+}
+
+/** XenForo keeps the register button on a short timer. Clicking early does not submit. */
+async function waitForRegisterTimer(session: BrowserSession): Promise<void> {
+  if (!(await session.exists("#js-regTimer"))) return;
+  const started = Date.now();
+  while (Date.now() - started < 15_000) {
+    const text = ((await session.text("#js-regTimer")) ?? "").toLowerCase();
+    if (text && !/warte|sekunde|\bwait\b/.test(text)) return;
+    await new Promise((resolve) => setTimeout(resolve, 400));
+  }
 }
 
 async function followAnchor(
@@ -594,6 +634,7 @@ export class GenericFormDriver implements BoardDriver {
 
   async submitRegistration(session: BrowserSession): Promise<RegistrationResult> {
     if (!this.submitSelector) throw new UnmappedFormError("register");
+    await waitForRegisterTimer(session);
     await session.click(this.submitSelector);
     return this.readRegistrationResult(session, { waitMs: 15_000 });
   }
@@ -787,8 +828,13 @@ export class GenericFormDriver implements BoardDriver {
     const agree = fields.filter((field) => {
       if (!isSubmit(field)) return false;
       const text = blob(field);
-      if (/do not|not agree|not_agreed|disagree|decline|nicht zustimm/.test(text)) return false;
-      return /agree|akzeptier|zustimm|ich stimme|accept/.test(text);
+      if (
+        /do not|not agree|not_agreed|disagree|decline|nicht zustimm|nicht einverstanden|nicht akzept/.test(
+          text,
+        )
+      )
+        return false;
+      return /agree|akzeptier|zustimm|ich stimme|accept|einverstanden/.test(text);
     });
     if (agree.length !== 1) return false;
     await session.click(agree[0]!.selector);

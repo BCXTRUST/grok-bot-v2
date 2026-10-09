@@ -114,7 +114,17 @@ export class HtmlBrowserSession {
   }
 
   async injectToken(fieldName: string, token: string): Promise<void> {
-    await this.fill(`[name='${fieldName}']`, token);
+    if (!/^[A-Za-z0-9_-]{1,80}$/.test(fieldName)) throw new Error("Unexpected captcha field");
+    const selector = `[name='${fieldName}']`;
+    if (!(await this.exists(selector))) {
+      const host = this.$(
+        "[data-xf-init='turnstile'], .cf-turnstile, .g-recaptcha, .h-captcha",
+      ).first();
+      const form = host.length ? host.closest("form") : this.$("form").first();
+      if (!form.length) throw new Error(`Could not place the captcha token in ${fieldName}`);
+      form.append(`<input type="hidden" name="${fieldName}">`);
+    }
+    await this.fill(selector, token);
   }
 
   async formFields(selector: string): Promise<FormFieldInfo[]> {

@@ -6,7 +6,7 @@ import type {
 } from "@rakazo/adapter-kit";
 import { isSecretRegistrationPrompt } from "@rakazo/adapter-kit";
 import { extractVerificationLink } from "@rakazo/linkbuilder-core";
-import { captchaResponseField, solveImageCaptcha } from "./captcha.js";
+import { placeCaptchaToken, solveImageCaptcha } from "./captcha.js";
 import type { BoardAccount, CaptchaChallenge, RegistrationResult } from "./driver.js";
 import type { RegistrationProfile } from "./generic.js";
 import { GenericFormDriver } from "./generic.js";
@@ -188,6 +188,6 @@ async function placeChallenge(
     },
     context,
   );
-  await session.fill(`[name='${captchaResponseField(challenge.type)}']`, result.answer);
+  await placeCaptchaToken(session, challenge.type, result.answer);
   return { ok: true, solved: 1 };
 }

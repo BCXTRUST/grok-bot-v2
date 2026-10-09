@@ -1,6 +1,8 @@
+import { createServer, type IncomingMessage } from "node:http";
 import { describe, expect, it } from "vitest";
+import type { FormFieldInfo } from "@rakazo/adapter-kit";
 import { UnmappedFormError } from "./driver.js";
-import { GenericFormDriver } from "./generic.js";
+import { GenericFormDriver, planRegistration, registrationProfile } from "./generic.js";
 import { startCustomForumFixture } from "./testing/custom-forum-fixture.js";
 import { HtmlBrowserSession } from "./testing/html-session.js";
 
@@ -57,4 +59,173 @@ describe("generic form driver", () => {
       await fixture.close();
     }
   });
+
+  it("maps a XenForo register form and ignores the username decoy", () => {
+    const plan = planRegistration(
+      [
+        field({ selector: "[name='username']", name: "username", label: "Benutzername" }),
+        field({
+          selector: "#real-user",
+          name: "hasheduser",
+          label: "Benutzername",
+          autocomplete: "username",
+          required: true,
+        }),
+        field({
+          selector: "#email",
+          name: "hashedmail",
+          type: "email",
+          label: "E-Mail",
+          autocomplete: "email",
+          required: true,
+        }),
+        field({
+          selector: "#password",
+          name: "hashedpass",
+          type: "password",
+          label: "Passwort",
+          autocomplete: "new-password",
+          required: true,
+        }),
+        field({
+          selector: "#accept",
+          name: "accept",
+          type: "checkbox",
+          label: "Nutzungsbedingungen",
+          value: "1",
+          required: true,
+        }),
+        field({ selector: "[name='dob_day']", name: "dob_day", label: "" }),
+        field({
+          selector: "#version",
+          tag: "select",
+          name: "custom_fields[xf_version][]",
+          label: "XF Version",
+        }),
+        field({ selector: "#submit", tag: "button", type: "submit", label: "Registrieren" }),
+      ],
+      registrationProfile({
+        username: "sophie_braun95",
+        email: "sophie@inbox.example",
+        password: "Fx-Pass-Word-77",
+      }),
+    );
+    expect(plan.ok).toBe(true);
+    if (!plan.ok) return;
+    expect(plan.actions.map((action) => action.selector)).toEqual([
+      "#real-user",
+      "#email",
+      "#password",
+      "#accept",
+    ]);
+  });
+
+  it("passes a German terms gate that sits behind the search form", async () => {
+    const board = await startSearchThenAgreementBoard();
+    const driver = new GenericFormDriver();
+    const session = new HtmlBrowserSession();
+    try {
+      expect(await driver.openRegistration(session, board.origin)).toBe("form");
+      await driver.fillRegistration(session, {
+        username: "sophie_braun95",
+        email: "sophie@inbox.example",
+        password: "Fx-Pass-Word-77",
+      });
+      expect((await driver.submitRegistration(session)).kind).toBe("pending_email");
+      expect(board.acceptedTerms).toBe(true);
+      expect(board.registeredAs).toBe("sophie_braun95");
+    } finally {
+      await board.close();
+    }
+  });
 });
+
+function field(partial: Partial<FormFieldInfo> & Pick<FormFieldInfo, "selector">): FormFieldInfo {
+  return {
+    tag: "input",
+    type: "text",
+    name: null,
+    id: null,
+    autocomplete: null,
+    label: "",
+    role: null,
+    required: false,
+    ...partial,
+  };
+}
+
+function page(title: string, content: string): string {
+  return `<!DOCTYPE html><html><body><h1>${title}</h1>${content}</body></html>`;
+}
+
+function startSearchThenAgreementBoard(): Promise<{
+  origin: string;
+  acceptedTerms: boolean;
+  registeredAs: string | null;
+  close: () => Promise<void>;
+}> {
+  let acceptedTerms = false;
+  let registeredAs: string | null = null;
+  const search = `<form id="search" action="/search" method="get"><input type="text" name="keywords" aria-label="Search"><input type="submit" value="Search"></form>`;
+  const agreement = `<form id="agreement" method="post" action="/ucp.php?mode=register">
+<p>Bitte lies die Bedingungen. Der Aktivierungsschlüssel wird per E-Mail geschickt.</p>
+<input type="submit" name="terms_yes" value="Ich bin mit diesen Bedingungen einverstanden">
+<input type="submit" name="terms_no" value="Ich bin mit diesen Bedingungen nicht einverstanden">
+</form>`;
+  const registration = `<form id="register" method="post" action="/ucp.php?mode=register">
+<label for="username">Benutzername</label><input id="username" name="username" type="text">
+<label for="email">E-Mail-Adresse</label><input id="email" name="email" type="email">
+<label for="new_password">Passwort</label><input id="new_password" name="new_password" type="password">
+<label for="password_confirm">Passwort bestätigen</label><input id="password_confirm" name="password_confirm" type="password">
+<input type="submit" name="preview" value="Vorschau">
+<input type="submit" name="go" value="Registrieren">
+</form>`;
+  const server = createServer(async (request, response) => {
+    const url = new URL(request.url ?? "/", "http://127.0.0.1");
+    if (request.method === "POST" && url.pathname === "/ucp.php") {
+      const body = await readBody(request);
+      const form = new URLSearchParams(body);
+      if (form.has("terms_yes")) acceptedTerms = true;
+      if (form.get("go") === "Registrieren") {
+        registeredAs = form.get("username");
+        response.writeHead(200, { "content-type": "text/html" });
+        response.end(
+          page(
+            "Information",
+            `<div id="message"><p>An activation key has been sent to the email address you provided.</p></div>`,
+          ),
+        );
+        return;
+      }
+    }
+    const content = acceptedTerms ? `${search}${registration}` : `${search}${agreement}`;
+    response.writeHead(200, { "content-type": "text/html" });
+    response.end(page("Register", content));
+  });
+  return new Promise((resolve) => {
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      const port = typeof address === "object" && address ? address.port : 0;
+      resolve({
+        origin: `http://127.0.0.1:${port}`,
+        get acceptedTerms() {
+          return acceptedTerms;
+        },
+        get registeredAs() {
+          return registeredAs;
+        },
+        close: () =>
+          new Promise((done, reject) => server.close((error) => (error ? reject(error) : done()))),
+      });
+    });
+  });
+}
+
+function readBody(request: IncomingMessage): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    request.on("data", (chunk: Buffer) => chunks.push(chunk));
+    request.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+    request.on("error", reject);
+  });
+}
