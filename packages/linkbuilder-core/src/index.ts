@@ -17,6 +17,7 @@ export * from "./funnel.js";
 export * from "./host-state.js";
 export * from "./market.js";
 export * from "./pacing.js";
+export * from "./personal-name.js";
 export * from "./page-suggestion.js";
 export * from "./placement-state.js";
 export * from "./plan.js";

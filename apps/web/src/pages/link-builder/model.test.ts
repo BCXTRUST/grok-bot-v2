@@ -149,7 +149,8 @@ describe("link builder wizard", () => {
     draft.brandName = "Vitaminexpress";
     draft.allowedDomains = "https://www.vitaminexpress.org/de";
     const filled = withPersonaPrefill(draft);
-    expect(filled.displayName).toBe("Vitaminexpress");
+    expect(filled.displayName).not.toMatch(/vitamin/i);
+    expect(filled.displayName).toMatch(/\s/);
     expect(filled.bio).toContain("Vitaminexpress");
     expect(filled.bio).toContain("/de");
     draft.bio = "Already written";

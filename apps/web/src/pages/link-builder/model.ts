@@ -11,9 +11,11 @@ import {
   LbScheduleSchema,
 } from "@rakazo/contracts";
 import {
+  brandNameSources,
   defaultMarketForCountry,
   LB_WIZARD_COUNTRIES,
   registrableDomain,
+  resolvePersonaDisplayName,
   validateTargetUrl,
 } from "@rakazo/linkbuilder-core";
 
@@ -304,6 +306,22 @@ export function parsedSites(value: string): ParsedSite[] {
   return splitList(value).map(parseAllowedSite);
 }
 
+function personalDisplayName(draft: WizardDraft): string {
+  const domains = parsedSites(draft.allowedDomains).flatMap((site) =>
+    site.ok ? [site.domain] : [],
+  );
+  return resolvePersonaDisplayName({
+    displayName: draft.displayName,
+    language: draft.markets[0]?.language ?? "de",
+    sources: brandNameSources({
+      brandName: draft.brandName,
+      projectName: draft.name,
+      slug: draft.slug,
+      domains,
+    }),
+  });
+}
+
 export function withPersonaPrefill(draft: WizardDraft): WizardDraft {
   const brand = draft.brandName.trim() || draft.name.trim();
   const sites = parsedSites(draft.allowedDomains).filter(
@@ -314,7 +332,7 @@ export function withPersonaPrefill(draft: WizardDraft): WizardDraft {
     .find((path) => path.length > 1);
   return {
     ...draft,
-    displayName: draft.displayName.trim() || brand,
+    displayName: personalDisplayName(draft),
     bio: draft.bio.trim() ? draft.bio : suggestBio(brand, draft.markets[0]?.language, section),
   };
 }
@@ -513,7 +531,7 @@ export function patchFromDraft(draft: WizardDraft) {
     brandName: draft.brandName.trim(),
     allowedDomains: domains,
     persona: {
-      displayName: draft.displayName.trim() || draft.brandName.trim() || "Persona",
+      displayName: personalDisplayName(draft),
       bio: draft.bio,
       register: draft.register,
       language: draft.markets[0]?.language,

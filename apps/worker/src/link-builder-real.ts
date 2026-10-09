@@ -713,6 +713,7 @@ function projectConfig(row: {
   workspaceId: string;
   createdByUserId: string;
   status: string;
+  name: string;
   brandName: string;
   allowedDomains: string[];
   persona: unknown;
@@ -750,6 +751,7 @@ function projectConfig(row: {
     id: row.id,
     workspaceId: row.workspaceId,
     ownerUserId: row.createdByUserId,
+    name: row.name,
     brandName: row.brandName,
     allowedDomains: row.allowedDomains,
     persona: persona.data,

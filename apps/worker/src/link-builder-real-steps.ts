@@ -48,8 +48,10 @@ import {
   countedWithinPlan,
   decideEdgeBlock,
   extractVerificationLink,
+  brandNameSources,
   generateForumPassword,
   generateForumUsername,
+  resolvePersonaDisplayName,
   HOST_IDLE_GAP,
   type HostEvent,
   insertReference,
@@ -155,6 +157,7 @@ export interface ProjectConfig {
   id: string;
   workspaceId: string;
   ownerUserId: string;
+  name: string;
   brandName: string;
   allowedDomains: string[];
   persona: LbPersona;
@@ -843,10 +846,31 @@ async function ensureCredentials(ctx: StepContext, host: HostRow): Promise<Crede
 }
 
 /** A generated username with no vault login on this site yet, so no stored password is replaced. */
+async function ensurePersonalDisplayName(ctx: StepContext): Promise<string> {
+  const language = ctx.project.persona.language ?? ctx.project.markets[0]?.language ?? "de";
+  const displayName = resolvePersonaDisplayName({
+    displayName: ctx.project.persona.displayName,
+    language,
+    sources: brandNameSources({
+      brandName: ctx.project.brandName,
+      projectName: ctx.project.name,
+      domains: ctx.project.allowedDomains,
+    }),
+  });
+  if (displayName === ctx.project.persona.displayName) return displayName;
+  ctx.project.persona = { ...ctx.project.persona, displayName };
+  await ctx.services.prisma.lbProject.update({
+    where: { id: ctx.project.id },
+    data: { persona: ctx.project.persona as Prisma.InputJsonValue },
+  });
+  return displayName;
+}
+
 async function freshUsername(ctx: StepContext, host: HostRow): Promise<string> {
+  const displayName = await ensurePersonalDisplayName(ctx);
   const site = new URL(host.homepageUrl).hostname.replace(/^www\./, "").toLowerCase();
   for (let attempt = 0; attempt < 8; attempt += 1) {
-    const username = generateForumUsername(ctx.project.persona.displayName);
+    const username = generateForumUsername(displayName);
     const taken = await ctx.services.prisma.siteLogin.count({
       where: {
         workspaceId: ctx.project.workspaceId,

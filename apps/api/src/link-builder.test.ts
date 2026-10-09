@@ -150,6 +150,42 @@ describe("link builder routes", () => {
     );
   });
 
+  it("replaces a brand-derived persona name when Start building is clicked", async () => {
+    const row = projectRow({
+      name: "Vitaminexpress",
+      slug: "vitaminexpress-3096",
+      brandName: "Vitaminexpress",
+      allowedDomains: ["vitaminexpress.org"],
+      persona: { displayName: "Vitaminexpress", bio: "", language: "de", register: "du" },
+    });
+    const updates: unknown[] = [];
+    const prisma = {
+      lbProject: {
+        findFirst: vi.fn(async () => row),
+        count: vi.fn(async () => 0),
+        update: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
+          updates.push(data);
+          Object.assign(row, data);
+          return row;
+        }),
+      },
+      lbRun: {
+        findFirst: vi.fn(async () => null),
+        findMany: vi.fn(async () => []),
+        create: vi.fn(async ({ data }: { data: { status: string } }) => data),
+      },
+    } as unknown as PrismaClient;
+    const { response } = await call(deps(prisma), actor, "linkBuilder/projects/start", {
+      projectId: "project-1",
+    });
+    expect(response.status).toBe(200);
+    const saved = updates[0] as { persona?: { displayName?: string } };
+    expect(saved.persona?.displayName).toMatch(/\s/);
+    expect(saved.persona?.displayName?.toLowerCase()).not.toMatch(/vitamin|express/);
+    const body = JSON.stringify(await response.json());
+    expect(body.toLowerCase()).not.toContain("vitaminexpress47");
+  });
+
   it("returns active proxy leases without credentials", async () => {
     const row = projectRow();
     const findMany = vi.fn(async () => [

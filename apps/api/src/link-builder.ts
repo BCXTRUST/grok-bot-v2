@@ -54,6 +54,8 @@ import {
 import { LB_DEMO_SLUG, Prisma, type PrismaClient, seedLinkBuilderDemo } from "@rakazo/db";
 import {
   assertStartWithinPlan,
+  brandNameSources,
+  resolvePersonaDisplayName,
   buildWhyNot,
   CHECKOUT_NOT_CONNECTED_REASON,
   CREDIT_PACKAGES,
@@ -284,7 +286,17 @@ export async function updateLbProject(
   if (input.slug !== undefined) data.slug = input.slug;
   if (input.brandName !== undefined) data.brandName = input.brandName;
   if (input.allowedDomains !== undefined) data.allowedDomains = input.allowedDomains;
-  if (input.persona !== undefined) data.persona = json(input.persona);
+  if (input.persona !== undefined) {
+    data.persona = json(
+      personaWithPersonalName(input.persona, {
+        brandName: input.brandName ?? row.brandName,
+        name: input.name ?? row.name,
+        slug: input.slug ?? row.slug,
+        allowedDomains: input.allowedDomains ?? row.allowedDomains,
+        markets: input.markets ?? row.markets,
+      }),
+    );
+  }
   if (input.captchaLowBalanceCredits !== undefined) {
     data.captchaLowBalanceCredits = input.captchaLowBalanceCredits;
   }
@@ -398,9 +410,25 @@ export async function startLbProject(deps: RouterDeps, actor: Actor, projectId: 
     acceptedByUserId: actor.userId,
     textVersion: LB_RESPONSIBILITY_ACK_TEXT_VERSION,
   });
+  const persona = readPersona(row.persona);
+  const personal = persona
+    ? personaWithPersonalName(persona, {
+        brandName: row.brandName,
+        name: row.name,
+        slug: row.slug,
+        allowedDomains: row.allowedDomains,
+        markets: row.markets,
+      })
+    : null;
   await deps.prisma.lbProject.update({
     where: { id: row.id },
-    data: { status, responsibilityAck: json(ack) },
+    data: {
+      status,
+      responsibilityAck: json(ack),
+      ...(personal && personal.displayName !== persona?.displayName
+        ? { persona: json(personal) }
+        : {}),
+    },
   });
   await ensureRunningToday(deps.prisma, actor.workspaceId, row.id, parsed.data.schedule);
   await publish(deps, row.id);
@@ -1603,6 +1631,33 @@ function readQuotas(value: unknown) {
 
 function readPersona(value: unknown) {
   return LbPersonaSchema.safeParse(value).data ?? null;
+}
+
+function personaWithPersonalName(
+  persona: NonNullable<ReturnType<typeof readPersona>>,
+  row: {
+    brandName: string;
+    name: string;
+    slug: string;
+    allowedDomains: string[];
+    markets: unknown;
+  },
+) {
+  const markets = LbMarketsSchema.safeParse(row.markets);
+  const language = persona.language ?? markets.data?.[0]?.language ?? "de";
+  return {
+    ...persona,
+    displayName: resolvePersonaDisplayName({
+      displayName: persona.displayName,
+      language,
+      sources: brandNameSources({
+        brandName: row.brandName,
+        projectName: row.name,
+        slug: row.slug,
+        domains: row.allowedDomains,
+      }),
+    }),
+  };
 }
 
 function scheduleState(
