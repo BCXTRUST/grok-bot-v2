@@ -70,6 +70,21 @@ export interface E2BSandboxSdk {
   pause(id: string, options: { apiKey: string }): Promise<void>;
 }
 
+/** The desktop SDK throws on a non-zero exit. Callers still need that stdout, for example a runner ping. */
+function commandFailure(
+  error: unknown,
+): { exitCode: number; stdout?: string; stderr?: string } | null {
+  if (!error || typeof error !== "object" || !("result" in error)) return null;
+  const result = (error as { result?: { exitCode?: unknown; stdout?: unknown; stderr?: unknown } })
+    .result;
+  if (!result || typeof result.exitCode !== "number") return null;
+  return {
+    exitCode: result.exitCode,
+    ...(typeof result.stdout === "string" ? { stdout: result.stdout } : {}),
+    ...(typeof result.stderr === "string" ? { stderr: result.stderr } : {}),
+  };
+}
+
 export function e2bCreateOptions(botId: string, apiKey: string) {
   return {
     apiKey,
@@ -264,6 +279,13 @@ export class E2BSandboxProvider implements SandboxProvider {
       if (result.stderr) yield { type: "stderr", data: result.stderr };
       yield { type: "exit", code: result.exitCode ?? 0 };
     } catch (error) {
+      const failed = commandFailure(error);
+      if (failed) {
+        if (failed.stdout) yield { type: "stdout", data: failed.stdout };
+        if (failed.stderr) yield { type: "stderr", data: failed.stderr };
+        yield { type: "exit", code: failed.exitCode };
+        return;
+      }
       if (error instanceof TimeoutError) {
         yield {
           type: "stderr",

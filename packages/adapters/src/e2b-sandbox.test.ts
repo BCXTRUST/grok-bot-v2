@@ -684,4 +684,37 @@ describe("E2B computer backend", () => {
     expect(events).toEqual([{ type: "exit", code: 0 }]);
     expect(disconnect).toHaveBeenCalledOnce();
   });
+
+  it("returns stdout when a command exits non-zero", async () => {
+    const command = vi.fn(async () => {
+      const error = new Error("exit status 3") as Error & {
+        result: { exitCode: number; stdout: string; stderr: string };
+      };
+      error.result = {
+        exitCode: 3,
+        stdout: '{"ok":false,"error":"runner not running"}\n',
+        stderr: "",
+      };
+      throw error;
+    });
+    const desktop = {
+      sandboxId: "e2b-exit",
+      commands: { run: command },
+      setTimeout: vi.fn(async () => undefined),
+    } as unknown as Sandbox;
+    const provider = new E2BSandboxProvider("test-key", {
+      create: vi.fn(async () => desktop),
+      connect: vi.fn(async () => desktop),
+      pause: vi.fn(async () => undefined),
+    });
+    const computer = await provider.provision({ botId: "bot-1", homePath: "/unused" }, context);
+    const events = [];
+    for await (const event of provider.execute(computer, { argv: ["rakazo-lb-browser", "call"] }, context)) {
+      events.push(event);
+    }
+    expect(events).toEqual([
+      { type: "stdout", data: '{"ok":false,"error":"runner not running"}\n' },
+      { type: "exit", code: 3 },
+    ]);
+  });
 });
