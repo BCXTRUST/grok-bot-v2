@@ -20,6 +20,7 @@ import {
   postedSuccessfully,
   registrationClosed,
   relFromAttribute,
+  repliesClosed,
 } from "./messages.js";
 import { detectWidget } from "./widgets.js";
 
@@ -245,7 +246,12 @@ function pickSubmit(
         ? /log ?in|sign ?in|anmelden|submit/
         : /reply|antworten|post|submit|comment/;
   const matched = submits.filter((field) => hint.test(blob(field)));
-  return matched.length === 1 ? (matched[0] ?? null) : null;
+  if (matched.length === 1) return matched[0] ?? null;
+  if (purpose === "reply") {
+    const named = submits.filter((field) => /^(post|submit|reply)$/i.test(field.name ?? ""));
+    if (named.length === 1) return named[0] ?? null;
+  }
+  return null;
 }
 
 function optionValue(field: FormFieldInfo, preferred: readonly string[]): string {
@@ -758,7 +764,10 @@ export class GenericFormDriver implements BoardDriver {
         if (href) await session.goto(new URL(href, await session.url()).href);
       }
     }
-    if (!(await this.replyReady(session))) throw new UnmappedFormError("reply");
+    if (!(await this.replyReady(session))) {
+      if (repliesClosed(await session.pageText())) return false;
+      throw new UnmappedFormError("reply");
+    }
     return true;
   }
 
@@ -942,7 +951,44 @@ function mapLogin(fields: readonly FormFieldInfo[]): {
   return { identity, password: password.field, submit };
 }
 
+function anchorsToThreads(
+  found: readonly { text: string; href: string }[],
+  base: string,
+): BoardThread[] {
+  const threads: BoardThread[] = [];
+  for (const item of found) {
+    const title = item.text.replace(/\s+/g, " ").trim();
+    if (!title || !item.href) continue;
+    threads.push({
+      url: new URL(item.href, base).href,
+      title,
+      openQuestion: /\?/.test(title),
+    });
+    if (threads.length >= 20) break;
+  }
+  return threads;
+}
+
+const THREAD_LINK_SELECTORS = [
+  "#threads a",
+  "li.thread a.threadTitle",
+  "a.topictitle",
+  "li.row a.topictitle",
+];
+
 async function collectThreads(session: BrowserSession): Promise<BoardThread[]> {
+  if (session.listAnchors) {
+    try {
+      const base = await session.url();
+      for (const selector of THREAD_LINK_SELECTORS) {
+        const threads = anchorsToThreads(await session.listAnchors(selector), base);
+        if (threads.length > 0) return threads;
+      }
+      return [];
+    } catch {
+      // The sandbox runner that is already open may not know this read yet.
+    }
+  }
   const patterns = [
     (index: number) => `#threads a:nth-of-type(${index})`,
     (index: number) => `li.thread:nth-of-type(${index}) a.threadTitle`,

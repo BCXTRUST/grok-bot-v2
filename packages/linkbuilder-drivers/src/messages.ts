@@ -31,6 +31,8 @@ const REGISTRATION_CLOSED =
   /registration (is )?(disabled|closed)|registrierung (ist )?deaktiviert/i;
 const POSTED =
   /posted successfully|erfolgreich (erstellt|gespeichert|eingetragen)|reply has been posted/i;
+const REPLIES_CLOSED =
+  /topic is locked|topic is closed|this thread is locked|replies are closed|you cannot reply|dieses thema ist gesperrt|thema ist geschlossen|keine weiteren antworten|kannst keine beiträge|cannot post (a |any )?repl/i;
 
 const FIXABLE_FORM =
   /already (?:in use|taken|registered|exists)|username you entered is already|banned email|email address is banned|e-?mail .* (?:gesperrt|banned|not allowed)|password is required|passworts ist erforderlich|entering a password is required|please enter your birthday|please answer the security question|please choose a newsletter|gültige e-?mail/i;
@@ -43,6 +45,11 @@ export function registrationClosed(text: string): boolean {
 
 export function postedSuccessfully(text: string): boolean {
   return POSTED.test(text);
+}
+
+/** The topic page says replies are closed. Try another thread; do not park the board. */
+export function repliesClosed(text: string): boolean {
+  return REPLIES_CLOSED.test(text);
 }
 
 /** Username taken, a banned email, or a missing password: correct the form once, then give up. */

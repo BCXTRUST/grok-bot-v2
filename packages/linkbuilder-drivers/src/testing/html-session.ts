@@ -149,6 +149,20 @@ export class HtmlBrowserSession {
     this.raw = this.$.html();
   }
 
+  async listAnchors(selector: string): Promise<Array<{ text: string; href: string }>> {
+    this.assertOpen();
+    const anchors: Array<{ text: string; href: string }> = [];
+    this.$(selector).each((_, node) => {
+      if (anchors.length >= 20) return;
+      const el = this.$(node);
+      const href = el.attr("href");
+      const text = el.text().replace(/\s+/g, " ").trim();
+      if (!href || !text) return;
+      anchors.push({ text, href });
+    });
+    return anchors;
+  }
+
   async clickables(): Promise<ClickableControl[]> {
     this.assertOpen();
     const controls: ClickableControl[] = [];

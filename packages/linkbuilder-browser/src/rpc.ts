@@ -47,6 +47,7 @@ export const BrowserRpcRequestSchema = z.discriminatedUnion("method", [
   z.object({ method: z.literal("formFields"), selector }).strict(),
   z.object({ method: z.literal("clickables") }).strict(),
   z.object({ method: z.literal("listText"), selector }).strict(),
+  z.object({ method: z.literal("listAnchors"), selector }).strict(),
   z
     .object({
       method: z.literal("drag"),
@@ -148,6 +149,8 @@ export class BrowserRpcServer {
         return session.clickables ? session.clickables() : [];
       case "listText":
         return session.listText ? session.listText(request.selector) : [];
+      case "listAnchors":
+        return session.listAnchors ? session.listAnchors(request.selector) : [];
       case "drag":
         if (!session.drag) return null;
         return session.drag(request.sourceSelector, request.targetSelector);
@@ -261,6 +264,12 @@ export class RpcBrowserSession implements BrowserSession {
 
   async listText(selector: string): Promise<string[]> {
     return z.array(z.string()).parse(await this.call({ method: "listText", selector }));
+  }
+
+  async listAnchors(selector: string): Promise<Array<{ text: string; href: string }>> {
+    return z
+      .array(z.object({ text: z.string(), href: z.string() }).strict())
+      .parse(await this.call({ method: "listAnchors", selector }));
   }
 
   async drag(sourceSelector: string, targetSelector: string): Promise<void> {

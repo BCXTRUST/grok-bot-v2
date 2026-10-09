@@ -135,6 +135,8 @@ export interface BrowserSession {
   clickables?(): Promise<ClickableControl[]>;
   /** Visible text of every match, in order. One read. */
   listText?(selector: string): Promise<string[]>;
+  /** Text and href of every matching anchor, in order. One read. */
+  listAnchors?(selector: string): Promise<Array<{ text: string; href: string }>>;
   /** Moves a control onto another, for a sortable confirmation the page asks the reader to drag. */
   drag?(sourceSelector: string, targetSelector: string): Promise<void>;
   /** Status and headers of the last document response, when the engine recorded one. */

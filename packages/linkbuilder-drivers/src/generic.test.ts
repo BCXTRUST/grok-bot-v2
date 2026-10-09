@@ -175,7 +175,72 @@ describe("generic form driver", () => {
       await board.close();
     }
   });
+
+  it("skips a locked topic and reads the thread list once", async () => {
+    const board = await startLockedTopicBoard();
+    const driver = new GenericFormDriver();
+    const session = new HtmlBrowserSession();
+    let attributeCalls = 0;
+    const attribute = session.attribute.bind(session);
+    session.attribute = async (selector, name) => {
+      attributeCalls += 1;
+      return attribute(selector, name);
+    };
+    try {
+      const threads = await driver.listThreads(session, board.origin);
+      expect(attributeCalls).toBe(0);
+      expect(threads.map((thread) => thread.title)).toEqual(["Gesperrtes Thema", "Offene Frage?"]);
+      expect(await driver.openReply(session, threads[0]!)).toBe(false);
+      expect(await driver.openReply(session, threads[1]!)).toBe(true);
+      await driver.fillReply(session, "Danke für den Hinweis, das hatte ich ähnlich erlebt.");
+      expect((await session.text("#message")).trim()).toBe(
+        "Danke für den Hinweis, das hatte ich ähnlich erlebt.",
+      );
+    } finally {
+      await board.close();
+    }
+  });
 });
+
+function startLockedTopicBoard(): Promise<{ origin: string; close: () => Promise<void> }> {
+  const locked =
+    "<p>Dieses Thema ist gesperrt. Du kannst keine Beiträge editieren oder weitere Antworten erstellen.</p>";
+  const replyForm = `<form id="postform" action="/posting">
+    <textarea name="message" id="message"></textarea>
+    <button type="button">B</button>
+    <input type="submit" name="preview" value="Vorschau">
+    <input type="submit" name="post" value="Absenden">
+  </form>`;
+  const server = createServer((request, response) => {
+    const url = new URL(request.url ?? "/", "http://127.0.0.1");
+    const body =
+      url.pathname === "/locked"
+        ? `<p><a href="/posting?mode=reply&t=locked">Antworten</a></p>`
+        : url.pathname === "/open"
+          ? `<p><a href="/posting?mode=reply&t=open">Antworten</a></p>`
+          : url.pathname === "/posting" && url.searchParams.get("t") === "open"
+            ? replyForm
+            : url.pathname === "/posting"
+              ? locked
+              : `<ul>
+                  <li class="row"><a class="topictitle" href="/locked">Gesperrtes Thema</a></li>
+                  <li class="row"><a class="topictitle" href="/open">Offene Frage?</a></li>
+                </ul>`;
+    response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+    response.end(`<!doctype html><title>board</title>${body}`);
+  });
+  return new Promise((resolve) => {
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      const port = typeof address === "object" && address ? address.port : 0;
+      resolve({
+        origin: `http://127.0.0.1:${port}`,
+        close: () =>
+          new Promise((done, reject) => server.close((error) => (error ? reject(error) : done()))),
+      });
+    });
+  });
+}
 
 function startSortableQuestionBoard(): Promise<{ origin: string; close: () => Promise<void> }> {
   const page = `<!DOCTYPE html><html><body>
