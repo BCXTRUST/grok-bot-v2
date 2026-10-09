@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import type { BrowserSession, FormFieldInfo } from "@rakazo/adapter-kit";
+import type { BrowserSession, ClickableControl, FormFieldInfo } from "@rakazo/adapter-kit";
 import {
   assertPacing,
   HUMAN_PACING,
@@ -414,6 +414,76 @@ export class PlaywrightBrowserSession implements BrowserSession {
 
   async pageText(): Promise<string> {
     return deadline(this.page.locator("body").innerText({ timeout: 8_000 }));
+  }
+
+  async clickables(): Promise<ClickableControl[]> {
+    return this.page.evaluate(() => {
+      const quote = (value: string) => value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+      interface El {
+        id: string;
+        tagName: string;
+        textContent: string | null;
+        getAttribute: (name: string) => string | null;
+        hasAttribute: (name: string) => boolean;
+        closest: (selector: string) => El | null;
+        setAttribute: (name: string, value: string) => void;
+        getClientRects: () => { length: number };
+        ownerDocument: {
+          defaultView: {
+            getComputedStyle: (el: El) => { display: string; visibility: string };
+          } | null;
+        };
+      }
+      const root = globalThis as unknown as {
+        document: { querySelectorAll: (selector: string) => Iterable<El> };
+      };
+      const controls: ClickableControl[] = [];
+      let generated = 0;
+      for (const el of root.document.querySelectorAll(
+        "a, button, [role='link'], [role='button'], [role='menuitem']",
+      )) {
+        const text = (el.textContent ?? "").replace(/\s+/g, " ").trim();
+        if (!text || text.length > 80) continue;
+        const view = el.ownerDocument.defaultView;
+        const style = view ? view.getComputedStyle(el) : null;
+        if (
+          el.hasAttribute("hidden") ||
+          el.getAttribute("aria-hidden") === "true" ||
+          style?.display === "none" ||
+          style?.visibility === "hidden" ||
+          el.getClientRects().length === 0
+        ) {
+          continue;
+        }
+        const tag = el.tagName.toLowerCase();
+        const type = (el.getAttribute("type") ?? "").toLowerCase() || null;
+        const role = el.getAttribute("role");
+        const href = el.getAttribute("href");
+        const id = el.id;
+        let selector: string;
+        if (id && /^[A-Za-z][\w-]*$/.test(id)) selector = `#${id}`;
+        else if (href) selector = `${tag}[href="${quote(href)}"]`;
+        else {
+          generated += 1;
+          el.setAttribute("data-rakazo-click", String(generated));
+          selector = `[data-rakazo-click="${generated}"]`;
+        }
+        controls.push({
+          selector,
+          tag,
+          role,
+          type,
+          text,
+          href,
+          inHeader: Boolean(
+            el.closest(
+              "header, nav, [role='banner'], [role='navigation'], .navbar, .headerbar, #page-header",
+            ),
+          ),
+        });
+      }
+      return controls;
+    });
   }
 
   async formFields(selector: string): Promise<FormFieldInfo[]> {

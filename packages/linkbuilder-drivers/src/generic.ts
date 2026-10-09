@@ -1,4 +1,4 @@
-import type { BrowserSession, FormFieldInfo } from "@rakazo/adapter-kit";
+import type { BrowserSession, ClickableControl, FormFieldInfo } from "@rakazo/adapter-kit";
 import { detectKnowledgeQuestion, looksLikeKnowledgeQuestion } from "./captcha.js";
 import { acceptCookieWall } from "./cookie-wall.js";
 import type {
@@ -58,7 +58,8 @@ interface Rank {
   tie: boolean;
 }
 
-const REGISTER_TEXT = /register|registrieren|sign ?up|\bjoin\b|konto erstellen/i;
+const REGISTER_TEXT =
+  /registrieren|register|sign ?up|konto erstellen|mitglied werden/i;
 const LOGIN_TEXT = /log ?in|sign ?in|anmelden|einloggen/i;
 const NOT_REGISTER = /unregister|login|log ?in|sign ?in|anmelden/i;
 
@@ -444,6 +445,60 @@ async function waitForRegisterTimer(session: BrowserSession): Promise<void> {
   }
 }
 
+function registerControlScore(control: ClickableControl): number {
+  const text = control.text.replace(/\s+/g, " ").trim();
+  if (!text || text.length > 80) return 0;
+  if (NOT_REGISTER.test(text) || !REGISTER_TEXT.test(text)) return 0;
+  const submitsForm =
+    (control.tag === "input" || control.tag === "button") &&
+    (control.type === "submit" || control.type === null) &&
+    control.tag !== "a";
+  if (submitsForm && !control.inHeader) return 0;
+  let score = 2;
+  if (
+    /^(registrieren|register|sign ?up|konto erstellen|mitglied werden)\b/i.test(text)
+  ) {
+    score += 3;
+  }
+  if (control.inHeader) score += 2;
+  if (control.tag === "a" || control.role === "link" || control.role === "menuitem") score += 2;
+  return score;
+}
+
+/** Clicks the register link a person would use. Returns false when that link is not on the page. */
+async function clickRegisterControl(session: BrowserSession): Promise<boolean> {
+  if (!session.clickables) return false;
+  const controls = await session.clickables();
+  let best: ClickableControl | null = null;
+  let bestScore = 0;
+  for (const control of controls) {
+    const score = registerControlScore(control);
+    if (score > bestScore) {
+      best = control;
+      bestScore = score;
+    }
+  }
+  if (!best) return false;
+  await session.click(best.selector);
+  return true;
+}
+
+async function ensureOnSite(session: BrowserSession, homepageUrl: string): Promise<void> {
+  let current = "about:blank";
+  try {
+    current = await session.url();
+  } catch {
+    current = "about:blank";
+  }
+  let sameOrigin = false;
+  try {
+    sameOrigin = new URL(current).origin === new URL(homepageUrl).origin;
+  } catch {
+    sameOrigin = false;
+  }
+  if (!sameOrigin) await session.goto(homepageUrl);
+}
+
 async function followAnchor(
   session: BrowserSession,
   selectors: readonly string[],
@@ -514,36 +569,17 @@ export class GenericFormDriver implements BoardDriver {
 
   async openRegistration(session: BrowserSession, homepageUrl: string): Promise<RegistrationPage> {
     this.lastPark = null;
+    await ensureOnSite(session, homepageUrl);
     await acceptCookieWall(session);
-    const guesses = [
-      ...new Set([
-        this.registerUrl(homepageUrl),
-        new URL("/register/", homepageUrl).href,
-        new URL("ucp.php?mode=register", homepageUrl).href,
-      ]),
-    ];
-    for (const url of guesses) {
-      await session.goto(url);
-      const page = await this.revealRegistration(session);
-      if (page === "form" || page === "closed") return page;
+    const opened = await clickRegisterControl(session);
+    if (!opened) {
+      await session.goto(homepageUrl);
+      await acceptCookieWall(session);
+      await clickRegisterControl(session);
     }
-    await session.goto(homepageUrl);
     await acceptCookieWall(session);
-    const followed = await followAnchor(
-      session,
-      [
-        "a[href*='mode=register']",
-        "a[href*='register']",
-        "a[href*='sign-up']",
-        "a[href*='signup']",
-      ],
-      REGISTER_TEXT,
-      NOT_REGISTER,
-    );
-    if (followed) {
-      const page = await this.revealRegistration(session);
-      if (page === "form" || page === "closed") return page;
-    }
+    const page = await this.revealRegistration(session);
+    if (page === "form" || page === "closed") return page;
     this.lastPark = { reason: "unmapped" };
     return "unknown";
   }

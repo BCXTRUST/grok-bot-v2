@@ -1,4 +1,4 @@
-import type { BrowserSession, FormFieldInfo } from "@rakazo/adapter-kit";
+import type { BrowserSession, ClickableControl, FormFieldInfo } from "@rakazo/adapter-kit";
 import { redactSecrets } from "@rakazo/linkbuilder-core";
 import { z } from "zod";
 
@@ -45,6 +45,7 @@ export const BrowserRpcRequestSchema = z.discriminatedUnion("method", [
   z.object({ method: z.literal("pageText") }).strict(),
   z.object({ method: z.literal("navigationMeta") }).strict(),
   z.object({ method: z.literal("formFields"), selector }).strict(),
+  z.object({ method: z.literal("clickables") }).strict(),
   z
     .object({
       method: z.literal("waitFor"),
@@ -135,6 +136,8 @@ export class BrowserRpcServer {
       case "formFields":
         if (!session.formFields) throw new Error("This browser cannot list form fields");
         return session.formFields(request.selector);
+      case "clickables":
+        return session.clickables ? session.clickables() : [];
       case "waitFor":
         return session.waitFor(request.selector, { timeoutMs: request.timeoutMs });
       case "screenshotPng":
@@ -241,6 +244,22 @@ export class RpcBrowserSession implements BrowserSession {
     return z
       .object({ status: z.number().nullable(), headers: z.record(z.string(), z.string()) })
       .parse(await this.call({ method: "navigationMeta" }));
+  }
+
+  async clickables(): Promise<ClickableControl[]> {
+    return z
+      .array(
+        z.object({
+          selector: z.string(),
+          tag: z.string(),
+          role: z.string().nullable(),
+          type: z.string().nullable(),
+          text: z.string(),
+          href: z.string().nullable(),
+          inHeader: z.boolean(),
+        }),
+      )
+      .parse(await this.call({ method: "clickables" }));
   }
 
   async formFields(selector: string): Promise<FormFieldInfo[]> {

@@ -120,6 +120,19 @@ describe("generic form driver", () => {
     ]);
   });
 
+  it("clicks the header register link and only then reads the form", async () => {
+    const board = await startHeaderRegisterLinkBoard();
+    const driver = new GenericFormDriver();
+    const session = new HtmlBrowserSession();
+    try {
+      expect(await driver.openRegistration(session, board.origin)).toBe("form");
+      expect(await session.url()).toContain("/mitglied");
+      expect(board.sawHome).toBe(true);
+    } finally {
+      await board.close();
+    }
+  });
+
   it("passes a German terms gate that sits behind the search form", async () => {
     const board = await startSearchThenAgreementBoard();
     const driver = new GenericFormDriver();
@@ -139,6 +152,47 @@ describe("generic form driver", () => {
     }
   });
 });
+
+function startHeaderRegisterLinkBoard(): Promise<{
+  origin: string;
+  sawHome: boolean;
+  close: () => Promise<void>;
+}> {
+  let sawHome = false;
+  const home = `<!DOCTYPE html><html><body>
+<header><nav><a href="/mitglied">Registrieren</a><a href="/login">Anmelden</a></nav></header>
+<form id="search" action="/search" method="get"><input type="text" name="keywords" aria-label="Search"><input type="submit" value="Suche"></form>
+</body></html>`;
+  const form = `<!DOCTYPE html><html><body>
+<form id="register" method="post" action="/mitglied">
+<label for="username">Benutzername</label><input id="username" name="username" type="text">
+<label for="email">E-Mail-Adresse</label><input id="email" name="email" type="email">
+<label for="new_password">Passwort</label><input id="new_password" name="new_password" type="password">
+<input type="submit" name="go" value="Registrieren">
+</form>
+</body></html>`;
+  const server = createServer((request, response) => {
+    const url = new URL(request.url ?? "/", "http://127.0.0.1");
+    const body = url.pathname === "/mitglied" ? form : home;
+    if (url.pathname === "/") sawHome = true;
+    response.writeHead(200, { "content-type": "text/html" });
+    response.end(body);
+  });
+  return new Promise((resolve) => {
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      const port = typeof address === "object" && address ? address.port : 0;
+      resolve({
+        origin: `http://127.0.0.1:${port}`,
+        get sawHome() {
+          return sawHome;
+        },
+        close: () =>
+          new Promise((done, reject) => server.close((error) => (error ? reject(error) : done()))),
+      });
+    });
+  });
+}
 
 function field(partial: Partial<FormFieldInfo> & Pick<FormFieldInfo, "selector">): FormFieldInfo {
   return {

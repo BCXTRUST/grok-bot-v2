@@ -128,9 +128,27 @@ export interface BrowserSession {
    * driver. Mapping uses this DOM description only; it never screenshots the page.
    */
   formFields?(selector: string): Promise<FormFieldInfo[]>;
+  /**
+   * Visible links and buttons, read once, so a driver can click Register before it looks
+   * at a form. Hidden controls are omitted.
+   */
+  clickables?(): Promise<ClickableControl[]>;
   /** Status and headers of the last document response, when the engine recorded one. */
   navigationMeta?(): Promise<{ status: number | null; headers: Record<string, string> }>;
   close(): Promise<void>;
+}
+
+/** A visible link, button, or menu item. `selector` addresses that control. */
+export interface ClickableControl {
+  selector: string;
+  tag: string;
+  role: string | null;
+  /** Submit, button, or empty when the control is a link. */
+  type: string | null;
+  text: string;
+  href: string | null;
+  /** True when the control sits in a header, nav, or menu bar. */
+  inHeader: boolean;
 }
 
 /** One control inside a form, as read from the DOM. `selector` addresses that control. */

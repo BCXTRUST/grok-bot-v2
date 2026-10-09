@@ -83,7 +83,9 @@ export async function startCustomForumFixture(
     forceUser?: string,
   ) => {
     const user = forceUser ?? userFor(request);
-    const navUser = user ? `<a class="logout" href="/">Logout</a>` : `<a href="/login">Login</a>`;
+    const navUser = user
+      ? `<a class="logout" href="/">Logout</a>`
+      : `<a href="/login">Login</a> <a href="/register">Register</a>`;
     response.writeHead(status, { "content-type": "text/html; charset=utf-8", ...headers });
     response.end(render("layout", { title, content, navUser }));
   };

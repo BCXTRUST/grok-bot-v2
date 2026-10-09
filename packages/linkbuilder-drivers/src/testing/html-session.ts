@@ -1,4 +1,4 @@
-import type { BrowserPersona, FormFieldInfo } from "@rakazo/adapter-kit";
+import type { BrowserPersona, ClickableControl, FormFieldInfo } from "@rakazo/adapter-kit";
 import { load } from "cheerio";
 import { noisePng } from "./png.js";
 
@@ -127,6 +127,43 @@ export class HtmlBrowserSession {
     await this.fill(selector, token);
   }
 
+  async clickables(): Promise<ClickableControl[]> {
+    this.assertOpen();
+    const controls: ClickableControl[] = [];
+    let generated = 0;
+    this.$("a, button, [role='link'], [role='button'], [role='menuitem']").each((_, node) => {
+      if (node.type !== "tag") return;
+      const el = this.$(node);
+      const text = el.text().replace(/\s+/g, " ").trim();
+      if (!text || text.length > 80) return;
+      const style = el.attr("style") ?? "";
+      if (el.attr("hidden") !== undefined || /display\s*:\s*none/i.test(style)) return;
+      if (el.attr("aria-hidden") === "true") return;
+      const tag = node.name;
+      const type = (el.attr("type") ?? "").toLowerCase() || null;
+      const href = el.attr("href") ?? null;
+      const id = el.attr("id") ?? "";
+      let selector: string;
+      if (id && /^[A-Za-z][\w-]*$/.test(id)) selector = `#${id}`;
+      else if (href) selector = `${tag}[href="${href.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"]`;
+      else {
+        generated += 1;
+        el.attr("data-rakazo-click", String(generated));
+        selector = `[data-rakazo-click="${generated}"]`;
+      }
+      controls.push({
+        selector,
+        tag,
+        role: el.attr("role") ?? null,
+        type,
+        text,
+        href,
+        inHeader: el.closest("header, nav, [role='banner'], [role='navigation'], .navbar, .headerbar").length > 0,
+      });
+    });
+    return controls;
+  }
+
   /** Prefer the register, terms, or reply form when a header search form comes first. */
   private accountForm(): Selection {
     let best = this.$("form").first();
@@ -143,7 +180,10 @@ export class HtmlBrowserSession {
         }
       };
       let score = 1;
-      if (has("input[type='password']") && (has("input[type='email']") || has("input[name='email']"))) {
+      if (
+        has("input[type='password']") &&
+        (has("input[type='email']") || has("input[name='email']"))
+      ) {
         score = 100;
       } else if (
         has("input[name='agreed']") ||
