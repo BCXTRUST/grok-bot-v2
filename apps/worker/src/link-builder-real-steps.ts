@@ -468,20 +468,9 @@ async function selectHost(ctx: StepContext): Promise<StepResult> {
     const capped = rows.filter((row) => row.status === "qualified");
     for (const host of capped) {
       if (await registrationOpen(ctx, host.id)) continue;
-      const refused = await ctx.services.prisma.lbRunStep.findMany({
-        where: { hostId: host.id, kind: "register" },
-        select: { createdAt: true, outcome: true },
-      });
-      const told = refused.some(
-        (step) =>
-          sameDayRefusal(step.outcome) &&
-          canRegisterHost({
-            priorRegistrationAts: [step.createdAt],
-            now: ctx.now,
-            timeZone: ctx.project.schedule.timezone,
-          }) === false,
-      );
-      if (told) return { kind: "wait", reason: "registration_cap" };
+      if (await registrationCapAlreadyTold(ctx, host.id)) {
+        return { kind: "wait", reason: "registration_cap" };
+      }
       return {
         kind: "step",
         stepKind: "register",
@@ -527,6 +516,22 @@ async function selectHost(ctx: StepContext): Promise<StepResult> {
   };
 }
 
+async function registrationCapAlreadyTold(ctx: StepContext, hostId: string): Promise<boolean> {
+  const refused = await ctx.services.prisma.lbRunStep.findMany({
+    where: { hostId, kind: "register" },
+    select: { createdAt: true, outcome: true },
+  });
+  return refused.some(
+    (step) =>
+      sameDayRefusal(step.outcome) &&
+      canRegisterHost({
+        priorRegistrationAts: [step.createdAt],
+        now: ctx.now,
+        timeZone: ctx.project.schedule.timezone,
+      }) === false,
+  );
+}
+
 function sameDayRefusal(outcome: unknown): boolean {
   return (
     typeof outcome === "object" &&
@@ -535,11 +540,14 @@ function sameDayRefusal(outcome: unknown): boolean {
   );
 }
 
-function countsAsRegistration(outcome: unknown): boolean {
+/** A parked read that never submitted must not spend the host's daily registration. */
+export function countsAsRegistration(outcome: unknown): boolean {
   if (!outcome || typeof outcome !== "object") return false;
   if (sameDayRefusal(outcome)) return false;
   const record = outcome as { username?: unknown; registration?: unknown };
-  return record.username !== undefined || record.registration !== undefined;
+  if (record.username !== undefined) return true;
+  if (Array.isArray(record.registration)) return record.registration.length > 0;
+  return typeof record.registration === "string" && record.registration.length > 0;
 }
 
 async function registrationOpen(ctx: StepContext, hostId: string): Promise<boolean> {
@@ -1199,6 +1207,9 @@ function genericJourneyStep(
 async function register(ctx: StepContext): Promise<StepResult> {
   const host = requireHost(ctx);
   if (host.status === "qualified" && !(await registrationOpen(ctx, host.id))) {
+    if (await registrationCapAlreadyTold(ctx, host.id)) {
+      return { kind: "wait", reason: "registration_cap" };
+    }
     return {
       kind: "step",
       stepKind: "register",

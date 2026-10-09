@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import { isLinkBuilderFakeEnabled } from "./link-builder-fake.js";
 import { isLinkBuilderRealEnabled } from "./link-builder-real.js";
 import {
+  countsAsRegistration,
   helperConnectionPlan,
   observedPageHelper,
   selectsGenericRegistrationJourney,
@@ -155,6 +156,18 @@ describe("generic registration journey", () => {
     expect(selectsGenericRegistrationJourney("xenforo", "closed")).toBe(false);
     expect(selectsGenericRegistrationJourney("phpbb", "unknown")).toBe(true);
     expect(selectsGenericRegistrationJourney("xenforo", "unmapped")).toBe(true);
+  });
+});
+
+describe("registration budget", () => {
+  it("does not spend a host's daily registration on a read that never submitted", () => {
+    expect(countsAsRegistration({ registration: [], result: "parked", reason: "unmapped" })).toBe(
+      false,
+    );
+    expect(countsAsRegistration({ registration: ["pending_email"] })).toBe(true);
+    expect(countsAsRegistration({ registration: "form_error" })).toBe(true);
+    expect(countsAsRegistration({ username: "sophie_braun95" })).toBe(true);
+    expect(countsAsRegistration({ refused: "registration_cap" })).toBe(false);
   });
 });
 
