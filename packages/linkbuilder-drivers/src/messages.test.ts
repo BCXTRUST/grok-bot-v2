@@ -4,6 +4,7 @@ import {
   captchaRejected,
   classifyRegistration,
   formErrorFixable,
+  usernameFormatRejected,
 } from "./messages.js";
 
 describe("registration notices", () => {
@@ -41,6 +42,11 @@ describe("registration notices", () => {
     expect(classifyRegistration("Please enter your birthday.", true).kind).toBe("form_error");
     expect(formErrorFixable(["Please enter your birthday."])).toBe(true);
     expect(formErrorFixable(["The username you entered is already in use."])).toBe(true);
+    expect(
+      usernameFormatRejected([
+        "Bitte gib einen anderen Namen ein. Der eingegebene Wert stimmt nicht mit dem gewünschten Format überein.",
+      ]),
+    ).toBe(true);
     expect(
       classifyRegistration(
         "An activation key has been sent to the email address you provided.",

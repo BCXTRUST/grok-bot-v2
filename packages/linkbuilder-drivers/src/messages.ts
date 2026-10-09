@@ -61,6 +61,14 @@ export function usernameTaken(messages: readonly string[]): boolean {
   return USERNAME_TAKEN.test(messages.join("\n"));
 }
 
+const USERNAME_FORMAT =
+  /anderen namen|gewünschten format|does not match the required format|enter a different name|invalid username|benutzername .{0,40}(?:ungültig|format)/i;
+
+/** The board rejected the shape of the username, not the captcha and not a taken name. */
+export function usernameFormatRejected(messages: readonly string[]): boolean {
+  return USERNAME_FORMAT.test(messages.join("\n"));
+}
+
 export function classifyRegistration(text: string, formStillOpen: boolean): RegistrationResult {
   if (CAPTCHA_REJECTED.test(text)) return { kind: "captcha_rejected" };
   if (PENDING_ADMIN.test(text)) return { kind: "pending_admin" };

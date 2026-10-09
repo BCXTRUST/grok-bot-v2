@@ -1072,6 +1072,9 @@ async function genericRegistrationJourney(
   );
   entry.registerFormReady = false;
   entry.captchaAttempts = 0;
+  if (journey.username && journey.username !== credentials.username) {
+    await replaceUsername(ctx, host, credentials.accountId, journey.username);
+  }
   const artifactIds = await screenshot(ctx, entry, "register");
   return genericJourneyStep(ctx, host, credentials.accountId, journey, artifactIds);
 }
@@ -1876,6 +1879,35 @@ function unmappedForm(ctx: StepContext, host: HostRow): Extract<StepResult, { ki
     outcome: { reason: "unmapped_form" },
     apply: park(ctx, host, "unmapped_form"),
   };
+}
+
+async function replaceUsername(
+  ctx: StepContext,
+  host: HostRow,
+  accountId: string,
+  username: string,
+): Promise<void> {
+  const { prisma, secrets } = ctx.services;
+  const account = await prisma.lbHostAccount.findUnique({ where: { id: accountId } });
+  if (!account?.siteLoginId) return;
+  const password = await loadPassword(ctx, account.siteLoginId);
+  const stored = await upsertSiteLogin(
+    { prisma, secrets },
+    {
+      workspaceId: ctx.project.workspaceId,
+      userId: ctx.project.ownerUserId,
+      botId: LINK_BUILDER_LOGIN_BOT,
+      site: host.homepageUrl,
+      username,
+      password,
+      from: "bot",
+    },
+  );
+  if ("error" in stored) return;
+  await prisma.lbHostAccount.update({
+    where: { id: accountId },
+    data: { username, siteLoginId: stored.login.id },
+  });
 }
 
 async function rotateUsername(ctx: StepContext, host: HostRow): Promise<void> {

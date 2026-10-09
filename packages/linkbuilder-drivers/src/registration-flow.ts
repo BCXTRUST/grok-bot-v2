@@ -5,12 +5,12 @@ import type {
   InboundMail,
 } from "@rakazo/adapter-kit";
 import { isSecretRegistrationPrompt } from "@rakazo/adapter-kit";
-import { extractVerificationLink } from "@rakazo/linkbuilder-core";
+import { extractVerificationLink, simplifyForumUsername } from "@rakazo/linkbuilder-core";
 import { placeCaptchaToken, solveImageCaptcha } from "./captcha.js";
 import type { BoardAccount, CaptchaChallenge, RegistrationResult } from "./driver.js";
 import type { RegistrationProfile } from "./generic.js";
 import { GenericFormDriver } from "./generic.js";
-import { formErrorFixable } from "./messages.js";
+import { formErrorFixable, usernameFormatRejected } from "./messages.js";
 
 const SUBMIT_BUDGET = 3;
 
@@ -33,6 +33,8 @@ export interface GenericJourneyResult {
   solved: number;
   activation: "logged_in" | "login_form" | null;
   permalink: string | null;
+  /** Set when the board rejected the first username and a simpler one was sent. */
+  username?: string;
 }
 
 /**
@@ -70,35 +72,53 @@ export async function runGenericRegistrationJourney(
     };
   }
 
+  const account = { ...profile };
   const registration: RegistrationResult["kind"][] = [];
   let solved = 0;
   let latest: RegistrationResult = { kind: "unknown", messages: [] };
+  let simplified = false;
+  const noteName = (result: GenericJourneyResult): GenericJourneyResult =>
+    account.username === profile.username ? result : { ...result, username: account.username };
   for (let attempt = 0; attempt < SUBMIT_BUDGET; attempt += 1) {
     if ((await driver.mapOpenRegistration(session)) !== "form") {
-      return parked(
-        driver.lastPark?.reason ?? "unmapped",
-        driver.lastPark?.label ?? null,
-        registration,
-        detected,
-        solved,
+      return noteName(
+        parked(
+          driver.lastPark?.reason ?? "unmapped",
+          driver.lastPark?.label ?? null,
+          registration,
+          detected,
+          solved,
+        ),
       );
     }
-    await driver.fillRegistration(session, profile);
+    await driver.fillRegistration(session, account);
     const challenge = await driver.detectCaptcha(session);
     const placed = await placeChallenge(session, challenge, solver, context);
     if (!placed.ok) {
-      return parked(placed.reason, null, registration, challenge, solved);
+      return noteName(parked(placed.reason, null, registration, challenge, solved));
     }
     solved += placed.solved;
     latest = await driver.submitRegistration(session);
     registration.push(latest.kind);
+    if (
+      latest.kind === "form_error" &&
+      !simplified &&
+      usernameFormatRejected(latest.messages)
+    ) {
+      const next = simplifyForumUsername(account.username);
+      if (next !== account.username) {
+        account.username = next;
+        simplified = true;
+        continue;
+      }
+    }
     if (latest.kind === "captcha_rejected") continue;
     if (latest.kind === "form_error" && formErrorFixable(latest.messages)) continue;
     break;
   }
 
   if (latest.kind === "pending_admin") {
-    return {
+    return noteName({
       outcome: "pending_admin",
       fromForm: false,
       parkReason: null,
@@ -108,41 +128,47 @@ export async function runGenericRegistrationJourney(
       solved,
       activation: null,
       permalink: null,
-    };
+    });
   }
 
   if (latest.kind !== "pending_email" && latest.kind !== "active") {
     const messages =
       latest.kind === "form_error" || latest.kind === "unknown" ? latest.messages.join(" ") : "";
-    return parked(latest.kind, messages.slice(0, 500) || null, registration, detected, solved);
+    return noteName(
+      parked(latest.kind, messages.slice(0, 500) || null, registration, detected, solved),
+    );
   }
 
   let activation: GenericJourneyResult["activation"] = null;
   if (latest.kind === "pending_email") {
     const mail = (await mailbox.listMessages(inboxId, {}, context)).at(-1);
     const link = mail ? extractVerificationLink(mail, origin) : null;
-    if (!link) return parked("verification_mail_missing", null, registration, detected, solved);
+    if (!link) {
+      return noteName(parked("verification_mail_missing", null, registration, detected, solved));
+    }
     await session.goto(link);
     if ((await driver.activationResult(session)) !== "active") {
-      return parked("activation_unknown", null, registration, detected, solved);
+      return noteName(parked("activation_unknown", null, registration, detected, solved));
     }
     activation = (await driver.isLoggedIn(session)) ? "logged_in" : "login_form";
   }
 
   if (!(await driver.isLoggedIn(session))) {
-    const loggedIn = await driver.login(session, origin, profile);
-    if (!loggedIn) return parked("login_failed", null, registration, detected, solved);
+    const loggedIn = await driver.login(session, origin, account);
+    if (!loggedIn) return noteName(parked("login_failed", null, registration, detected, solved));
   }
   const threads = await driver.listThreads(session, origin);
   const thread = threads[0];
-  if (!thread) return parked("no_thread", null, registration, detected, solved);
+  if (!thread) return noteName(parked("no_thread", null, registration, detected, solved));
   if (!(await driver.openReply(session, thread))) {
-    return parked("reply_unmapped", null, registration, detected, solved);
+    return noteName(parked("reply_unmapped", null, registration, detected, solved));
   }
   await driver.fillReply(session, reply);
   const posted = await driver.submitReply(session);
-  if (posted.kind !== "posted") return parked(posted.kind, null, registration, detected, solved);
-  return {
+  if (posted.kind !== "posted") {
+    return noteName(parked(posted.kind, null, registration, detected, solved));
+  }
+  return noteName({
     outcome: "posted",
     fromForm: false,
     parkReason: null,
@@ -152,7 +178,7 @@ export async function runGenericRegistrationJourney(
     solved,
     activation,
     permalink: posted.permalink,
-  };
+  });
 }
 
 function parked(
