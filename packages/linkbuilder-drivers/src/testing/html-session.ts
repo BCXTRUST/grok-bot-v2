@@ -78,7 +78,12 @@ export class HtmlBrowserSession {
 
   async exists(selector: string): Promise<boolean> {
     this.assertOpen();
-    return this.$(selector).length > 0;
+    try {
+      return this.$(selector).length > 0;
+    } catch {
+      // Cheerio rejects Playwright text selectors such as :has-text. Treat them as absent.
+      return false;
+    }
   }
 
   async attribute(selector: string, name: string): Promise<string | null> {
