@@ -42,16 +42,16 @@ import { BrowserEngineUnavailable } from "@rakazo/linkbuilder-browser";
 import {
   acceptLanguageFor,
   assertSessionCoherence,
+  boardTopicQueriesFromProject,
+  brandNameSources,
   CoherenceRefused,
   canRegisterHost,
   closingRunStatus,
   countedWithinPlan,
   decideEdgeBlock,
   extractVerificationLink,
-  brandNameSources,
   generateForumPassword,
   generateForumUsername,
-  resolvePersonaDisplayName,
   HOST_IDLE_GAP,
   type HostEvent,
   insertReference,
@@ -59,7 +59,6 @@ import {
   isFixtureHostDomain,
   isHardEdgeBlock,
   isWarmupMet,
-  boardTopicQueriesFromProject,
   marketForHost,
   PAGE_HELPER_EXTENSION_ID,
   PAGE_HELPER_VERSION,
@@ -72,6 +71,7 @@ import {
   recordHostVisited,
   recordRegistration,
   redactSecrets,
+  resolvePersonaDisplayName,
   shouldCount,
   spamRetryDecision,
   transitionHost,
@@ -88,10 +88,15 @@ import {
   type CaptchaChallenge,
   enrichCaptchaChallenge,
   formErrorFixable,
+  GenericFormDriver,
+  type GenericJourneyResult,
   instructionClickSelector,
   isLoginPath,
   placeCaptchaToken,
+  type RegistrationPage,
   type RegistrationResult,
+  registrationProfile,
+  runGenericRegistrationJourney,
   runPageHelper,
   solveImageCaptcha,
   UnmappedFormError,
@@ -718,9 +723,7 @@ async function readHelperVersion(session: BrowserSession): Promise<{
 }
 
 /** Missing helper uses Captell's HTTPS door. A loaded helper with the wrong version still parks. */
-export function helperConnectionPlan(
-  version: string | null,
-): "api" | "park" | "connected" {
+export function helperConnectionPlan(version: string | null): "api" | "park" | "connected" {
   if (!version) return "api";
   if (version !== PAGE_HELPER_VERSION) return "park";
   return "connected";
@@ -971,6 +974,228 @@ function registrationOutcome(
   }
 }
 
+/**
+ * Stock drivers are the prior. An unknown host, or a stock driver that never reaches a
+ * registration form, runs the generic journey instead of parking.
+ */
+export function selectsGenericRegistrationJourney(
+  platform: string,
+  stockPage?: RegistrationPage | null,
+): boolean {
+  if (platform === "unknown") return true;
+  return stockPage === "unknown" || stockPage === "unmapped";
+}
+
+function personaRegistrationProfile(ctx: StepContext, host: HostRow, credentials: Credentials) {
+  const parts = ctx.project.persona.displayName.trim().split(/\s+/).filter(Boolean);
+  const market = marketOf(ctx.project, host);
+  return registrationProfile({
+    username: credentials.username,
+    email: credentials.email,
+    password: credentials.password,
+    givenName: parts[0] ?? "Sophie",
+    familyName: parts.length > 1 ? parts.slice(1).join(" ") : "Braun",
+    language: host.language || market.language,
+    timezone: host.timezoneId || market.timezoneId,
+  });
+}
+
+function warmupReplyWithoutLink(language: string): string {
+  return language.split("-")[0] === "de"
+    ? "Danke für den Hinweis, das hatte ich ähnlich erlebt."
+    : "Thanks for laying that out. I had a similar experience.";
+}
+
+async function advanceHost(
+  tx: Tx,
+  host: HostRow,
+  event: Parameters<typeof moveHost>[2],
+  extra: Prisma.LbHostUpdateManyMutationInput = {},
+): Promise<void> {
+  await moveHost(tx, host, event, extra);
+  const next = transitionHost(hostStateOf(host), event);
+  host.status = next.status;
+  host.parkedFrom = next.parkedFrom;
+}
+
+function journeyCaptchaType(detected: CaptchaChallenge | null): LbCaptchaType {
+  if (!detected || detected.kind === "none") return "unsupported";
+  if (detected.kind === "image") return "image_letters";
+  if (detected.kind === "question") return "knowledge_question";
+  return detected.type;
+}
+
+async function genericRegistrationJourney(
+  ctx: StepContext,
+  host: HostRow,
+  entry: PoolEntry,
+): Promise<StepResult> {
+  const credentials = await ensureCredentials(ctx, host);
+  const driver = new GenericFormDriver();
+  entry.driver = driver;
+  const listMessages = ctx.services.mailbox.listMessages?.bind(ctx.services.mailbox);
+  const mailbox = {
+    listMessages: listMessages ?? (async () => []),
+  };
+  const journey = await runGenericRegistrationJourney(
+    entry.session,
+    host.homepageUrl,
+    personaRegistrationProfile(ctx, host, credentials),
+    ctx.services.captcha,
+    ctx.adapter,
+    mailbox,
+    ctx.project.mailboxId ?? "",
+    warmupReplyWithoutLink(host.language || marketOf(ctx.project, host).language),
+  );
+  entry.registerFormReady = false;
+  entry.captchaAttempts = 0;
+  const artifactIds = await screenshot(ctx, entry, "register");
+  return genericJourneyStep(ctx, host, credentials.accountId, journey, artifactIds);
+}
+
+function genericJourneyStep(
+  ctx: StepContext,
+  host: HostRow,
+  accountId: string,
+  journey: GenericJourneyResult,
+  artifactIds: string[],
+): Extract<StepResult, { kind: "step" }> {
+  const starting = host.status === "qualified";
+  const submitted = journey.registration.length > 0;
+  const waitingForMail =
+    journey.parkReason === "verification_mail_missing" &&
+    journey.registration.includes("pending_email");
+  const outcome = {
+    journey: "generic" as const,
+    result: journey.outcome,
+    fromForm: journey.fromForm,
+    registration: journey.registration,
+    solved: journey.solved,
+    activation: journey.activation,
+    permalink: journey.permalink,
+    ...(journey.parkReason ? { reason: journey.parkReason } : {}),
+    ...(journey.parkLabel ? { label: redactText(ctx, journey.parkLabel) } : {}),
+    ...(journey.detected ? { captcha: journey.detected.kind } : {}),
+  };
+  const base = {
+    kind: "step" as const,
+    hostId: host.id,
+    artifactIds,
+    outcome,
+    run:
+      starting && (submitted || journey.outcome === "posted")
+        ? { counters: recordRegistration(ctx.run.counters), currentUrl: journey.permalink }
+        : journey.permalink
+          ? { currentUrl: journey.permalink }
+          : undefined,
+  };
+  const recordSolve =
+    journey.solved > 0
+      ? captchaEvent(ctx, host, journey.solved, {
+          type: journeyCaptchaType(journey.detected),
+          door: "https_api",
+          outcome: "placed_submitted",
+          credits: 0,
+          siteKeyFound: journey.detected?.kind === "widget" && journey.detected.siteKey !== null,
+        })
+      : null;
+  const withSolve = (
+    step: Extract<StepResult, { kind: "step" }>,
+  ): Extract<StepResult, { kind: "step" }> =>
+    recordSolve ? (withEvent(step, recordSolve, 0) as Extract<StepResult, { kind: "step" }>) : step;
+
+  if (journey.outcome === "pending_admin") {
+    return withSolve({
+      ...base,
+      lastAction: "The form says an administrator must activate the account",
+      apply: async (tx) => {
+        if (host.status === "qualified") {
+          await advanceHost(tx, host, "registration_started", {
+            registerUrl: new GenericFormDriver().registerUrl(host.homepageUrl),
+          });
+        }
+        await advanceHost(tx, host, "admin_pending");
+      },
+    });
+  }
+
+  if (journey.outcome === "posted" || waitingForMail) {
+    const posted = journey.outcome === "posted";
+    return withSolve({
+      ...base,
+      lastAction: posted
+        ? "Registered and posted the first reply"
+        : "Registered, waiting for the verification mail",
+      apply: async (tx) => {
+        if (host.status === "qualified") {
+          await advanceHost(tx, host, "registration_started", {
+            registerUrl: new GenericFormDriver().registerUrl(host.homepageUrl),
+          });
+        }
+        if (waitingForMail) {
+          await advanceHost(tx, host, "email_pending");
+          return;
+        }
+        await advanceHost(tx, host, "account_active");
+        await tx.lbHostAccount.update({
+          where: { id: accountId },
+          data: {
+            emailVerifiedAt: ctx.now,
+            postCount: { increment: 1 },
+            firstPostAt: ctx.now,
+            lastPostAt: ctx.now,
+          },
+        });
+      },
+    });
+  }
+
+  const reason = journey.parkReason ?? "unmapped";
+  if (
+    reason === "missing_site_key" ||
+    reason === "captcha_rejected" ||
+    reason === "secret_prompt"
+  ) {
+    return withSolve({
+      ...base,
+      lastAction: reason === "captcha_rejected" ? CAPTCHA_SKIPPED : "Captcha not supported",
+      apply: async (tx) => {
+        if (host.status === "qualified" && submitted) {
+          await advanceHost(tx, host, "registration_started");
+        }
+        if (reason === "missing_site_key") {
+          await advanceHost(tx, host, "unsupported_captcha", {
+            captchaType: journeyCaptchaType(journey.detected),
+          });
+          return;
+        }
+        await skipUnsolvedCaptcha(host)(tx);
+      },
+    });
+  }
+  if (reason === "form_error" || journey.registration.at(-1) === "form_error") {
+    return withSolve({
+      ...base,
+      lastAction: "The board refused the registration",
+      apply: (tx) => moveHost(tx, host, "failed", { statusReason: reason.slice(0, 500) }),
+    });
+  }
+  const note = [reason, journey.parkLabel].filter(Boolean).join(": ");
+  const ticket =
+    reason === "tie" || reason === "unknown_required" || reason === "unmapped"
+      ? "unmapped_form"
+      : "unknown_page_state";
+  return withSolve({
+    ...base,
+    lastAction: "Parked for the operator",
+    apply: async (tx) => {
+      if (host.status === "qualified" && submitted)
+        await advanceHost(tx, host, "registration_started");
+      await park(ctx, host, ticket, { note: redactText(ctx, note).slice(0, 500) })(tx);
+    },
+  });
+}
+
 async function register(ctx: StepContext): Promise<StepResult> {
   const host = requireHost(ctx);
   if (host.status === "qualified" && !(await registrationOpen(ctx, host.id))) {
@@ -983,7 +1208,9 @@ async function register(ctx: StepContext): Promise<StepResult> {
     };
   }
   const entry = requireSession(ctx, host);
-  const driver = requireDriver(host, entry);
+  const genericHost = selectsGenericRegistrationJourney(host.platform);
+  const driver = genericHost ? new GenericFormDriver() : requireDriver(host, entry);
+  if (genericHost) entry.driver = driver;
   if (host.status === "registering") {
     // A resumed step: the operator may already have submitted, so read the page and never submit.
     const current = await driver.readRegistrationResult(entry.session);
@@ -996,15 +1223,18 @@ async function register(ctx: StepContext): Promise<StepResult> {
       }
     }
   }
+  if (genericHost) return genericRegistrationJourney(ctx, host, entry);
   const credentials = await ensureCredentials(ctx, host);
   let page: Awaited<ReturnType<BoardDriver["openRegistration"]>>;
   try {
     page = await driver.openRegistration(entry.session, host.homepageUrl);
   } catch (error) {
-    if (error instanceof UnmappedFormError) return unmappedForm(ctx, host);
+    if (error instanceof UnmappedFormError) return genericRegistrationJourney(ctx, host, entry);
     throw error;
   }
-  if (page === "unmapped") return unmappedForm(ctx, host);
+  if (selectsGenericRegistrationJourney(host.platform, page)) {
+    return genericRegistrationJourney(ctx, host, entry);
+  }
   if (page !== "form") {
     const artifactIds = await screenshot(ctx, entry, "register");
     if (page === "closed") {

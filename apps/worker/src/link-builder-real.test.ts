@@ -8,6 +8,7 @@ import { isLinkBuilderRealEnabled } from "./link-builder-real.js";
 import {
   helperConnectionPlan,
   observedPageHelper,
+  selectsGenericRegistrationJourney,
   templateReply,
 } from "./link-builder-real-steps.js";
 import { browserFactoryFromEnv, proxyResolverFor } from "./link-builder-real-wiring.js";
@@ -140,6 +141,20 @@ describe("proxy resolver", () => {
     await resolve(endpoint, context);
     await resolve(endpoint, context);
     expect(revealed).toEqual(["persona-secret", "persona-user:persona-secret@proxy.example:8080"]);
+  });
+});
+
+describe("generic registration journey", () => {
+  it("selects the generic journey for an unknown platform", () => {
+    expect(selectsGenericRegistrationJourney("unknown")).toBe(true);
+    expect(selectsGenericRegistrationJourney("unknown", "form")).toBe(true);
+  });
+
+  it("keeps a stock driver that already found the form", () => {
+    expect(selectsGenericRegistrationJourney("phpbb", "form")).toBe(false);
+    expect(selectsGenericRegistrationJourney("xenforo", "closed")).toBe(false);
+    expect(selectsGenericRegistrationJourney("phpbb", "unknown")).toBe(true);
+    expect(selectsGenericRegistrationJourney("xenforo", "unmapped")).toBe(true);
   });
 });
 
