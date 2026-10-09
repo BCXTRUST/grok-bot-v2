@@ -422,6 +422,7 @@ export class PlaywrightBrowserSession implements BrowserSession {
       const rootDoc = globalThis as unknown as {
         document: {
           querySelector: (selector: string) => DomNode | null;
+          querySelectorAll: (selector: string) => Iterable<DomNode>;
         };
       };
       interface DomNode {
@@ -435,7 +436,51 @@ export class PlaywrightBrowserSession implements BrowserSession {
         getAttribute: (name: string) => string | null;
         hasAttribute: (name: string) => boolean;
       }
-      const root = rootDoc.document.querySelector(rootSelector);
+      const hasControl = (form: DomNode, probe: string) => {
+        try {
+          return form.querySelector(probe) !== null;
+        } catch {
+          return false;
+        }
+      };
+      const accountForm = () => {
+        const forms = [...rootDoc.document.querySelectorAll("form")];
+        let best: DomNode | null = null;
+        let bestScore = 0;
+        for (const candidate of forms) {
+          const action = (candidate.getAttribute("action") ?? "").toLowerCase();
+          let score = 1;
+          if (
+            hasControl(candidate, "input[type='password']") &&
+            (hasControl(candidate, "input[type='email']") ||
+              hasControl(candidate, "input[name='email']"))
+          ) {
+            score = 100;
+          } else if (
+            hasControl(candidate, "input[name='agreed']") ||
+            hasControl(candidate, "input[name='not_agreed']") ||
+            hasControl(candidate, "#agreed") ||
+            candidate.id === "agreement"
+          ) {
+            score = 80;
+          } else if (action.includes("mode=register") || action.includes("register")) {
+            score = 70;
+          } else if (hasControl(candidate, "textarea")) {
+            score = 60;
+          } else if (hasControl(candidate, "input[type='password']")) {
+            score = 50;
+          } else if (hasControl(candidate, "input[type='email']")) {
+            score = 40;
+          }
+          if (score > bestScore) {
+            best = candidate;
+            bestScore = score;
+          }
+        }
+        return best;
+      };
+      const root =
+        rootSelector === "form" ? accountForm() : rootDoc.document.querySelector(rootSelector);
       if (!root) return [];
       const form = root.matches("form") ? root : root.querySelector("form");
       const scope = form ?? root;

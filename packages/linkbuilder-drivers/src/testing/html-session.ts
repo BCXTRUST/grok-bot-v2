@@ -127,9 +127,51 @@ export class HtmlBrowserSession {
     await this.fill(selector, token);
   }
 
+  /** Prefer the register, terms, or reply form when a header search form comes first. */
+  private accountForm(): Selection {
+    let best = this.$("form").first();
+    let bestScore = 0;
+    this.$("form").each((_, node) => {
+      if (node.type !== "tag") return;
+      const form = this.$(node);
+      const action = (form.attr("action") ?? "").toLowerCase();
+      const has = (probe: string) => {
+        try {
+          return form.find(probe).length > 0;
+        } catch {
+          return false;
+        }
+      };
+      let score = 1;
+      if (has("input[type='password']") && (has("input[type='email']") || has("input[name='email']"))) {
+        score = 100;
+      } else if (
+        has("input[name='agreed']") ||
+        has("input[name='not_agreed']") ||
+        has("#agreed") ||
+        form.attr("id") === "agreement"
+      ) {
+        score = 80;
+      } else if (action.includes("mode=register") || action.includes("register")) {
+        score = 70;
+      } else if (has("textarea")) {
+        score = 60;
+      } else if (has("input[type='password']")) {
+        score = 50;
+      } else if (has("input[type='email']")) {
+        score = 40;
+      }
+      if (score > bestScore) {
+        best = form;
+        bestScore = score;
+      }
+    });
+    return best;
+  }
+
   async formFields(selector: string): Promise<FormFieldInfo[]> {
     this.assertOpen();
-    const root = this.$(selector).first();
+    const root = selector === "form" ? this.accountForm() : this.$(selector).first();
     if (!root.length) return [];
     const form = tagOf(root[0]!) === "form" ? root : root.find("form").first();
     const scope = form.length ? form : root;

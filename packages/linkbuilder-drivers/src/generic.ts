@@ -425,41 +425,12 @@ function scoreCaptchaAnswer(field: FormFieldInfo): number {
   return 0;
 }
 
-/**
- * A board header often puts search or quick-login ahead of the account form.
- * Prefer the form that can actually register, confirm terms, or accept a reply.
- */
-const ACCOUNT_FORM_SELECTORS = [
-  "form:has(input[type='password']):has(input[type='email'])",
-  "form:has(input[type='password']):has(input[name='email'])",
-  "form:has(input[name='agreed'])",
-  "form:has(input[name='not_agreed'])",
-  "form:has(#agreed)",
-  "form#agreement",
-  "form[action*='mode=register']",
-  "form[action*='register']",
-  "form:has(textarea)",
-  "form:has(input[type='password'])",
-  "form:has(input[type='email'])",
-  "form",
-] as const;
-
 async function fieldsIn(
   session: BrowserSession,
   selector: string,
 ): Promise<FormFieldInfo[] | null> {
   if (!session.formFields) return null;
-  if (selector !== "form") return session.formFields(selector);
-  for (const candidate of ACCOUNT_FORM_SELECTORS) {
-    try {
-      if (!(await session.exists(candidate))) continue;
-      const fields = await session.formFields(candidate);
-      if (fields.length > 0) return fields;
-    } catch {
-      continue;
-    }
-  }
-  return session.formFields("form");
+  return session.formFields(selector);
 }
 
 /** XenForo keeps the register button on a short timer. Clicking early does not submit. */

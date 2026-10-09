@@ -256,6 +256,13 @@ export class RpcBrowserSession implements BrowserSession {
           label: z.string(),
           role: z.string().nullable(),
           required: z.boolean(),
+          placeholder: z.string().nullable().optional(),
+          group: z.string().nullable().optional(),
+          hidden: z.boolean().optional(),
+          value: z.string().nullable().optional(),
+          options: z
+            .array(z.object({ value: z.string(), label: z.string() }).strict())
+            .optional(),
         }),
       )
       .parse(await this.call({ method: "formFields", selector }));
