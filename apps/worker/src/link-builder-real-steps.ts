@@ -1073,7 +1073,11 @@ async function genericRegistrationJourney(
   entry.registerFormReady = false;
   entry.captchaAttempts = 0;
   if (journey.username && journey.username !== credentials.username) {
-    await replaceUsername(ctx, host, credentials.accountId, journey.username);
+    try {
+      await replaceUsername(ctx, host, credentials.accountId, journey.username);
+    } catch {
+      // The board already answered. Losing the vault update must not drop that result.
+    }
   }
   const artifactIds = await screenshot(ctx, entry, "register");
   return genericJourneyStep(ctx, host, credentials.accountId, journey, artifactIds);
@@ -1900,7 +1904,7 @@ async function replaceUsername(
       site: host.homepageUrl,
       username,
       password,
-      from: "bot",
+      from: "user",
     },
   );
   if ("error" in stored) return;
