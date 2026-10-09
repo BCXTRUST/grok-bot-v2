@@ -249,6 +249,12 @@ describe.skipIf(!gate.available)(
           );
           return;
         }
+        if (request.url?.startsWith("/covered")) {
+          response.end(
+            `<!doctype html><form><div style="position:fixed;inset:0;z-index:5"></div><input id="name" name="name" oninput="document.getElementById('out').textContent=this.value"><p id="out"></p></form>`,
+          );
+          return;
+        }
         if (request.url?.startsWith("/widget")) {
           response.end(
             `<!doctype html><form><div class="g-recaptcha" data-sitekey="fixture-key"><textarea name="g-recaptcha-response"></textarea></div><input id="name"></form>`,
@@ -313,6 +319,24 @@ describe.skipIf(!gate.available)(
         expect(await again.text("#visits")).toBe("2");
       } finally {
         await again.close();
+      }
+    });
+
+    it("fills a field that a banner covers", async () => {
+      const factory = new LocalBrowserSessionFactory({
+        profileRoot: root,
+        helperDirs: [FIXTURE_PAGE_HELPER_DIR],
+        headless: true,
+        pacing: TEST_PACING,
+        env: { LINK_BUILDER_BROWSER: "local" },
+      });
+      const session = await factory.open(persona("profile-covered"), context);
+      try {
+        await session.goto(`${origin}/covered`);
+        await session.fill("#name", "sophie_braun68");
+        expect(await session.text("#out")).toBe("sophie_braun68");
+      } finally {
+        await session.close();
       }
     });
 

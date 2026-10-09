@@ -15,6 +15,7 @@ describe("registration notices", () => {
       "Der Bestätigungscode, den du eingegeben hast, war falsch.",
       "You have provided an invalid answer to the question.",
       "Du hast die Frage falsch beantwortet.",
+      "Du hast eine falsche Antwort auf die Frage angegeben.",
       "The CAPTCHA verification failed. Please try again.",
       "Die Sicherheitsabfrage war ungültig.",
     ];

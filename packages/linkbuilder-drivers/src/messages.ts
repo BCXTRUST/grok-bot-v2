@@ -17,7 +17,7 @@ const ACTIVE =
  * the registration itself was fine and only the challenge has to be solved again.
  */
 const CAPTCHA_REJECTED =
-  /confirmation code you entered was incorrect|solution you provided was incorrect|bestätigungscode.*(falsch|nicht korrekt)|eingegebene antwort ist falsch|invalid answer to the question|answered the question incorrectly|frage falsch beantwortet|did not pass the security check|captcha prüfung fehlgeschlagen|(captcha|sicherheits(?:abfrage|code|frage|prüfung)|security check|verification).{0,40}(incorrect|invalid|failed|wrong|falsch|ungültig|fehlgeschlagen)/i;
+  /confirmation code you entered was incorrect|solution you provided was incorrect|bestätigungscode.*(falsch|nicht korrekt)|eingegebene antwort ist falsch|falsche antwort auf die frage|invalid answer to the question|answered the question incorrectly|frage falsch beantwortet|did not pass the security check|captcha prüfung fehlgeschlagen|(captcha|sicherheits(?:abfrage|code|frage|prüfung)|security check|verification).{0,40}(incorrect|invalid|failed|wrong|falsch|ungültig|fehlgeschlagen)/i;
 
 export function captchaRejected(text: string): boolean {
   return CAPTCHA_REJECTED.test(text);

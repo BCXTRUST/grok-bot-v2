@@ -192,13 +192,18 @@ export class PlaywrightBrowserSession implements BrowserSession {
 
   async fill(selector: string, text: string, options: { secret?: boolean } = {}): Promise<void> {
     await this.paceAction();
+    const visible = this.page.locator(selector).locator("visible=true");
+    const field = (await visible.count()) > 0 ? visible.first() : this.first(selector);
     try {
-      const field = this.first(selector);
-      await deadline(field.click({ timeout: 8_000 }));
+      // A moving captcha frame or a banner can block the focus click. The value still lands.
       await deadline(field.fill(text, { timeout: 8_000 }));
     } catch (error) {
-      if (options.secret) throw new Error(`Could not fill ${selector}`);
-      throw error;
+      try {
+        await deadline(field.fill(text, { force: true, timeout: 8_000 }));
+      } catch {
+        if (options.secret) throw new Error(`Could not fill ${selector}`);
+        throw error;
+      }
     }
   }
 
