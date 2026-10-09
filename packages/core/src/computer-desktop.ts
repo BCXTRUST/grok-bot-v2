@@ -136,7 +136,9 @@ function startDesktopWatchShell(): string {
     "done",
     "EOF",
     "chmod +x /tmp/rakazo-desktop-watch.sh",
-    "setsid -f /tmp/rakazo-desktop-watch.sh </dev/null >/dev/null 2>&1 || true",
+    "if ! pgrep -f '[r]akazo-desktop-watch' >/dev/null 2>&1; then",
+    "  setsid -f /tmp/rakazo-desktop-watch.sh </dev/null >/dev/null 2>&1 || true",
+    "fi",
   ].join("\n");
 }
 

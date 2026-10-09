@@ -363,6 +363,7 @@ async function showForumSearch(
   }
   const url = forumSearchUrlFromProject(project);
   if (!url.startsWith("https://www.google.de/search?")) return;
+  if (await personaBrowserOwnsDesktop(deps, actor, computer)) return;
   const query = primaryProblemQueryFromProject(project);
   const shops = shopNames(project);
   const onProblem = (titles: readonly string[]) =>
@@ -392,6 +393,25 @@ async function showForumSearch(
     }
   } catch (error) {
     console.error("link builder screen", "forum search", publicScreenError(error));
+  }
+}
+
+/** The link-builder persona browser is already on this display. Replacing it would close the registration. */
+async function personaBrowserOwnsDesktop(
+  deps: ProjectScreenDeps,
+  actor: Actor,
+  computer: TeamComputer,
+): Promise<boolean> {
+  try {
+    const out = await runDesktop(
+      deps,
+      actor,
+      computer,
+      "pgrep -f '[r]akazo-lb-browser' >/dev/null && printf '%s\\n' runner || true",
+    );
+    return out.includes("runner");
+  } catch {
+    return false;
   }
 }
 

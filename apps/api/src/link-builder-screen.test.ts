@@ -205,6 +205,46 @@ describe("project computer screen", () => {
     expect(scripts.join("\n")).not.toMatch(/register|signup|post/i);
   });
 
+  it("leaves the persona browser alone while it is working", async () => {
+    const expires = Date.now() + 30 * 60_000;
+    const url = `https://app.autoseo.run/novnc/remote/view/${expires}.capability/vnc.html`;
+    const scripts: string[] = [];
+    const prisma = {
+      lbProject: {
+        findFirst: vi.fn(async () => ({
+          id: "project-registering",
+          name: "Vitaminexpress",
+          brandName: "Vitaminexpress",
+          topicLanes: [{ tag: "Magnesium kaufen" }],
+          targets: [{ url: "https://www.vitaminexpress.org/de/magnesium", keywordClusters: [] }],
+        })),
+      },
+      computer: {
+        findFirst: vi.fn(async () => computer({ screenUrl: url })),
+        findMany: vi.fn(async () => [computer({ screenUrl: url })]),
+        updateMany: vi.fn(async () => ({ count: 1 })),
+      },
+      bot: { findFirst: vi.fn() },
+    } as unknown as PrismaClient;
+    await openProjectComputerScreen(
+      deps(prisma, {
+        keepAlive: vi.fn(),
+        execute: async function* (_ref: unknown, request: { argv: string[] }) {
+          scripts.push(request.argv.at(-1) ?? "");
+          yield { type: "stdout" as const, data: "runner\n" };
+          yield { type: "exit" as const, code: 0 };
+        },
+      }),
+      actor,
+      "project-registering",
+    );
+    await vi.waitFor(() => {
+      expect(scripts.some((script) => script.includes("[r]akazo-lb-browser"))).toBe(true);
+    });
+    expect(scripts.join("\n")).not.toContain("killall -q chrome");
+    expect(scripts.some((script) => script.includes("google.de/search"))).toBe(false);
+  });
+
   it("leaves a Google search that is already on the computer", async () => {
     const expires = Date.now() + 30 * 60_000;
     const url = `https://app.autoseo.run/novnc/remote/view/${expires}.capability/vnc.html`;

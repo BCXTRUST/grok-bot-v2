@@ -52,6 +52,7 @@ describe("computer desktop window helpers", () => {
     expect(command).toContain("--disable-fre");
     expect(command).toContain("OutdatedBuildDetector");
     expect(command).toContain("setsid -f");
+    expect(command).toContain("pgrep -f '[r]akazo-desktop-watch'");
     expect(command).toContain("xfce4-panel");
     expect(command).toContain(
       "https://www.google.de/search?q=Magnesium+Kr%C3%A4mpfe+Forum&hl=de&gl=de",
