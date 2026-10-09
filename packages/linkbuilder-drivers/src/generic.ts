@@ -447,6 +447,28 @@ const PHPBB_PROPERTY_KEEP = new Set([
   "phpbb-download",
 ]);
 
+/** Kitchen classification for the "Obst / Gemüse" sortable, not the botanical one. */
+const VEGETABLES = new Set([
+  "zucchini",
+  "paprika",
+  "tomate",
+  "karotte",
+  "möhre",
+  "gurke",
+  "salat",
+  "kohl",
+  "zwiebel",
+  "lauch",
+  "kartoffel",
+  "brokkoli",
+  "blumenkohl",
+  "spinat",
+  "aubergine",
+  "kürbis",
+  "bohne",
+  "erbse",
+]);
+
 /**
  * phpBB.de asks which properties belong on the board and which do not.
  * The decoys start in the matching list, so the submit is refused until they move.
@@ -455,13 +477,26 @@ export async function arrangeSortableCaptcha(session: BrowserSession): Promise<v
   if (!session.listText || !session.drag) return;
   if (!(await session.exists("#sortable1")) || !(await session.exists("#sortable2"))) return;
   const page = ((await session.pageText()) ?? "").toLowerCase();
-  if (!page.includes("welche eigenschaften passen zu www.phpbb.de")) return;
-  const items = await session.listText("#sortable1 li");
-  for (const item of items) {
-    const label = item.replace(/\s+/g, " ").trim();
-    if (!label || PHPBB_PROPERTY_KEEP.has(label.toLowerCase())) continue;
+  const move = async (label: string) => {
     const escaped = label.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
     await session.drag(`#sortable1 li:text-is("${escaped}")`, "#sortable2");
+  };
+  if (page.includes("welche eigenschaften passen zu www.phpbb.de")) {
+    const items = await session.listText("#sortable1 li");
+    for (const item of items) {
+      const label = item.replace(/\s+/g, " ").trim();
+      if (!label || PHPBB_PROPERTY_KEEP.has(label.toLowerCase())) continue;
+      await move(label);
+    }
+    return;
+  }
+  if (page.includes("obst") && page.includes("gemüse")) {
+    const items = await session.listText("#sortable1 li");
+    for (const item of items) {
+      const label = item.replace(/\s+/g, " ").trim();
+      if (!label || !VEGETABLES.has(label.toLowerCase())) continue;
+      await move(label);
+    }
   }
 }
 
@@ -657,6 +692,12 @@ export class GenericFormDriver implements BoardDriver {
         action.value ?? "",
         action.secret ? { secret: true } : undefined,
       );
+    }
+    for (const field of fields ?? []) {
+      if (!textControl(field) || !field.label.includes("*")) continue;
+      const current = (await session.attribute(field.selector, "value"))?.trim();
+      if (current) continue;
+      await session.fill(field.selector, "keine");
     }
   }
 

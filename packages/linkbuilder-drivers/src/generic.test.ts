@@ -144,6 +144,58 @@ describe("generic form driver", () => {
     }
   });
 
+  it("sorts vegetables out of the fruit list", async () => {
+    const board = await startSortableQuestionBoard(`<!DOCTYPE html><html><body>
+<p>Ordne hier Obst / Gemüse richtig zu.</p>
+<h3>Obst</h3>
+<ul id="sortable1">
+  <li>Zucchini</li><li>Birne</li><li>Paprika</li><li>Banane</li><li>Tomate</li><li>Karotte</li><li>Apfel</li>
+</ul>
+<h3>Gemüse</h3>
+<ul id="sortable2"></ul>
+</body></html>`);
+    const session = new HtmlBrowserSession();
+    try {
+      await session.goto(board.origin);
+      await arrangeSortableCaptcha(session);
+      const html = session.html();
+      const fruit = html.slice(html.indexOf('id="sortable1"'), html.indexOf('id="sortable2"'));
+      const vegetables = html.slice(html.indexOf('id="sortable2"'));
+      expect(fruit).toContain("Apfel");
+      expect(fruit).toContain("Banane");
+      expect(fruit).not.toContain("Zucchini");
+      expect(vegetables).toContain("Tomate");
+      expect(vegetables).toContain("Karotte");
+    } finally {
+      await board.close();
+    }
+  });
+
+  it("fills a starred custom field the plan does not know", async () => {
+    const board = await startSortableQuestionBoard(`<!DOCTYPE html><html><body>
+<form id="register" method="post" action="/register">
+<label for="username">Benutzername</label><input id="username" name="username">
+<label for="email">E-Mail-Adresse</label><input id="email" name="email" type="email">
+<label for="new_password">Passwort</label><input id="new_password" name="new_password" type="password">
+<label for="extra">Aufbauart/Ausstattung: *</label><input id="extra" name="pf_zusatz">
+<input type="submit" id="submit" name="submit" value="Absenden">
+</form>
+</body></html>`);
+    const session = new HtmlBrowserSession();
+    const driver = new GenericFormDriver();
+    try {
+      await session.goto(board.origin);
+      await driver.fillRegistration(session, {
+        username: "sophie_braun99",
+        email: "sophie@inbox.example",
+        password: "Fx-Pass-Word-77",
+      });
+      expect(await session.attribute("#extra", "value")).toBe("keine");
+    } finally {
+      await board.close();
+    }
+  });
+
   it("clicks the header register link and only then reads the form", async () => {
     const board = await startHeaderRegisterLinkBoard();
     const driver = new GenericFormDriver();
@@ -242,8 +294,8 @@ function startLockedTopicBoard(): Promise<{ origin: string; close: () => Promise
   });
 }
 
-function startSortableQuestionBoard(): Promise<{ origin: string; close: () => Promise<void> }> {
-  const page = `<!DOCTYPE html><html><body>
+function startSortableQuestionBoard(
+  page = `<!DOCTYPE html><html><body>
 <p>Welche Eigenschaften passen zu www.phpBB.de?</p>
 <p>Zieh die richtigen Optionen in die korrekte Liste.</p>
 <h3>Passen zu phpBB.de</h3>
@@ -257,7 +309,8 @@ function startSortableQuestionBoard(): Promise<{ origin: string; close: () => Pr
 </ul>
 <h3>Passen NICHT zu phpBB.de</h3>
 <ul id="sortable2"></ul>
-</body></html>`;
+</body></html>`,
+): Promise<{ origin: string; close: () => Promise<void> }> {
   const server = createServer((_request, response) => {
     response.writeHead(200, { "content-type": "text/html" });
     response.end(page);
