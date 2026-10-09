@@ -480,6 +480,76 @@ export function LinkBuilderPreview({ screen }: { screen: string }) {
       </div>
     );
   }
+  if (current === "tasks") {
+    const longPost = Array.from({ length: 12 }, () =>
+      "Durch das Registrieren auf diesem Board erklärst du dich mit den Nutzungsbedingungen einverstanden. Bitte lies den gesamten Text, bevor du fortfährst.",
+    ).join(" ");
+    const hosts = [
+      ["frauenselbsthilfe.de", "pending_email"],
+      ["krank.de", "dead"],
+      ["lifters-lounge.com", "dead"],
+      ["medizin-forum.de", "warming"],
+      ["phpbb.de", "qualified"],
+      ["xendach.de", "qualified"],
+    ] as const;
+    return (
+      <div className="h-dvh bg-[#050506]">
+        <ProjectView
+          project={{ name: "Vitaminexpress", slug: "vitaminexpress" } as LbProjectDetail}
+          status={null}
+          hosts={hosts.map(([domain, status], index) => ({
+            id: `host-${index}`,
+            registrableDomain: domain,
+            status,
+          })) as unknown as LbHostView[]}
+          placements={[]}
+          steps={Array.from({ length: 18 }, (_, index) => ({
+            id: `step-${index}`,
+            stepIndex: index,
+            kind: "register",
+            hostId: null,
+            lastAction:
+              index === 17
+                ? "Opened registration on phpbb.de"
+                : `Checked board ${index + 1} before the long post`,
+            error: null,
+            costs: { credits: 0, tokens: 0, bytes: 0, ms: 0 },
+            artifactIds: [],
+            createdAt: "2026-10-09T18:00:00.000Z",
+          }))}
+          threads={[
+            {
+              id: "thread-1",
+              domain: "phpbb.de",
+              title: "Vitamin D im Winter",
+            } as LbThreadView,
+          ]}
+          drafts={[
+            {
+              id: "draft-1",
+              threadCandidateId: "thread-1",
+              body: longPost,
+              status: "drafted",
+              linkSlot: "none",
+              modelLane: "draft",
+              modelId: "preview",
+              targetUrl: null,
+              anchorText: null,
+              confidence: null,
+              qualityChecks: {},
+            } as unknown as LbDraftView,
+          ]}
+          tickets={[]}
+          surface="dashboard"
+          onSurface={() => undefined}
+          onStart={() => undefined}
+          onPause={() => undefined}
+          onStop={() => undefined}
+          busy={false}
+        />
+      </div>
+    );
+  }
   if (current === "operator") {
     return (
       <div className="min-h-screen bg-[#050506]">

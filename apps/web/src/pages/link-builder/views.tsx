@@ -62,6 +62,16 @@ import {
 const inputClass =
   "w-full rounded-xl border border-[#2A2A31] bg-[#141416] px-3 py-2 text-[14px] text-[#ECECEE] outline-none";
 
+/** Host, status, and task text. Empty query keeps every row. */
+export function matchesTaskQuery(
+  query: string,
+  parts: Array<string | null | undefined>,
+): boolean {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return true;
+  return parts.some((part) => (part ?? "").replaceAll("_", " ").toLowerCase().includes(needle));
+}
+
 export function DashboardView({
   cards,
   loading,
@@ -408,7 +418,7 @@ export function ProjectView({
     <main
       className={
         watching
-          ? "mx-auto flex min-h-dvh w-full max-w-[1400px] flex-col gap-4 px-4 py-4"
+          ? "mx-auto flex h-dvh w-full max-w-[1400px] flex-col gap-4 overflow-hidden px-4 py-4"
           : "mx-auto flex w-full max-w-3xl flex-col gap-4 px-4 py-6"
       }
     >
@@ -641,6 +651,27 @@ function Dashboard({
     searches,
     searchQuery: primaryProblemQueryFromProject(project),
   });
+  const [taskQuery, setTaskQuery] = useState("");
+  const taskColumn = useRef<HTMLDivElement>(null);
+  const visibleItems = items.filter((item) => matchesTaskQuery(taskQuery, [item.label, item.status]));
+  const visibleForums = forums.filter((host) =>
+    matchesTaskQuery(taskQuery, [host.registrableDomain, host.status]),
+  );
+  const visibleThreadRows = visibleThreads.filter((thread) =>
+    matchesTaskQuery(taskQuery, [thread.title, thread.domain]),
+  );
+  const visibleLinks = visiblePlacements.filter((row) =>
+    matchesTaskQuery(taskQuery, [row.domain, row.status]),
+  );
+  const visibleDraftRows = visibleDrafts.filter((draft) =>
+    matchesTaskQuery(taskQuery, [draft.body, draft.status]),
+  );
+  const feedTail = `${items.length}:${items[items.length - 1]?.id ?? ""}`;
+  useEffect(() => {
+    const node = taskColumn.current;
+    if (!node || taskQuery.trim()) return;
+    node.scrollTop = node.scrollHeight;
+  }, [feedTail, taskQuery]);
   const action = overviewAction(items, working);
   const frame = overviewFrame({ steps, tickets, screenUrl });
   const stage = overviewStage({
@@ -651,7 +682,7 @@ function Dashboard({
   });
   return (
     <section className="flex min-h-0 flex-1 flex-col gap-4" aria-label="Dashboard">
-      <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[minmax(0,1.6fr)_minmax(280px,360px)]">
+      <div className="grid min-h-0 flex-1 grid-rows-[minmax(0,0.9fr)_minmax(0,1.1fr)] gap-4 lg:grid-cols-[minmax(0,1.6fr)_minmax(280px,360px)] lg:grid-rows-1">
         <ComputerPane
           working={working}
           action={action}
@@ -661,12 +692,25 @@ function Dashboard({
           screenPending={screenPending}
           loadArtifact={loadArtifact}
         />
-        <div className="flex min-h-0 flex-col gap-3 lg:max-h-[calc(100dvh-11rem)]">
-          <ActivityFeed items={items} />
-          <ForumsPicked hosts={forums} threads={visibleThreads} />
-          <LinksPlaced rows={visiblePlacements} />
+        <div
+          ref={taskColumn}
+          data-task-column=""
+          className="rk-scroll flex min-h-0 flex-col gap-3 overflow-y-auto overscroll-contain"
+        >
+          <input
+            aria-label="Filter tasks"
+            placeholder="Filter"
+            value={taskQuery}
+            onChange={(event) => setTaskQuery(event.target.value)}
+            className={`${inputClass} sticky top-0 z-10 shrink-0`}
+          />
+          {visibleItems.length > 0 || taskQuery.trim() === "" ? (
+            <ActivityFeed items={visibleItems} />
+          ) : null}
+          <ForumsPicked hosts={visibleForums} threads={visibleThreadRows} />
+          <LinksPlaced rows={visibleLinks} />
           <DraftNotes
-            drafts={visibleDrafts}
+            drafts={visibleDraftRows}
             draftsOnly={project.disclosureMode === "drafts_only"}
             onDecide={onDecideDraft}
           />
@@ -711,7 +755,7 @@ function ComputerPane({
       data-frame={frame?.kind ?? "pending"}
       data-stage={stage}
       data-session={session}
-      className="relative flex min-h-[420px] flex-col overflow-hidden rounded-[16px] bg-[#0c0c0e] sm:min-h-[560px]"
+      className="relative flex min-h-0 flex-col overflow-hidden rounded-[16px] bg-[#0c0c0e]"
       style={{ boxShadow: "var(--bui-shadow-card)" }}
     >
       <div className="flex h-11 items-center gap-3 border-b border-[#2A2A31] px-3.5">
@@ -748,7 +792,7 @@ function ComputerPane({
           <PixelTrail live={working && session === "closed"} />
         </span>
       </div>
-      <div className="relative min-h-[360px] flex-1 sm:min-h-[500px]">
+      <div className="relative min-h-0 flex-1">
         {frame?.kind === "url" ? (
           <iframe
             title="Computer"
@@ -843,7 +887,7 @@ function WorkingScreen({
   screenPending?: boolean;
 }) {
   return (
-    <section aria-label={label} className="flex min-h-[360px] bg-[#0c0c0e] p-4 sm:min-h-[500px]">
+    <section aria-label={label} className="flex h-full min-h-0 bg-[#0c0c0e] p-4">
       <BuiCard className="flex w-full flex-col justify-center gap-4 px-10 py-12">
         <p className="text-[13px] text-[#8A8A90]">{WORK_STAGE_LABELS[stage]}</p>
         {working ? (
@@ -886,19 +930,8 @@ function PixelTrail({ live }: { live: boolean }) {
 }
 
 function ActivityFeed({ items }: { items: OverviewFeedItem[] }) {
-  const scroller = useRef<HTMLElement>(null);
-  const tail = `${items.length}:${items[items.length - 1]?.id ?? ""}`;
-  useEffect(() => {
-    const node = scroller.current;
-    if (node) node.scrollTop = node.scrollHeight;
-  }, [tail]);
   return (
-    <section
-      ref={scroller}
-      className="rk-scroll min-h-0 flex-1 overflow-y-auto"
-      aria-label="Activity"
-      aria-live="polite"
-    >
+    <section className="min-h-0 shrink-0" aria-label="Activity" aria-live="polite">
       <BuiCard className="overflow-hidden">
         {items.length === 0 ? (
           <p className="px-3 py-4 text-[13px] text-[#85858A]">No events yet</p>
@@ -958,7 +991,7 @@ function ForumsPicked({ hosts, threads }: { hosts: LbHostView[]; threads: LbThre
         {threads.map((thread) => (
           <div
             key={thread.id}
-            className="border-b border-[#2A2A31] px-3 py-2 text-[13px] text-[#C8C8CD] last:border-b-0"
+            className="break-words border-b border-[#2A2A31] px-3 py-2 text-[13px] text-[#C8C8CD] last:border-b-0"
           >
             {thread.title}
           </div>
@@ -1015,7 +1048,7 @@ function DraftNotes({
     <section aria-label="Drafts" className="flex flex-col gap-2">
       {drafts.map((draft) => (
         <BuiCard key={draft.id} className="flex flex-col gap-2 p-3 text-[13px] text-[#C9C9CE]">
-          <p>{draft.body}</p>
+          <p className="break-words">{draft.body}</p>
           {draftsOnly && draft.status === "drafted" && onDecide ? (
             <div className="flex gap-2">
               <BuiButton label="Approve draft" onClick={() => onDecide(draft.id, "approved")}>

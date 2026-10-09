@@ -17,6 +17,7 @@ import {
   OperatorView,
   ProjectView,
   WizardView,
+  matchesTaskQuery,
   watchingFrameSrc,
 } from "./views.js";
 
@@ -294,6 +295,21 @@ describe("link builder screens", () => {
     expect(html).not.toContain("brett-");
     expect(html).not.toContain(">Hosts<");
     expect(html).not.toContain(">Placements<");
+    expect(html).toContain('data-task-column=""');
+    expect(html).toContain("overflow-y-auto");
+    expect(html).toContain('aria-label="Filter tasks"');
+    expect(html).toContain('placeholder="Filter"');
+  });
+
+  it("matches a task filter on host, status, and task text", () => {
+    expect(matchesTaskQuery("", ["krank.de", "dead"])).toBe(true);
+    expect(matchesTaskQuery("  krank.de ", ["krank.de", "dead"])).toBe(true);
+    expect(matchesTaskQuery("KRANK", ["lifters-lounge.com", "dead"])).toBe(false);
+    expect(matchesTaskQuery("pending email", ["frauenselbsthilfe.de", "pending_email"])).toBe(
+      true,
+    );
+    expect(matchesTaskQuery("Registrieren", ["Registrieren on phpbb.de", "done"])).toBe(true);
+    expect(matchesTaskQuery("dead", ["medizin-forum.de", "warming"])).toBe(false);
   });
 
   it("does not open a captcha handoff on the dashboard", () => {
