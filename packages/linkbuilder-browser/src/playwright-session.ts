@@ -536,6 +536,7 @@ export class PlaywrightBrowserSession implements BrowserSession {
         tagName: string;
         textContent: string | null;
         getAttribute: (name: string) => string | null;
+        setAttribute: (name: string, value: string) => void;
         hasAttribute: (name: string) => boolean;
         getClientRects: () => { length: number };
       }
@@ -587,7 +588,8 @@ export class PlaywrightBrowserSession implements BrowserSession {
       if (!root) return [];
       const form = root.matches("form") ? root : root.querySelector("form");
       const scope = form ?? root;
-      return [...scope.querySelectorAll("input, textarea, select, button")].map((el, index) => {
+      let generated = 0;
+      return [...scope.querySelectorAll("input, textarea, select, button")].map((el) => {
         const id = el.id || null;
         const name = el.getAttribute("name");
         const tag = el.tagName.toLowerCase();
@@ -608,11 +610,14 @@ export class PlaywrightBrowserSession implements BrowserSession {
         )
           .replace(/\s+/g, " ")
           .trim();
-        const control = id
-          ? `#${cssEscape(id)}`
-          : name
-            ? `[name="${cssEscape(name)}"]`
-            : `${tag}:nth-of-type(${index + 1})`;
+        let control: string;
+        if (id) control = `#${cssEscape(id)}`;
+        else if (name) control = `[name="${cssEscape(name)}"]`;
+        else {
+          generated += 1;
+          el.setAttribute("data-rakazo-field", String(generated));
+          control = `[data-rakazo-field="${generated}"]`;
+        }
         const type = el.getAttribute("type");
         const fieldset = el.closest("fieldset");
         const legend = fieldset?.querySelector("legend");

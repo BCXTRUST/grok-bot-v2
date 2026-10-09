@@ -272,13 +272,15 @@ export class HtmlBrowserSession {
         label = (el.text() || el.attr("value") || "").replace(/\s+/g, " ").trim();
       }
       if (!label) label = (el.attr("aria-label") ?? "").trim();
-      const control = id
-        ? /^[A-Za-z_][\w-]*$/.test(id)
-          ? `#${id}`
-          : `[id="${id.replace(/"/g, "")}"]`
-        : name
-          ? `[name="${name.replace(/"/g, "")}"]`
-          : `${tag}:nth-of-type(${index + 1})`;
+      let control: string;
+      if (id && /^[A-Za-z_][\w-]*$/.test(id)) control = `#${id}`;
+      else if (id) control = `[id="${id.replace(/"/g, "")}"]`;
+      else if (name) control = `[name="${name.replace(/"/g, "")}"]`;
+      else {
+        const stamp = String(index + 1);
+        el.attr("data-rakazo-field", stamp);
+        control = `[data-rakazo-field="${stamp}"]`;
+      }
       const type =
         el.attr("type") ?? (tag === "textarea" ? null : tag === "button" ? "submit" : null);
       const legend = el.closest("fieldset").children("legend").first();
