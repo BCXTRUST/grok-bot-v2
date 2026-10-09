@@ -1014,6 +1014,21 @@ function warmupReplyWithoutLink(language: string): string {
     : "Thanks for laying that out. I had a similar experience.";
 }
 
+/** Link-free warmup. Brand relevance is for the later live post, not this one. */
+export function warmupReplyChoice(language: string): {
+  body: string;
+  linkSlot: "none";
+  targetUrl: null;
+  anchorText: null;
+} {
+  return {
+    body: warmupReplyWithoutLink(language),
+    linkSlot: "none",
+    targetUrl: null,
+    anchorText: null,
+  };
+}
+
 async function advanceHost(
   tx: Tx,
   host: HostRow,
@@ -2140,6 +2155,26 @@ async function publish(ctx: StepContext, warmup: boolean): Promise<StepResult> {
         relevance: 0,
       });
       continue;
+    }
+    if (warmup) {
+      const reply = warmupReplyChoice(host.language || marketOf(ctx.project, host).language);
+      chosen = {
+        thread,
+        body: reply.body,
+        linkSlot: reply.linkSlot,
+        targetUrl: reply.targetUrl,
+        anchorText: reply.anchorText,
+        modelLane: "draft",
+        modelId: "warmup-fixed",
+        confidence: null,
+        qualityChecks: {},
+        tokens: 0,
+        relevance: 0,
+        openQuestion: true,
+        queueOnly: false,
+        refusal: false,
+      };
+      break;
     }
     const editorText = await entry.session.pageText().catch(() => "");
     const pageText = [discussion, editorText].filter(Boolean).join("\n");
