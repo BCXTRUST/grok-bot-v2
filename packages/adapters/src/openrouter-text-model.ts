@@ -16,6 +16,9 @@ import { z } from "zod";
 
 export const OPENROUTER_CHAT_URL = "https://openrouter.ai/api/v1/chat/completions";
 
+/** Reasoning models can spend most of a minute before the JSON arrives. */
+export const OPENROUTER_TEXT_TIMEOUT_MS = 120_000;
+
 /** Product names from plan section 9, as OpenRouter-style ids. Deployments may override them. */
 export const DEFAULT_TEXT_MODEL_LANES = {
   // Gemini 3.8 Flash is the quality/cost default for end-user drafting.
@@ -72,7 +75,7 @@ export class OpenRouterTextModel implements TextModel {
     this.fetchImpl = options.fetch ?? globalThis.fetch;
     this.models = { ...DEFAULT_TEXT_MODEL_LANES, ...options.models };
     this.baseUrl = (options.baseUrl ?? OPENROUTER_CHAT_URL).replace(/\/$/, "");
-    this.timeoutMs = options.timeoutMs ?? 30_000;
+    this.timeoutMs = options.timeoutMs ?? OPENROUTER_TEXT_TIMEOUT_MS;
     if (!this.baseUrl.startsWith("https://")) throw new Error("invalid");
   }
 

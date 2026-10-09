@@ -21,9 +21,10 @@ import {
 import { z } from "zod";
 
 /*
- * Captell HTTPS adapter. POST /api/v1/solve waits and returns the finished result.
- * The token is not loaded from GET /api/v1/tasks. The bearer is read per call and is
- * never written into errors, URLs or logs.
+ * Captell HTTPS adapter. POST /api/v1/solve may return the finished result, or 202
+ * with status "processing" and a job id. A processing job is polled on
+ * GET /api/v1/tasks/:id until it is ready or the solve budget runs out.
+ * The bearer is read per call and is never written into errors, URLs or logs.
  */
 
 export const CAPTELL_DEFAULT_BASE_URL = "https://captell.run";
@@ -50,14 +51,19 @@ const SolutionSchema = z
   })
   .passthrough();
 
+const WholeNumber = z.union([z.number().int(), z.string().regex(/^-?\d+$/)]).transform((value) => {
+  return typeof value === "number" ? value : Number(value);
+});
+
 const SolveBodySchema = z.object({
   id: z.string().min(1).optional(),
   taskId: z.string().min(1).optional(),
   status: z.string().optional(),
   answer: z.string().optional(),
   solution: SolutionSchema.optional(),
-  credits: z.number().int().min(0),
-  balance: z.number().int(),
+  credits: WholeNumber.pipe(z.number().int().min(0)),
+  /** Live ready tasks omit balance. A processing body may send it as a string. */
+  balance: WholeNumber.pipe(z.number().int()).optional().default(0),
   sandbox: z.union([z.boolean(), z.string()]).optional(),
   label: z.string().optional(),
 });
@@ -70,11 +76,13 @@ export interface CaptellHttpSolverOptions {
   fetch?: typeof fetch;
   baseUrl?: string;
   timeoutMs?: number;
-  /** How long POST /solve may wait for the finished result. */
+  /** How long POST /solve plus task polling may wait for the finished result. */
   solveTimeoutMs?: number;
   /** Extra attempts after the first for a failed solve, network failures and HTTP 5xx. */
   maxRetries?: number;
   retryDelayMs?: number;
+  /** Pause between GET /api/v1/tasks/:id polls while a job is still processing. */
+  pollIntervalMs?: number;
 }
 
 export class CaptellHttpSolver implements CaptchaSolver {
@@ -86,6 +94,7 @@ export class CaptellHttpSolver implements CaptchaSolver {
   private readonly solveTimeoutMs: number;
   private readonly maxRetries: number;
   private readonly retryDelayMs: number;
+  private readonly pollIntervalMs: number;
 
   constructor(options: CaptellHttpSolverOptions) {
     this.token = options.token;
@@ -99,6 +108,7 @@ export class CaptellHttpSolver implements CaptchaSolver {
     this.solveTimeoutMs = options.solveTimeoutMs ?? 180_000;
     this.maxRetries = options.maxRetries ?? 4;
     this.retryDelayMs = options.retryDelayMs ?? 0;
+    this.pollIntervalMs = options.pollIntervalMs ?? 2_000;
   }
 
   describe(): AdapterDescriptor<CaptchaSolverCapabilities> {
@@ -114,7 +124,7 @@ export class CaptellHttpSolver implements CaptchaSolver {
     const { status, json } = await this.call(context, "/api/v1/balance", { method: "GET" });
     assertNoSandbox(json);
     if (status >= 400) throw failure(status, json);
-    const parsed = CaptchaBalanceSchema.safeParse(json);
+    const parsed = CaptchaBalanceSchema.safeParse(balanceBody(json));
     if (!parsed.success) throw new CaptchaSolverError("error", "error", { retryable: false });
     return parsed.data;
   }
@@ -122,12 +132,21 @@ export class CaptellHttpSolver implements CaptchaSolver {
   async solve(request: CaptchaSolveRequest, context: AdapterContext): Promise<CaptchaSolveResult> {
     const parsed = parseCaptchaSolveRequest(request);
     const payload = solvePayload(parsed);
-    const { status, json } = await this.call(
+    const started = Date.now();
+    let { status, json } = await this.call(
       context,
       "/api/v1/solve",
       { method: "POST", body: JSON.stringify(payload) },
       this.solveTimeoutMs,
     );
+    assertNoSandbox(json);
+    const jobId = jobIdFrom(json);
+    if (isProcessing(json)) {
+      if (!jobId) throw failure(status >= 400 ? status : 422, json);
+      const polled = await this.pollTask(context, jobId, this.solveTimeoutMs - (Date.now() - started));
+      status = polled.status;
+      json = polled.json;
+    }
     assertNoSandbox(json);
     if (isUnfinishedSolve(json)) throw failure(status >= 400 ? status : 422, json);
     if (status >= 400 || hasError(json)) throw failure(status, json);
@@ -161,6 +180,36 @@ export class CaptellHttpSolver implements CaptchaSolver {
     if (answered) return answered;
     if (status >= 400 || hasError(json)) throw failure(status, json);
     return { couldNotAnswer: true };
+  }
+
+  private async pollTask(
+    context: AdapterContext,
+    taskId: string,
+    budgetMs: number,
+  ): Promise<{ status: number; json: unknown }> {
+    const deadline = Date.now() + Math.max(0, budgetMs);
+    let last: { status: number; json: unknown } = {
+      status: 202,
+      json: { status: "processing", id: taskId },
+    };
+    while (Date.now() <= deadline) {
+      if (context.signal.aborted) {
+        throw new CaptchaSolverError("error", "error", { retryable: false });
+      }
+      const remaining = Math.max(1, deadline - Date.now());
+      last = await this.call(
+        context,
+        `/api/v1/tasks/${encodeURIComponent(taskId)}`,
+        { method: "GET" },
+        Math.min(this.timeoutMs, remaining),
+      );
+      assertNoSandbox(last.json);
+      if (!isProcessing(last.json)) return last;
+      const pauseMs = deadline - Date.now();
+      if (pauseMs <= 0) break;
+      if (this.pollIntervalMs > 0) await delay(Math.min(this.pollIntervalMs, pauseMs));
+    }
+    throw new CaptchaSolverError("error", "error", { retryable: true });
   }
 
   private async call(
@@ -270,10 +319,42 @@ function assertNoSandbox(json: unknown): void {
   }
 }
 
-function isUnfinishedSolve(json: unknown): boolean {
-  if (!json || typeof json !== "object") return false;
+/** Live balance is `{ balance: "0" }`. The contract we store is `{ credits }`. */
+function balanceBody(json: unknown): unknown {
+  if (!json || typeof json !== "object") return json;
+  const record = json as Record<string, unknown>;
+  const credits = wholeNumber(record.credits) ?? wholeNumber(record.balance);
+  if (credits === undefined) return json;
+  return { ...record, credits };
+}
+
+function wholeNumber(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isInteger(value)) return value;
+  if (typeof value === "string" && /^-?\d+$/.test(value)) return Number(value);
+  return undefined;
+}
+
+function jobIdFrom(json: unknown): string | undefined {
+  if (!json || typeof json !== "object") return undefined;
+  const record = json as Record<string, unknown>;
+  if (typeof record.id === "string" && record.id.length > 0) return record.id;
+  if (typeof record.taskId === "string" && record.taskId.length > 0) return record.taskId;
+  return undefined;
+}
+
+function solveStatus(json: unknown): string {
+  if (!json || typeof json !== "object") return "";
   const status = (json as Record<string, unknown>).status;
-  return typeof status === "string" && status !== "ready";
+  return typeof status === "string" ? status : "";
+}
+
+function isProcessing(json: unknown): boolean {
+  return solveStatus(json) === "processing" || solveStatus(json) === "pending";
+}
+
+function isUnfinishedSolve(json: unknown): boolean {
+  const status = solveStatus(json);
+  return status.length > 0 && status !== "ready";
 }
 
 function isTransientSolveFailure(path: string, status: number, json: unknown): boolean {

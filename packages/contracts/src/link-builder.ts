@@ -515,17 +515,29 @@ export type LbDraftQualityChecks = z.infer<typeof LbDraftQualityChecksSchema>;
 export const LbThreadRelevanceSchema = z.object({
   relevance: z.number().min(0).max(1),
   openQuestion: z.boolean(),
-  reasons: z.array(z.string().max(300)).max(12),
+  reasons: z.array(z.string().max(300)).max(12).default([]),
 });
 export type LbThreadRelevance = z.infer<typeof LbThreadRelevanceSchema>;
 
-export const LbDraftReplySchema = z.object({
+const DRAFT_BODY_KEYS = ["body", "text", "reply", "message", "answer", "response", "content"] as const;
+
+export const LbDraftReplySchema = z.preprocess((value) => {
+  if (!value || typeof value !== "object") return value;
+  const record = { ...(value as Record<string, unknown>) };
+  const named = DRAFT_BODY_KEYS.map((key) => record[key]).find((item) => typeof item === "string");
+  if (typeof record.body !== "string" && typeof named === "string") record.body = named;
+  if (record.linkSlot === undefined) record.linkSlot = "none";
+  if (record.targetUrlIndex === undefined) record.targetUrlIndex = null;
+  if (record.anchorText === undefined) record.anchorText = null;
+  if (typeof record.confidence !== "number") record.confidence = 0.6;
+  return record;
+}, z.object({
   body: z.string().max(10_000),
   linkSlot: LbLinkSlotSchema,
   targetUrlIndex: z.number().int().min(0).nullable(),
   anchorText: z.string().max(80).nullable(),
   confidence: z.number().min(0).max(1),
-});
+}));
 export type LbDraftReply = z.infer<typeof LbDraftReplySchema>;
 
 export const LbFitCheckSchema = z.object({

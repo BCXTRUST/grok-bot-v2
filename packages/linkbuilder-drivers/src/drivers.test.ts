@@ -24,9 +24,9 @@ import {
   runPageHelper,
   solveImageCaptcha,
 } from "./captcha.js";
-import { acceptCookieWall } from "./cookie-wall.js";
+import { acceptCookieWall, COOKIE_ACCEPT_SELECTORS } from "./cookie-wall.js";
 import { boardDriverFor } from "./index.js";
-import { PhpbbDriver, phpbbPermalink } from "./phpbb.js";
+import { PhpbbDriver, phpbbPermalink, phpbbTopicUrl } from "./phpbb.js";
 import { type FixtureMail, renderBbcode, startPhpbbFixture } from "./testing/phpbb-fixture.js";
 import { noisePng, TINY_PNG } from "./testing/png.js";
 import { normalizeTargetUrl, VerifyRefused, verifyPlacement } from "./verify.js";
@@ -44,6 +44,127 @@ const driver = new PhpbbDriver();
 const target = "https://www.vereinsplaner.example/mitglieder?utm_source=forum";
 
 describe("phpBB driver helpers", () => {
+  it("includes the German board cookie accept control", () => {
+    expect(COOKIE_ACCEPT_SELECTORS).toContain("a[onclick*='ca_accept']");
+  });
+
+  it("reads a German activation-key notice as waiting for email", async () => {
+    const notice =
+      "Dein Benutzerkonto wurde erstellt. Du musst es jedoch erst freischalten. Dazu wurde ein Aktivierungs-Schlüssel an die von dir angegebene Adresse geschickt.";
+    const session = new FakeBrowserSession(
+      "activation",
+      { projectId: "p", profileKey: "k", locale: "de-DE", timezoneId: "Europe/Berlin" },
+      {
+        "https://board.example/registered": {
+          text: notice,
+          elements: { "div#message": { text: notice } },
+        },
+      },
+    );
+    await session.goto("https://board.example/registered");
+    expect(await driver.readRegistrationResult(session)).toEqual({ kind: "pending_email" });
+  });
+
+  it("checks the privacy agreement on the registration form", async () => {
+    const privacy = "form#register input[type='checkbox'][name='agreed']";
+    const session = new FakeBrowserSession(
+      "privacy",
+      { projectId: "p", profileKey: "k", locale: "de-DE", timezoneId: "Europe/Berlin" },
+      {
+        "https://board.example/register": {
+          text: "",
+          elements: {
+            "#username": {},
+            "#email": {},
+            "#new_password": {},
+            "#password_confirm": {},
+            [privacy]: { checked: false },
+          },
+        },
+      },
+    );
+    await session.goto("https://board.example/register");
+    await driver.fillRegistration(session, {
+      username: "mira",
+      email: "mira@inbox.example",
+      password: "secret-password",
+    });
+    expect(
+      session.actions.some((action) => action.kind === "click" && action.selector === privacy),
+    ).toBe(true);
+    expect(session.actions.some((action) => action.kind === "fill" && action.value === "secret-password")).toBe(
+      false,
+    );
+    const again = new FakeBrowserSession(
+      "privacy-checked",
+      { projectId: "p", profileKey: "k", locale: "de-DE", timezoneId: "Europe/Berlin" },
+      {
+        "https://board.example/register": {
+          text: "",
+          elements: {
+            "#username": {},
+            "#email": {},
+            "#new_password": {},
+            "#password_confirm": {},
+            [privacy]: { checked: true },
+          },
+        },
+      },
+    );
+    await again.goto("https://board.example/register");
+    await driver.fillRegistration(again, {
+      username: "mira",
+      email: "mira@inbox.example",
+      password: "secret-password",
+    });
+    expect(again.actions.some((action) => action.kind === "click")).toBe(false);
+
+    const yes = "form#register input[type='radio'][name='privacy'][value='1']";
+    const radios = new FakeBrowserSession(
+      "privacy-radio",
+      { projectId: "p", profileKey: "k", locale: "de-DE", timezoneId: "Europe/Berlin" },
+      {
+        "https://board.example/register": {
+          text: "",
+          elements: {
+            "#username": {},
+            "#email": {},
+            "#new_password": {},
+            "#password_confirm": {},
+            [yes]: { checked: false },
+          },
+        },
+      },
+    );
+    await radios.goto("https://board.example/register");
+    await driver.fillRegistration(radios, {
+      username: "mira",
+      email: "mira@inbox.example",
+      password: "secret-password",
+    });
+    expect(radios.actions.some((action) => action.kind === "click" && action.selector === yes)).toBe(
+      true,
+    );
+  });
+
+  it("leaves a dismissed cookie bar alone", async () => {
+    const session = new FakeBrowserSession(
+      "cookies",
+      { projectId: "p", profileKey: "k", locale: "de-DE", timezoneId: "Europe/Berlin" },
+      {
+        "https://board.example/": {
+          text: "",
+          elements: {
+            "a[onclick*='ca_accept']": { text: "Ich stimme zu", hidden: true },
+          },
+        },
+      },
+    );
+    await session.goto("https://board.example/");
+    expect(await acceptCookieWall(session)).toBe("none");
+    expect(session.actions.some((action) => action.kind === "click")).toBe(false);
+  });
+
   it("is registered for phpBB", () => {
     expect(boardDriverFor("phpbb")).toBeInstanceOf(PhpbbDriver);
     expect(
@@ -52,6 +173,90 @@ describe("phpBB driver helpers", () => {
         "http://b.example/viewtopic.php?t=1",
       ),
     ).toBe(true);
+  });
+
+  it("searches the board for the problem and keeps a stable topic URL", async () => {
+    const topic = "ul.topics li.row:nth-of-type(1) a.topictitle";
+    const replies = "ul.topics li.row:nth-of-type(1) dd.posts";
+    const search =
+      "https://board.example/phpbb/search.php?keywords=Magnesium%20Kr%C3%A4mpfe&sr=topics&sk=t&sd=d";
+    const session = new FakeBrowserSession(
+      "search",
+      { projectId: "p", profileKey: "k", locale: "de-DE", timezoneId: "Europe/Berlin" },
+      {
+        [search]: {
+          text: "",
+          elements: {
+            [topic]: {
+              text: "Krämpfe in den Füßen",
+              attributes: {
+                href: "./viewtopic.php?t=148343&sid=abc&hilit=Magnesium",
+              },
+            },
+            [replies]: { text: "4" },
+          },
+        },
+      },
+    );
+    const threads = await driver.searchThreads(
+      session,
+      "https://board.example/phpbb/",
+      "Magnesium Krämpfe",
+    );
+    expect(threads).toEqual([
+      {
+        url: "https://board.example/phpbb/viewtopic.php?t=148343",
+        title: "Krämpfe in den Füßen",
+        replyCount: 4,
+      },
+    ]);
+    expect(session.actions).toContainEqual({ kind: "goto", url: search });
+    expect(
+      phpbbTopicUrl(
+        "https://board.example/phpbb/viewtopic.php?t=9&sid=zzz",
+        "https://board.example/phpbb/",
+      ),
+    ).toBe("https://board.example/phpbb/viewtopic.php?t=9");
+    expect(await driver.searchThreads(session, "https://board.example/phpbb/", "  ")).toEqual([]);
+  });
+
+  it("confirms the reply rules before typing", async () => {
+    const box = "form#postform input[type='checkbox']";
+    const message = "form#postform textarea#message";
+    const session = new FakeBrowserSession(
+      "rules",
+      { projectId: "p", profileKey: "k", locale: "de-DE", timezoneId: "Europe/Berlin" },
+      {
+        "https://board.example/reply": {
+          text: "",
+          elements: {
+            [box]: { checked: false },
+            [message]: {},
+          },
+        },
+      },
+    );
+    await session.goto("https://board.example/reply");
+    await driver.fillReply(session, "Kurze Pausen helfen bei Krämpfen.");
+    expect(session.actions.some((action) => action.kind === "click" && action.selector === box)).toBe(
+      true,
+    );
+    expect(session.valueOf(message)).toBe("Kurze Pausen helfen bei Krämpfen.");
+  });
+
+  it("does not treat a login wall as an open reply", async () => {
+    const url = "https://board.example/phpbb/viewtopic.php?t=5";
+    const session = new FakeBrowserSession(
+      "login-wall",
+      { projectId: "p", profileKey: "k", locale: "de-DE", timezoneId: "Europe/Berlin" },
+      {
+        [url]: {
+          text: "Du musst dich anmelden, um in diesem Forum auf Beiträge zu antworten.",
+          elements: { "form#login": { text: "Anmelden" } },
+        },
+      },
+    );
+    expect(await driver.openReply(session, { url, title: "Fußkrämpfe" })).toBe(false);
   });
 
   it("builds canonical permalinks", () => {

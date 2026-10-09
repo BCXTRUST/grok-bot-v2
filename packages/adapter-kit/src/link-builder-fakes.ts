@@ -75,6 +75,10 @@ export interface FakeElement {
   attributes?: Record<string, string>;
   /** Value typed by `fill`. */
   value?: string;
+  /** Present in the DOM but not shown, such as a dismissed cookie bar. */
+  hidden?: boolean;
+  /** Checkbox or radio state. A click toggles it. */
+  checked?: boolean;
   png?: Uint8Array;
   /** Used when a crop asks for padding. Falls back to `png`. */
   paddedPng?: Uint8Array;
@@ -161,6 +165,7 @@ export class FakeBrowserSession implements BrowserSession {
   async click(selector: string): Promise<void> {
     const element = this.require(selector);
     this.actions.push({ kind: "click", selector });
+    if (element.checked !== undefined) element.checked = !element.checked;
     element.onClick?.(this.controller());
   }
 
@@ -173,6 +178,17 @@ export class FakeBrowserSession implements BrowserSession {
   async exists(selector: string): Promise<boolean> {
     this.assertOpen();
     return selector in this.page().elements;
+  }
+
+  async isVisible(selector: string): Promise<boolean> {
+    this.assertOpen();
+    const element = this.page().elements[selector];
+    return Boolean(element) && element.hidden !== true;
+  }
+
+  async isChecked(selector: string): Promise<boolean> {
+    this.assertOpen();
+    return this.page().elements[selector]?.checked === true;
   }
 
   async attribute(selector: string, name: string): Promise<string | null> {

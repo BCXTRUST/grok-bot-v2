@@ -10,6 +10,25 @@ import {
 } from "@rakazo/linkbuilder-core";
 import type { BrowserContext, BrowserType, Page } from "playwright";
 
+/** Playwright resets its own action timeout when a page navigates, so a reloading board can wait forever. */
+const ACTION_DEADLINE_MS = 12_000;
+
+function deadline<T>(work: Promise<T>, ms = ACTION_DEADLINE_MS): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("Browser action timed out")), ms);
+    work.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error: unknown) => {
+        clearTimeout(timer);
+        reject(error instanceof Error ? error : new Error("Browser action failed"));
+      },
+    );
+  });
+}
+
 /**
  * `patchright` (default) is the drop-in Playwright fork that hides the CDP `Runtime.enable` leak.
  * `playwright` is the plain upstream driver, selected with `LINK_BUILDER_BROWSER_ENGINE=playwright`.
@@ -114,6 +133,8 @@ export class PlaywrightBrowserSession implements BrowserSession {
     this.random = options.random ?? Math.random;
     this.sleep = options.sleep ?? defaultSleep;
     this.now = options.now ?? Date.now;
+    this.page.setDefaultTimeout(8_000);
+    this.page.setDefaultNavigationTimeout(20_000);
   }
 
   private async paceAction(): Promise<void> {
@@ -130,7 +151,7 @@ export class PlaywrightBrowserSession implements BrowserSession {
 
   async goto(url: string): Promise<void> {
     await this.paceAction();
-    const response = await this.page.goto(url, { waitUntil: "domcontentloaded" });
+    const response = await deadline(this.page.goto(url, { waitUntil: "domcontentloaded", timeout: 12_000 }));
     this.lastNavigation = response
       ? { status: response.status(), headers: response.headers() }
       : { status: null, headers: {} };
@@ -162,12 +183,8 @@ export class PlaywrightBrowserSession implements BrowserSession {
     await this.paceAction();
     try {
       const field = this.first(selector);
-      await field.click();
-      await field.fill("");
-      for (const char of text) {
-        await this.page.keyboard.type(char);
-        await this.sleep(pacedDelayMs(this.pacing.keystroke, this.random));
-      }
+      await deadline(field.click({ timeout: 8_000 }));
+      await deadline(field.fill(text, { timeout: 8_000 }));
     } catch (error) {
       if (options.secret) throw new Error(`Could not fill ${selector}`);
       throw error;
@@ -176,24 +193,37 @@ export class PlaywrightBrowserSession implements BrowserSession {
 
   async click(selector: string): Promise<void> {
     await this.paceAction();
-    await this.first(selector).click();
-    await this.page.waitForLoadState("domcontentloaded");
+    await deadline(this.first(selector).click({ timeout: 8_000 }));
+    await this.page.waitForLoadState("domcontentloaded", { timeout: 8_000 }).catch(() => undefined);
   }
 
   async text(selector: string): Promise<string | null> {
     const locator = this.first(selector);
-    if ((await locator.count()) === 0) return null;
-    return (await locator.innerText()).trim();
+    if ((await deadline(locator.count())) === 0) return null;
+    const value = await deadline(
+      locator.evaluate((element) => (element.textContent ?? "").replace(/\s+/g, " ").trim()),
+    );
+    return value || null;
   }
 
   async exists(selector: string): Promise<boolean> {
-    return (await this.page.locator(selector).count()) > 0;
+    return (await deadline(this.page.locator(selector).count())) > 0;
+  }
+
+  async isVisible(selector: string): Promise<boolean> {
+    return (await this.page.locator(selector).locator("visible=true").count()) > 0;
+  }
+
+  async isChecked(selector: string): Promise<boolean> {
+    const locator = this.first(selector);
+    if ((await locator.count()) === 0) return false;
+    return locator.isChecked();
   }
 
   async attribute(selector: string, name: string): Promise<string | null> {
     const locator = this.first(selector);
-    if ((await locator.count()) === 0) return null;
-    return locator.getAttribute(name);
+    if ((await deadline(locator.count())) === 0) return null;
+    return deadline(locator.getAttribute(name));
   }
 
   async elementScreenshotPng(
@@ -290,7 +320,7 @@ export class PlaywrightBrowserSession implements BrowserSession {
   }
 
   async pageText(): Promise<string> {
-    return this.page.locator("body").innerText();
+    return deadline(this.page.locator("body").innerText({ timeout: 8_000 }));
   }
 
   async formFields(selector: string): Promise<FormFieldInfo[]> {
@@ -356,10 +386,15 @@ export class PlaywrightBrowserSession implements BrowserSession {
 
   async waitFor(selector: string, options: { timeoutMs: number }): Promise<boolean> {
     try {
-      await this.first(selector).waitFor({ state: "attached", timeout: options.timeoutMs });
+      await deadline(
+        this.first(selector).waitFor({ state: "attached", timeout: options.timeoutMs }),
+        options.timeoutMs + 2_000,
+      );
       return true;
     } catch (error) {
-      if (error instanceof Error && error.name === "TimeoutError") return false;
+      if (error instanceof Error && (error.name === "TimeoutError" || error.message === "Browser action timed out")) {
+        return false;
+      }
       throw error;
     }
   }

@@ -286,6 +286,58 @@ export function primaryProblemQueryFromProject(project: {
   return primaryProblemQuery(problemInputFromProject(project));
 }
 
+/**
+ * Terms for the board's own search box.
+ * The Google query ends in "Forum"; that word is useless once we are already on a board.
+ */
+export function boardTopicQueries(input: ProblemQueryInput): string[] {
+  const first = useCaseLanes(input)[0];
+  if (!first) return [];
+  const queries: string[] = [];
+  const push = (value: string) => {
+    const cleaned = value
+      .replace(/\b(?:forum|deutschland)\b/gi, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (cleaned.length < 2) return;
+    if (queries.some((query) => query.toLowerCase() === cleaned.toLowerCase())) return;
+    queries.push(cleaned);
+  };
+  push(first.query);
+  push(first.nutrient);
+  return queries.slice(0, 2);
+}
+
+export function boardTopicQueriesFromProject(project: {
+  name?: string | null;
+  brandName?: string | null;
+  topicLanes?: unknown;
+  targets?: unknown;
+}): string[] {
+  return boardTopicQueries(problemInputFromProject(project));
+}
+
+/** Topic the relevance check should use: the symptom, not the shop keyword. */
+export function relevanceTopicFromProject(project: {
+  name?: string | null;
+  brandName?: string | null;
+  topicLanes?: unknown;
+  targets?: unknown;
+}): { tag: string; description: string } {
+  const lane =
+    Array.isArray(project.topicLanes) && project.topicLanes[0] && typeof project.topicLanes[0] === "object"
+      ? (project.topicLanes[0] as { tag?: unknown; description?: unknown })
+      : undefined;
+  const laneTag = typeof lane?.tag === "string" ? lane.tag.trim() : "";
+  const laneDescription = typeof lane?.description === "string" ? lane.description.trim() : "";
+  const problem = useCaseLanes(problemInputFromProject(project))[0];
+  if (!problem) return { tag: laneTag || "topic", description: laneDescription };
+  return {
+    tag: problem.useCase,
+    description: `Threads about ${problem.useCase} are on topic. ${problem.nutrient} is one possible answer. The thread does not have to name ${problem.nutrient}.`,
+  };
+}
+
 export function problemInputFromProject(project: {
   name?: string | null;
   brandName?: string | null;

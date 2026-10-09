@@ -227,7 +227,7 @@ describe.skipIf(!gate.available)(
           return;
         }
         response.end(
-          `<!doctype html><title>Board</title><p id="hello">Hallo</p><p id="visits"></p><script>localStorage.visits = String(Number(localStorage.visits || 0) + 1); document.getElementById("visits").textContent = localStorage.visits;</script>`,
+          `<!doctype html><title>Board</title><p id="hello">Hallo</p><p id="visits"></p><span id="hidden-count" style="display:none">12</span><script>localStorage.visits = String(Number(localStorage.visits || 0) + 1); document.getElementById("visits").textContent = localStorage.visits;</script>`,
         );
       });
       await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -270,6 +270,9 @@ describe.skipIf(!gate.available)(
         await session.goto(origin);
         expect(await session.text("#hello")).toBe("Hallo");
         expect(await session.text("#visits")).toBe("1");
+        const started = Date.now();
+        expect(await session.text("#hidden-count")).toBe("12");
+        expect(Date.now() - started).toBeLessThan(2_000);
       } finally {
         await session.close();
       }

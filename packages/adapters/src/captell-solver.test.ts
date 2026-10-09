@@ -441,6 +441,109 @@ describe("CaptellHttpSolver", () => {
     }
   });
 
+  it("polls a processing hCaptcha job and accepts a ready task with no balance", async () => {
+    const emulator = new CaptellEmulator([
+      {
+        op: "solve",
+        status: 202,
+        body: { status: "processing", id: "job_1", type: "HCaptcha", balance: "0" },
+      },
+      {
+        op: "task",
+        body: { status: "processing", id: "job_1", type: "HCaptcha" },
+      },
+      {
+        op: "task",
+        body: {
+          id: "job_1",
+          status: "ready",
+          credits: 10,
+          sandbox: false,
+          solution: { gRecaptchaResponse: "fixture-widget-token", userAgent: "Mozilla/5.0" },
+          answer: "fixture-widget-token",
+        },
+      },
+    ]);
+    const client = new CaptellHttpSolver({
+      token: async () => TOKEN,
+      fetch: emulator.fetch,
+      baseUrl: "https://captell.example",
+      maxRetries: 0,
+      pollIntervalMs: 0,
+      solveTimeoutMs: 5_000,
+    });
+    await expect(
+      client.solve(
+        {
+          type: "hcaptcha",
+          websiteURL: "https://board.example/ucp.php?mode=register",
+          websiteKey: "site-key-1",
+        },
+        context,
+      ),
+    ).resolves.toEqual({
+      answer: "fixture-widget-token",
+      credits: 10,
+      balance: 0,
+      taskId: "job_1",
+    });
+    expect(emulator.requests.map((request) => `${request.method} ${request.url}`)).toEqual([
+      "POST https://captell.example/api/v1/solve",
+      "GET https://captell.example/api/v1/tasks/job_1",
+      "GET https://captell.example/api/v1/tasks/job_1",
+    ]);
+  });
+
+  it("stops polling when the task reports an error and when the budget runs out", async () => {
+    const failed = new CaptellEmulator([
+      { op: "solve", status: 202, body: { status: "processing", id: "job_bad" } },
+      {
+        op: "task",
+        status: 422,
+        body: { id: "job_bad", status: "error", code: "UNREADABLE", message: "Not read" },
+      },
+    ]);
+    await expect(
+      new CaptellHttpSolver({
+        token: async () => TOKEN,
+        fetch: failed.fetch,
+        baseUrl: "https://captell.example",
+        maxRetries: 0,
+        pollIntervalMs: 0,
+        solveTimeoutMs: 5_000,
+      }).solve(
+        { type: "hcaptcha", websiteURL: "https://board.example/register", websiteKey: "k" },
+        context,
+      ),
+    ).rejects.toMatchObject({ code: "not_read" });
+    expect(failed.requests).toHaveLength(2);
+
+    const stuck = new CaptellEmulator([
+      { op: "solve", status: 202, body: { status: "processing", id: "job_stuck" } },
+      { op: "task", body: { status: "processing", id: "job_stuck" }, times: 5 },
+    ]);
+    await expect(
+      new CaptellHttpSolver({
+        token: async () => TOKEN,
+        fetch: stuck.fetch,
+        baseUrl: "https://captell.example",
+        maxRetries: 0,
+        pollIntervalMs: 100,
+        solveTimeoutMs: 40,
+      }).solve(
+        { type: "hcaptcha", websiteURL: "https://board.example/register", websiteKey: "k" },
+        context,
+      ),
+    ).rejects.toMatchObject({ code: "error", retryable: true });
+  });
+
+  it("reads a live balance body that names the field balance and sends it as a string", async () => {
+    const emulator = new CaptellEmulator([
+      { op: "balance", body: { balance: "0", name: "autoseo" } },
+    ]);
+    await expect(solver(emulator).balance(context)).resolves.toEqual({ credits: 0 });
+  });
+
   it("returns an instruction without calling the desk for a password, 2FA or email code", async () => {
     const instructed = new CaptellEmulator([
       {

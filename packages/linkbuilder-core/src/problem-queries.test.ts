@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  boardTopicQueries,
+  relevanceTopicFromProject,
   matchDeepLink,
   pageKind,
   primaryProblemQuery,
@@ -27,6 +29,16 @@ describe("problem queries", () => {
   it("searches the magnesium problem and leaves the shop name out", () => {
     const query = primaryProblemQuery(magnesium);
     expect(query).toBe("Magnesium Krämpfe Forum");
+    expect(boardTopicQueries(magnesium)).toEqual(["Magnesium Krämpfe", "Magnesium"]);
+    expect(
+      relevanceTopicFromProject({
+        topicLanes: [{ tag: "Magnesium kaufen", description: "Shop page" }],
+      }),
+    ).toEqual({
+      tag: "Krämpfe",
+      description:
+        "Threads about Krämpfe are on topic. Magnesium is one possible answer. The thread does not have to name Magnesium.",
+    });
     expect(queryOmitsShop(query ?? "", ["Vitaminexpress"])).toBe(true);
     expect(query).not.toMatch(/vitaminexpress|kaufen/i);
     const lanes = useCaseLanes(magnesium);

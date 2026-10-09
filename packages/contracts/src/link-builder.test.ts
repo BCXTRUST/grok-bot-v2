@@ -10,6 +10,8 @@ import {
   LbQuotasSchema,
   LbScheduleSchema,
   LbTargetSchema,
+  LbDraftReplySchema,
+  LbThreadRelevanceSchema,
   LbWhyNotSchema,
   lbPrimaryLanguage,
 } from "./index.js";
@@ -23,6 +25,21 @@ const minimal = {
   quotas: { newPerDay: 3, livePerDay: 1 },
   schedule: { timezone: "Europe/Berlin" },
 };
+
+describe("link builder model replies", () => {
+  it("accepts a relevance score without reasons and a reply that names the body text", () => {
+    expect(LbThreadRelevanceSchema.parse({ relevance: 0.75, openQuestion: true })).toEqual({
+      relevance: 0.75,
+      openQuestion: true,
+      reasons: [],
+    });
+    expect(
+      LbDraftReplySchema.parse({
+        answer: "Magnesiumcitrat hat bei Krämpfen geholfen.",
+      }),
+    ).toMatchObject({ body: "Magnesiumcitrat hat bei Krämpfen geholfen.", linkSlot: "none" });
+  });
+});
 
 describe("link builder project config", () => {
   it("applies the plan defaults, including undisclosed persona mode", () => {

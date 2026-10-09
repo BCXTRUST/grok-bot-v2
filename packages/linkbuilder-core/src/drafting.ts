@@ -31,6 +31,10 @@ import { draftPrompt, fitPrompt, relevancePrompt } from "./prompts.js";
 
 const CONFIDENCE_FLOOR = 0.3;
 
+/** Gemini reasoning tokens count against this budget, so the JSON reply needs room past the thinking. */
+export const DRAFT_MAX_TOKENS = 4_000;
+export const CLASSIFY_MAX_TOKENS = 2_000;
+
 export interface ModelTokens {
   input: number;
   output: number;
@@ -135,6 +139,16 @@ export function mentionsAllowedDomain(text: string, allowedDomains: readonly str
 export interface LanguageIssues {
   ok: boolean;
   issues: string[];
+}
+
+/** Keeps a reply inside the board limit, on a sentence boundary when one fits. */
+export function trimReply(body: string, maxChars: number): string {
+  const chars = [...body.trim()];
+  if (chars.length <= maxChars) return chars.join("");
+  const cut = chars.slice(0, maxChars).join("").trimEnd();
+  const sentence = /^[\s\S]*[.!?](?=\s|$)/.exec(cut)?.[0]?.trim() ?? "";
+  if ([...sentence].length >= 20) return sentence;
+  return cut;
 }
 
 /** Register, Swiss orthography, length and the driver's emoji flag. */
@@ -246,6 +260,7 @@ export function reviewDraft(input: {
     if (!body.includes(disclosure)) body = `${body}\n\n${disclosure}`;
   }
 
+  body = trimReply(body, input.context.content.maxReplyChars);
   const banned = containsBannedClaim(body, input.context.content.bannedClaims);
   const testimonial = testimonialUnsupported(body, input.context.facts);
   const language = checkLanguage({
@@ -291,7 +306,10 @@ export function reviewDraft(input: {
       issue.startsWith("anchor"),
   );
   let action: DraftAction = "post";
-  if (!input.fit.factsOnly) action = input.context.content.mode === "queue" ? "queue" : "discard";
+  // A warm-up reply cites nothing, so it is not limited to the source fact sheet.
+  if (!input.fit.factsOnly && input.context.citeSource) {
+    action = input.context.content.mode === "queue" ? "queue" : "discard";
+  }
   if (hard) action = "discard";
   if (input.fit.soundsLikeAd) action = "discard";
 
@@ -343,7 +361,7 @@ export async function draftWithModel(
     lane: "classify",
     ...relevanceMessages,
     schema: LbThreadRelevanceSchema,
-    maxTokens: 400,
+    maxTokens: CLASSIFY_MAX_TOKENS,
   });
   let lane: LbModelLane = "draft";
   let modelRefusal = false;
@@ -363,12 +381,13 @@ export async function draftWithModel(
       title: context.title,
       excerpt: context.excerpt,
       citeSource: context.citeSource,
+      maxChars: context.content.maxReplyChars,
     });
     const drafted = await complete({
       lane,
       ...messages,
       schema: LbDraftReplySchema,
-      maxTokens: 900,
+      maxTokens: DRAFT_MAX_TOKENS,
     });
     tokens += drafted.ok ? drafted.tokens.input + drafted.tokens.output : 0;
     const bodyRefusal =
@@ -393,14 +412,14 @@ export async function draftWithModel(
       lane: "classify",
       ...fitMessages,
       schema: LbFitCheckSchema,
-      maxTokens: 400,
+      maxTokens: CLASSIFY_MAX_TOKENS,
     });
     if (!fit.ok) {
       fit = await complete({
         lane: "fallback",
         ...fitMessages,
         schema: LbFitCheckSchema,
-        maxTokens: 400,
+        maxTokens: CLASSIFY_MAX_TOKENS,
       });
     }
     tokens += fit.ok ? fit.tokens.input + fit.tokens.output : 0;

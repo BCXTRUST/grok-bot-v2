@@ -24,6 +24,8 @@ export const BrowserRpcRequestSchema = z.discriminatedUnion("method", [
   z.object({ method: z.literal("click"), selector }).strict(),
   z.object({ method: z.literal("text"), selector }).strict(),
   z.object({ method: z.literal("exists"), selector }).strict(),
+  z.object({ method: z.literal("isVisible"), selector }).strict(),
+  z.object({ method: z.literal("isChecked"), selector }).strict(),
   z.object({ method: z.literal("attribute"), selector, name: z.string().min(1).max(200) }).strict(),
   z
     .object({
@@ -107,6 +109,10 @@ export class BrowserRpcServer {
         return session.text(request.selector);
       case "exists":
         return session.exists(request.selector);
+      case "isVisible":
+        return session.isVisible ? session.isVisible(request.selector) : session.exists(request.selector);
+      case "isChecked":
+        return session.isChecked ? session.isChecked(request.selector) : false;
       case "attribute":
         return session.attribute(request.selector, request.name);
       case "elementScreenshotPng":
@@ -192,6 +198,14 @@ export class RpcBrowserSession implements BrowserSession {
 
   async exists(selector: string): Promise<boolean> {
     return z.boolean().parse(await this.call({ method: "exists", selector }));
+  }
+
+  async isVisible(selector: string): Promise<boolean> {
+    return z.boolean().parse(await this.call({ method: "isVisible", selector }));
+  }
+
+  async isChecked(selector: string): Promise<boolean> {
+    return z.boolean().parse(await this.call({ method: "isChecked", selector }));
   }
 
   async attribute(selector: string, name: string): Promise<string | null> {

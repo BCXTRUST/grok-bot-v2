@@ -16,6 +16,10 @@ export const COOKIE_ACCEPT_SELECTORS = [
   "[data-cookie-accept]",
   "#cookie-consent button.accept",
   ".cookie-notice .button.accept",
+  // phpBB boards that use the ca_accept cookie bar ("Ich stimme zu").
+  "a[onclick*='ca_accept']",
+  "a:has-text('Ich stimme zu')",
+  "button:has-text('Ich stimme zu')",
 ] as const;
 
 export type CookieWallResult = "accepted" | "none";
@@ -26,6 +30,7 @@ export async function acceptCookieWall(
 ): Promise<CookieWallResult> {
   for (const selector of selectors) {
     if (!(await session.exists(selector))) continue;
+    if (session.isVisible && !(await session.isVisible(selector))) continue;
     await session.click(selector);
     return "accepted";
   }

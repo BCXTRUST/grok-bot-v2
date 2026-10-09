@@ -99,6 +99,10 @@ export interface BrowserSession {
   /** Visible text of the first match, or null when nothing matches. */
   text(selector: string): Promise<string | null>;
   exists(selector: string): Promise<boolean>;
+  /** True when the first match is shown. Hidden consent controls are not a wall. */
+  isVisible?(selector: string): Promise<boolean>;
+  /** True when a checkbox or radio is selected. */
+  isChecked?(selector: string): Promise<boolean>;
   attribute(selector: string, name: string): Promise<string | null>;
   /**
    * Tight PNG of the first match, used for image captchas instead of a full screenshot.

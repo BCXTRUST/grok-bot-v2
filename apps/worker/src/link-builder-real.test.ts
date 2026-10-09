@@ -5,13 +5,20 @@ import { LocalBrowserRefused } from "@rakazo/linkbuilder-browser";
 import { describe, expect, it } from "vitest";
 import { isLinkBuilderFakeEnabled } from "./link-builder-fake.js";
 import { isLinkBuilderRealEnabled } from "./link-builder-real.js";
-import { templateReply } from "./link-builder-real-steps.js";
+import { helperConnectionPlan, templateReply } from "./link-builder-real-steps.js";
 import { browserFactoryFromEnv, proxyResolverFor } from "./link-builder-real-wiring.js";
 
 const prisma = {} as PrismaClient;
 const sandbox = new FakeSandboxProvider();
 
 describe("link builder real driver wiring", () => {
+  it("uses the Captell API door when the Page Helper is missing", () => {
+    expect(helperConnectionPlan(null)).toBe("api");
+    expect(helperConnectionPlan("")).toBe("api");
+    expect(helperConnectionPlan("2026.10.4.16")).toBe("connected");
+    expect(helperConnectionPlan("1999.1.1")).toBe("park");
+  });
+
   it("runs only behind LINK_BUILDER_DRIVER=real and leaves the fake runner off", () => {
     expect(isLinkBuilderRealEnabled({})).toBe(false);
     expect(isLinkBuilderRealEnabled({ LINK_BUILDER_DRIVER: "real" })).toBe(true);

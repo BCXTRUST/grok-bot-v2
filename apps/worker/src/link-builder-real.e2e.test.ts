@@ -196,6 +196,7 @@ async function recordedDraftModel(displayName: string): Promise<TextModel> {
     title,
     excerpt: "",
     citeSource: true,
+    maxChars: 1200,
   });
   const fit = fitPrompt({ title, excerpt: "", body: RECORDED_REPLY.body, facts });
   await mkdir(join(root, "classify"), { recursive: true });

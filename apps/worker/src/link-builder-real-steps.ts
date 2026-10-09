@@ -57,6 +57,7 @@ import {
   isFixtureHostDomain,
   isHardEdgeBlock,
   isWarmupMet,
+  boardTopicQueriesFromProject,
   marketForHost,
   PAGE_HELPER_EXTENSION_ID,
   PAGE_HELPER_VERSION,
@@ -703,6 +704,15 @@ async function readHelperVersion(session: BrowserSession): Promise<{
   };
 }
 
+/** Missing helper uses Captell's HTTPS door. A loaded helper with the wrong version still parks. */
+export function helperConnectionPlan(
+  version: string | null,
+): "api" | "park" | "connected" {
+  if (!version) return "api";
+  if (version !== PAGE_HELPER_VERSION) return "park";
+  return "connected";
+}
+
 async function helperConnected(ctx: StepContext): Promise<StepResult> {
   const host = requireHost(ctx);
   const entry = requireSession(ctx, host);
@@ -717,9 +727,23 @@ async function helperConnected(ctx: StepContext): Promise<StepResult> {
       outcome: { engine: "camoufox", door: "https_api" },
     };
   }
-  const observed = await readHelperVersion(entry.session);
-  if (observed.version !== PAGE_HELPER_VERSION) {
-    const seen = observed.version ?? "missing";
+  const observed = await readHelperVersion(entry.session).catch(() => ({
+    version: null,
+    extensionId: null,
+  }));
+  if (helperConnectionPlan(observed.version) === "api") {
+    // No Page Helper is loaded. Captell still solves through the HTTPS door.
+    entry.helperConnected = true;
+    entry.helperVersion = null;
+    return {
+      kind: "step",
+      lastAction: "Captcha uses the API door",
+      hostId: host.id,
+      outcome: { helperVersion: "missing", door: "https_api" },
+    };
+  }
+  if (helperConnectionPlan(observed.version) === "park") {
+    const seen = observed.version;
     const artifactIds = await screenshot(ctx, entry, "helper");
     entry.registerFormReady = false;
     return {
@@ -1676,6 +1700,35 @@ export function templateReply(input: {
   });
 }
 
+async function threadsForReply(
+  driver: BoardDriver,
+  session: Parameters<BoardDriver["listThreads"]>[0],
+  homepageUrl: string,
+  project: ProjectConfig,
+  skip: Set<string>,
+): Promise<{
+  threads: Awaited<ReturnType<BoardDriver["listThreads"]>>;
+  searched: boolean;
+}> {
+  if (driver.searchThreads) {
+    for (const query of boardTopicQueriesFromProject(project)) {
+      let found: Awaited<ReturnType<BoardDriver["listThreads"]>> = [];
+      try {
+        found = await driver.searchThreads(session, homepageUrl, query);
+      } catch (error) {
+        if (error instanceof UnmappedFormError) throw error;
+        found = [];
+      }
+      const fresh = found.filter((thread) => !skip.has(thread.url));
+      if (fresh.length > 0) return { threads: fresh, searched: true };
+    }
+  }
+  const listed = (await driver.listThreads(session, homepageUrl)).filter(
+    (thread) => !skip.has(thread.url),
+  );
+  return { threads: listed, searched: false };
+}
+
 async function publish(ctx: StepContext, warmup: boolean): Promise<StepResult> {
   const host = requireHost(ctx);
   const entry = requireSession(ctx, host);
@@ -1742,9 +1795,9 @@ async function publish(ctx: StepContext, warmup: boolean): Promise<StepResult> {
     select: { url: true },
   });
   const skip = new Set(known.map((thread) => thread.url));
-  const threads = (await driver.listThreads(entry.session, host.homepageUrl)).filter(
-    (thread) => !skip.has(thread.url),
-  );
+  const found = await threadsForReply(driver, entry.session, host.homepageUrl, ctx.project, skip);
+  const threads = found.threads;
+  const selectionBudget = found.searched ? 4 : 1;
   if (!ctx.services.textModel) throw new StepFailure("Draft model is not configured");
   const model = ctx.services.textModel;
   let chosen: {
@@ -1765,6 +1818,7 @@ async function publish(ctx: StepContext, warmup: boolean): Promise<StepResult> {
   } | null = null;
   let rule = driver.probeLinkRule("");
   const rejections: Array<{ url: string; title: string; reason: string; relevance: number }> = [];
+  let drafted = 0;
   for (const thread of threads) {
     const approved = warmup
       ? null
@@ -1776,11 +1830,32 @@ async function publish(ctx: StepContext, warmup: boolean): Promise<StepResult> {
           },
         });
     let opened = false;
+    let discussion = "";
     try {
+      await entry.session.goto(thread.url);
+      const firstPost = await entry.session.text("div.postbody div.content").catch(() => null);
+      discussion = firstPost || (await entry.session.pageText().catch(() => ""));
       opened = await driver.openReply(entry.session, thread);
     } catch (error) {
       if (error instanceof UnmappedFormError) return unmappedForm(ctx, host);
-      throw error;
+      rejections.push({
+        url: thread.url,
+        title: thread.title,
+        reason: "replies_closed",
+        relevance: 0,
+      });
+      continue;
+    }
+    if (!opened && (await entry.session.exists("form#login").catch(() => false))) {
+      try {
+        const again = await driver.login(entry.session, host.homepageUrl, {
+          username: account.username,
+          password,
+        });
+        if (again) opened = await driver.openReply(entry.session, thread);
+      } catch (error) {
+        if (error instanceof UnmappedFormError) return unmappedForm(ctx, host);
+      }
     }
     if (!opened) {
       rejections.push({
@@ -1791,7 +1866,8 @@ async function publish(ctx: StepContext, warmup: boolean): Promise<StepResult> {
       });
       continue;
     }
-    const pageText = await entry.session.pageText().catch(() => "");
+    const editorText = await entry.session.pageText().catch(() => "");
+    const pageText = [discussion, editorText].filter(Boolean).join("\n");
     rule = driver.probePageLinkRule
       ? await driver.probePageLinkRule(entry.session)
       : driver.probeLinkRule(pageText);
@@ -1820,7 +1896,7 @@ async function publish(ctx: StepContext, warmup: boolean): Promise<StepResult> {
       project: ctx.project,
       thread: {
         title: thread.title,
-        excerpt: "",
+        excerpt: (discussion || pageText).replace(/\s+/g, " ").trim().slice(0, 700),
         pageText,
         lastActivityAt: thread.lastActivityAt ?? null,
         citeSource: !warmup,
@@ -1861,6 +1937,7 @@ async function publish(ctx: StepContext, warmup: boolean): Promise<StepResult> {
       };
       break;
     }
+    drafted += 1;
     if (!composed.selection.selected) {
       rejections.push({
         url: thread.url,
@@ -1868,6 +1945,7 @@ async function publish(ctx: StepContext, warmup: boolean): Promise<StepResult> {
         reason: composed.selection.rejectReason ?? "rejected",
         relevance,
       });
+      if (drafted >= selectionBudget) break;
       continue;
     }
     const queueOnly =
@@ -1995,7 +2073,6 @@ async function publish(ctx: StepContext, warmup: boolean): Promise<StepResult> {
           where: { id: ctx.run.id },
           data: { whyNot: bumpModelRefusal(run?.whyNot) },
         });
-        await upsertThread(tx, "rejected", "model_refusal");
         await upsertRejected(tx);
       },
     };
@@ -2059,6 +2136,18 @@ async function publish(ctx: StepContext, warmup: boolean): Promise<StepResult> {
     };
   }
   await driver.fillReply(entry.session, body);
+  const challenge = await driver.detectCaptcha(entry.session);
+  if (challenge.kind === "widget") {
+    const solved = await ctx.services.captcha.solve(
+      {
+        type: challenge.type,
+        websiteURL: await entry.session.url(),
+        websiteKey: challenge.siteKey,
+      },
+      ctx.adapter,
+    );
+    await placeCaptchaToken(entry.session, challenge.type, solved.answer);
+  }
   const reply = await driver.submitReply(entry.session);
   const artifactIds = await screenshot(ctx, entry, reply.kind === "posted" ? "posted" : "reply");
   const ruleData = {
