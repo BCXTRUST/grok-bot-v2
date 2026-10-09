@@ -11,8 +11,17 @@ const PENDING_ADMIN =
   /administrator (must|will) (activate|approve)|activation by an administrator|vom administrator (freigeschaltet|aktiviert)/i;
 const ACTIVE =
   /account has (now )?been (created|activated|registered)|you (may|can) now (log ?in|login)|registrierung (war|ist) erfolgreich|konto wurde (aktiviert|erstellt)/i;
+/**
+ * A refused captcha or anti-bot question in the English and German stock phrases of phpBB,
+ * WoltLab, XenForo and Discourse, plus the generic "captcha … incorrect" shape. A match means
+ * the registration itself was fine and only the challenge has to be solved again.
+ */
 const CAPTCHA_REJECTED =
-  /confirmation code you entered was incorrect|solution you provided was incorrect|bestätigungscode .* (falsch|nicht korrekt)|did not pass the security check|captcha prüfung fehlgeschlagen/i;
+  /confirmation code you entered was incorrect|solution you provided was incorrect|bestätigungscode.*(falsch|nicht korrekt)|eingegebene antwort ist falsch|invalid answer to the question|answered the question incorrectly|frage falsch beantwortet|did not pass the security check|captcha prüfung fehlgeschlagen|(captcha|sicherheits(?:abfrage|code|frage|prüfung)|security check|verification).{0,40}(incorrect|invalid|failed|wrong|falsch|ungültig|fehlgeschlagen)/i;
+
+export function captchaRejected(text: string): boolean {
+  return CAPTCHA_REJECTED.test(text);
+}
 const REGISTRATION_CLOSED =
   /registration (is )?(disabled|closed)|registrierung (ist )?deaktiviert/i;
 const POSTED =

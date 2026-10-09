@@ -1,4 +1,5 @@
 import type { BrowserSession } from "@rakazo/adapter-kit";
+import { acceptCookieWall } from "./cookie-wall.js";
 import type {
   ActivationResult,
   BoardAccount,
@@ -11,7 +12,7 @@ import type {
   RegistrationResult,
   ReplyResult,
 } from "./driver.js";
-import { acceptCookieWall } from "./cookie-wall.js";
+import { captchaRejected } from "./messages.js";
 import { detectWidget } from "./widgets.js";
 
 /*
@@ -55,8 +56,6 @@ const PENDING_ADMIN =
   /administrator (must|will) (activate|approve)|activation by an administrator|vom administrator (freigeschaltet|aktiviert)/i;
 const ACTIVE =
   /account has (now )?been (created|activated|registered)|you (may|can) now (log ?in|login)|registrierung (war|ist) erfolgreich|konto wurde (aktiviert|erstellt)/i;
-const CAPTCHA_REJECTED =
-  /confirmation code you entered was incorrect|solution you provided was incorrect|bestätigungscode .* (falsch|nicht korrekt)/i;
 const REGISTRATION_CLOSED =
   /registration (is )?(disabled|closed)|registrierung (ist )?deaktiviert/i;
 const POSTED = /posted successfully|erfolgreich (erstellt|gespeichert|eingetragen)/i;
@@ -210,7 +209,7 @@ export class PhpbbDriver implements BoardDriver {
     }
     const messages = await this.pageMessages(session);
     const text = messages.join("\n");
-    if (CAPTCHA_REJECTED.test(text)) return { kind: "captcha_rejected" };
+    if (captchaRejected(text)) return { kind: "captcha_rejected" };
     if (PENDING_ADMIN.test(text)) return { kind: "pending_admin" };
     if (PENDING_EMAIL.test(text)) return { kind: "pending_email" };
     if (ACTIVE.test(text)) return { kind: "active" };

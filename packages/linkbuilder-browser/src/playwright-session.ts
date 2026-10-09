@@ -8,10 +8,18 @@ import {
   pacedDelayMs,
   rateLimitWaitMs,
 } from "@rakazo/linkbuilder-core";
-import type { BrowserContext, BrowserType, Page } from "playwright";
+import type { BrowserContext, BrowserType, Page, Request } from "playwright";
 
 /** Playwright resets its own action timeout when a page navigates, so a reloading board can wait forever. */
 const ACTION_DEADLINE_MS = 12_000;
+/**
+ * How long a click waits for the board to answer a navigation it started. A registration POST
+ * sends the activation mail before it answers, and a slow mail server can hold that for a long
+ * time; every read in the meantime blocks on the pending navigation and would hit the deadline.
+ */
+const NAVIGATION_RESPONSE_MS = 90_000;
+/** A navigation request shows up within milliseconds of the click when there is one. */
+const NAVIGATION_DETECT_MS = 1_500;
 
 function deadline<T>(work: Promise<T>, ms = ACTION_DEADLINE_MS): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -151,7 +159,9 @@ export class PlaywrightBrowserSession implements BrowserSession {
 
   async goto(url: string): Promise<void> {
     await this.paceAction();
-    const response = await deadline(this.page.goto(url, { waitUntil: "domcontentloaded", timeout: 12_000 }));
+    const response = await deadline(
+      this.page.goto(url, { waitUntil: "domcontentloaded", timeout: 12_000 }),
+    );
     this.lastNavigation = response
       ? { status: response.status(), headers: response.headers() }
       : { status: null, headers: {} };
@@ -191,8 +201,29 @@ export class PlaywrightBrowserSession implements BrowserSession {
     }
   }
 
+  private watchNavigation(): Promise<Request | null> {
+    return this.page
+      .waitForRequest(
+        (request) => request.isNavigationRequest() && request.frame() === this.page.mainFrame(),
+        { timeout: NAVIGATION_DETECT_MS },
+      )
+      .catch(() => null);
+  }
+
+  private async settleNavigation(request: Request | null): Promise<void> {
+    if (!request) return;
+    await Promise.race([
+      request.response().catch(() => null),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), NAVIGATION_RESPONSE_MS)),
+    ]);
+    await this.page
+      .waitForLoadState("domcontentloaded", { timeout: ACTION_DEADLINE_MS })
+      .catch(() => undefined);
+  }
+
   async click(selector: string): Promise<void> {
     await this.paceAction();
+    const navigation = this.watchNavigation();
     // Click in the page. Playwright's actionability check waits until a captcha iframe stops
     // moving, which it does not, so a submit that already landed is reported as a timeout.
     const clicked = this.page
@@ -200,21 +231,31 @@ export class PlaywrightBrowserSession implements BrowserSession {
         const root = globalThis as unknown as {
           document: { querySelector: (selector: string) => { click?: () => void } | null };
         };
-        const node = root.document.querySelector(sel);
+        let node: { click?: () => void } | null = null;
+        try {
+          node = root.document.querySelector(sel);
+        } catch {
+          return false;
+        }
         if (!node || typeof node.click !== "function") return false;
         node.click();
         return true;
       }, selector)
-      .catch(() => false);
-    // A submit starts a navigation that destroys the page context, so the evaluate may never
-    // resolve. The click has already been sent. The caller waits for the result panel.
+      // A rejected evaluate here means the click started a navigation that destroyed the page
+      // context; the click itself has already landed, so it must not be sent again.
+      .catch(() => true);
+    // The same navigation can also keep the evaluate from ever resolving. The caller waits for
+    // the result panel.
     const ok = await Promise.race([
       clicked,
       new Promise<boolean>((resolve) => setTimeout(() => resolve(true), 1_500)),
     ]);
     if (ok === false) {
-      await deadline(this.first(selector).click({ timeout: 4_000, noWaitAfter: true, force: true }));
+      await deadline(
+        this.first(selector).click({ timeout: 4_000, noWaitAfter: true, force: true }),
+      );
     }
+    await this.settleNavigation(await navigation);
   }
 
   async text(selector: string): Promise<string | null> {
@@ -412,7 +453,10 @@ export class PlaywrightBrowserSession implements BrowserSession {
       );
       return true;
     } catch (error) {
-      if (error instanceof Error && (error.name === "TimeoutError" || error.message === "Browser action timed out")) {
+      if (
+        error instanceof Error &&
+        (error.name === "TimeoutError" || error.message === "Browser action timed out")
+      ) {
         return false;
       }
       throw error;

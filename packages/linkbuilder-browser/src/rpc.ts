@@ -110,7 +110,9 @@ export class BrowserRpcServer {
       case "exists":
         return session.exists(request.selector);
       case "isVisible":
-        return session.isVisible ? session.isVisible(request.selector) : session.exists(request.selector);
+        return session.isVisible
+          ? session.isVisible(request.selector)
+          : session.exists(request.selector);
       case "isChecked":
         return session.isChecked ? session.isChecked(request.selector) : false;
       case "attribute":
