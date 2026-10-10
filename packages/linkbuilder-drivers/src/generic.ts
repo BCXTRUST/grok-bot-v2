@@ -704,12 +704,15 @@ export class GenericFormDriver implements BoardDriver {
     // The words and the path differ on every board, so there is no fixed click sequence.
     const entries = [
       new URL("/register", homepageUrl).href,
+      new URL("/register/", homepageUrl).href,
+      new URL("/community/register/", homepageUrl).href,
+      new URL("/forum/register/", homepageUrl).href,
       new URL("/core/register/", homepageUrl).href,
       new URL("/ucp.php?mode=register", homepageUrl).href,
     ];
     let entryIndex = 0;
     let previous = "";
-    for (let step = 0; step < 8; step += 1) {
+    for (let step = 0; step < 12; step += 1) {
       if (session.ariaSnapshot) await session.ariaSnapshot().catch(() => "");
       await session.screenshotPng().catch(() => undefined);
       const here = await session.url();
