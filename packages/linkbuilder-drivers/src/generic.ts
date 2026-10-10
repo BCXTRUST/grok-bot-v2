@@ -159,7 +159,8 @@ function scoreEmailConfirm(field: FormFieldInfo): number {
 
 function scorePassword(field: FormFieldInfo, kind: "register" | "login"): number {
   if (field.type !== "password") return 0;
-  if (/confirm|repeat|again|match|password2|password-confirm|bestätig/.test(blob(field))) return 0;
+  if (/confirm|repeat|again|match|password2|password-confirm|bestätig|wiederholen|_check\b/.test(blob(field)))
+    return 0;
   let score = 0;
   if (kind === "register" && field.autocomplete === "new-password") score += 4;
   if (kind === "login" && field.autocomplete === "current-password") score += 4;
@@ -169,7 +170,11 @@ function scorePassword(field: FormFieldInfo, kind: "register" | "login"): number
 
 function scoreConfirm(field: FormFieldInfo): number {
   if (field.type !== "password") return 0;
-  return /confirm|repeat|again|match|password2|password-confirm|bestätig/.test(blob(field)) ? 4 : 0;
+  return /confirm|repeat|again|match|password2|password-confirm|bestätig|wiederholen|_check\b/.test(
+    blob(field),
+  )
+    ? 4
+    : 0;
 }
 
 function scoreBody(field: FormFieldInfo): number {
@@ -180,7 +185,9 @@ function scoreBody(field: FormFieldInfo): number {
 
 function scoreConsent(field: FormFieldInfo): number {
   if (field.type !== "checkbox") return 0;
-  return /agree|terms|consent|rules|accept/.test(blob(field)) ? 3 : 0;
+  return /agree|terms|consent|rules|accept|agb|datenschutz|stimme|bedingungen|regeln/.test(blob(field))
+    ? 3
+    : 0;
 }
 
 function scoreBio(field: FormFieldInfo): number {

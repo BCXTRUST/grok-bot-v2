@@ -575,6 +575,15 @@ export class PlaywrightBrowserSession implements BrowserSession {
             score = 70;
           } else if (hasControl(candidate, "textarea")) {
             score = 60;
+          } else if (
+            hasControl(candidate, "input[type='password']") &&
+            hasControl(candidate, "input[name*='mail' i], input[name*='Mail']")
+          ) {
+            score = 95;
+          } else if (
+            hasControl(candidate, "input[name*='_Check'], input[name*='_two'], input[name*='_check']")
+          ) {
+            score = 92;
           } else if (hasControl(candidate, "input[type='password']")) {
             score = 50;
           } else if (hasControl(candidate, "input[type='email']")) {
@@ -605,11 +614,14 @@ export class PlaywrightBrowserSession implements BrowserSession {
           tag === "button" || el.getAttribute("type") === "submit"
             ? el.textContent || el.getAttribute("value") || ""
             : "";
+        const row = el.closest("li, dd, .field, .formRow, .form-row");
+        const rowText = (row?.textContent || "").replace(/\s+/g, " ").trim().slice(0, 180);
         const label = (
           labelFor?.textContent ||
           parent?.textContent ||
           el.getAttribute("aria-label") ||
           own ||
+          rowText ||
           ""
         )
           .replace(/\s+/g, " ")
@@ -647,7 +659,7 @@ export class PlaywrightBrowserSession implements BrowserSession {
           autocomplete: el.getAttribute("autocomplete"),
           label,
           role: el.getAttribute("role") ?? (tag === "textarea" ? "textbox" : null),
-          required: el.hasAttribute("required"),
+          required: el.hasAttribute("required") || Boolean(el.closest(".required")),
           placeholder: el.getAttribute("placeholder"),
           group: legend?.textContent?.replace(/\s+/g, " ").trim() || null,
           hidden:

@@ -156,6 +156,65 @@ describe("generic form driver", () => {
     ]);
   });
 
+  it("maps the WinFuture registration fields", () => {
+    const plan = planRegistration(
+      [
+        field({
+          selector: "#login_name",
+          name: "UserName",
+          label: "Wähle einen Benutzernamen",
+          required: true,
+        }),
+        field({
+          selector: "#email_1",
+          name: "EmailAddress",
+          label: "Gib deine E-Mail Adresse ein",
+          required: true,
+        }),
+        field({
+          selector: "#email_2",
+          name: "EmailAddress_two",
+          label: "E-Mail Adresse wiederholen",
+          required: true,
+        }),
+        field({
+          selector: "#password_1",
+          name: "PassWord",
+          type: "password",
+          label: "Wähle dein Passwort",
+          required: true,
+        }),
+        field({
+          selector: "#password_2",
+          name: "PassWord_Check",
+          type: "password",
+          label: "Passwort wiederholen",
+          required: true,
+        }),
+        field({
+          selector: "#field_25_1",
+          name: "field_25[1]",
+          type: "checkbox",
+          label: "AGB und Datenschutz Ja, Ich stimme den oben verlinkten AGB und Datenschutzbestimmungen zu.",
+          required: true,
+        }),
+        field({ selector: "#submit", tag: "button", type: "submit", label: "Registrieren" }),
+      ],
+      registrationProfile({
+        username: "sophie_braun",
+        email: "sophie@example.com",
+        password: "example-password",
+      }),
+    );
+    expect(plan.ok).toBe(true);
+    if (!plan.ok) return;
+    const filled = plan.actions.filter((action) => action.kind === "fill").map((action) => action.selector);
+    expect(filled).toEqual(["#login_name", "#email_1", "#password_1", "#password_2", "#email_2"]);
+    expect(plan.actions.some((action) => action.kind === "click" && action.selector === "#field_25_1")).toBe(
+      true,
+    );
+  });
+
   it("treats a repeated email address as the confirmation", () => {
     const plan = planRegistration(
       [
