@@ -854,7 +854,11 @@ export class GenericFormDriver implements BoardDriver {
         action.secret ? { secret: true } : undefined,
       );
     }
+    const filled = new Set(
+      plan.actions.filter((action) => action.kind === "fill").map((action) => action.selector),
+    );
     for (const field of fields ?? []) {
+      if (filled.has(field.selector) || isCaptchaField(field)) continue;
       if (!textControl(field) || !field.label.includes("*")) continue;
       const current = (await session.attribute(field.selector, "value"))?.trim();
       if (current) continue;
