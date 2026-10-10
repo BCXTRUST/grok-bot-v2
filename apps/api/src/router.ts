@@ -8,6 +8,7 @@ import {
   computerControlExpireJobKey,
   type JobPublisher,
   type MemoryStore,
+  type PlanProvider,
   type RealtimeFanout,
   routineJobKey,
   routineWakeupJob,
@@ -110,7 +111,9 @@ import {
 } from "./computer-status.js";
 import {
   archiveLbProject,
+  buyLbCredits,
   checkLbCaptchaBalance,
+  checkoutLbPackage,
   continueLbTicket,
   createLbProject,
   decideLbDraft,
@@ -127,16 +130,19 @@ import {
   listLbRuns,
   listLbThreads,
   listLbTickets,
+  offerLbBilling,
   pauseLbProject,
   seedLbDemo,
   skipLbTicket,
   startLbProject,
   statusLbProject,
   stopLbProject,
+  suggestLbPage,
   summarizeLbCosts,
   updateLbProject,
   verifyLbPlacement,
 } from "./link-builder.js";
+import { openProjectComputerScreen } from "./link-builder-screen.js";
 import { buildMcpUpdateMaterial } from "./mcp-material.js";
 import { chooseFocus, markAppConnected, startOnboarding } from "./onboarding.js";
 import { addScreenProxyCapability, shouldProxyComputerScreen } from "./screen-proxy.js";
@@ -333,6 +339,8 @@ export interface RouterDeps {
   /** Offline tests inject the Captell emulator. Production uses global fetch. */
   captellFetch?: typeof fetch;
   mailbox?: import("@rakazo/adapter-kit").MailboxProvider;
+  /** Billing stub. Absent means the static starter plan. */
+  plan?: PlanProvider;
   dataDir: string;
   env: {
     defaultProvider: string;
@@ -2959,6 +2967,11 @@ export function createRouter(deps: RouterDeps) {
       ),
     },
     linkBuilder: {
+      pages: {
+        suggest: authed.linkBuilder.pages.suggest.handler(async ({ input }) =>
+          suggestLbPage(input),
+        ),
+      },
       projects: {
         list: authed.linkBuilder.projects.list.handler(async ({ context }) =>
           listLbProjects(deps, context.actor),
@@ -2987,8 +3000,24 @@ export function createRouter(deps: RouterDeps) {
         status: authed.linkBuilder.projects.status.handler(async ({ context, input }) =>
           statusLbProject(deps, context.actor, input.projectId),
         ),
+        screen: authed.linkBuilder.projects.screen.handler(async ({ context, input }) =>
+          openProjectComputerScreen(deps, context.actor, input.projectId),
+        ),
         seedDemo: authed.linkBuilder.projects.seedDemo.handler(async ({ context }) =>
           seedLbDemo(deps, context.actor),
+        ),
+      },
+      billing: {
+        offer: authed.linkBuilder.billing.offer.handler(async ({ context }) =>
+          offerLbBilling(deps, context.actor),
+        ),
+        checkout: authed.linkBuilder.billing.checkout.handler(async ({ context, input }) =>
+          checkoutLbPackage(deps, context.actor, input.packageId),
+        ),
+      },
+      credits: {
+        buy: authed.linkBuilder.credits.buy.handler(async ({ context, input }) =>
+          buyLbCredits(deps, context.actor, input.projectId),
         ),
       },
       hosts: {

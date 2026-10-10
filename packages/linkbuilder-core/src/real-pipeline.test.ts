@@ -94,6 +94,24 @@ describe("planRealStep", () => {
     });
   });
 
+  it("refuses to register before research and to link before warmup", () => {
+    expect(planRealStep(input({ researchComplete: false, session: onHost }))).toEqual({
+      kind: "wait",
+      reason: "research",
+    });
+    const ready = { id: "h1", ...hostState("ready") };
+    expect(
+      planRealStep(
+        input({
+          host: ready,
+          session: onHost,
+          minPostsBeforeLink: 3,
+          warmupPosts: 0,
+        }),
+      ),
+    ).toEqual({ kind: "warmup_post" });
+  });
+
   it("warms up, posts and verifies", () => {
     const warming = { id: "h1", ...hostState("warming") };
     expect(planRealStep(input({ host: warming, warmupMet: true }))).toEqual({ kind: "warmup" });

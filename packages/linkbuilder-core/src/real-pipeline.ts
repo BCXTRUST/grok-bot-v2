@@ -50,6 +50,11 @@ export interface RealPlanInput {
   warmupMet: boolean;
   /** Warming account still owes link-free replies. Absent means the age gate is the only wait. */
   warmupPostsShort?: boolean;
+  /** False until research has chosen this host. Omitted means research already finished. */
+  researchComplete?: boolean;
+  /** Set with `warmupPosts` to refuse a link before warmup. */
+  minPostsBeforeLink?: number;
+  warmupPosts?: number;
   placement: { status: LbPlacementStatus; counted: boolean } | null;
 }
 
@@ -71,6 +76,20 @@ export function planRealStep(input: RealPlanInput): RealPlan {
   const host = input.host;
   if (!host || needsHost(host)) return { kind: "select_host" };
 
+  if (
+    input.researchComplete === false &&
+    (host.status === "qualified" || host.status === "registering")
+  ) {
+    return { kind: "wait", reason: "research" };
+  }
+  if (host.status === "ready" && !input.placement) {
+    const min = input.minPostsBeforeLink;
+    if (min !== undefined && min > 0 && (input.warmupPosts ?? 0) < min) {
+      if (input.session.hostId !== host.id) return { kind: "open_session" };
+      if (!input.session.helperConnected) return { kind: "helper_connected" };
+      return { kind: "warmup_post" };
+    }
+  }
   if (host.status === "ready" && input.placement) {
     if (input.placement.status === "pending") return { kind: "verify" };
     return { kind: "select_host" };
