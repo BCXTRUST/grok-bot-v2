@@ -724,6 +724,7 @@ export class GenericFormDriver implements BoardDriver {
       new URL("/register", homepageUrl).href,
       new URL("/register/", homepageUrl).href,
       new URL("/community/register/", homepageUrl).href,
+      new URL("/profile/register", homepageUrl).href,
       new URL("/forum/register/", homepageUrl).href,
       new URL("/core/register/", homepageUrl).href,
       new URL("/ucp.php?mode=register", homepageUrl).href,
@@ -750,7 +751,11 @@ export class GenericFormDriver implements BoardDriver {
         const entry = entries[entryIndex] ?? "";
         entryIndex += 1;
         if (here !== entry) {
-          await session.goto(entry);
+          try {
+            await session.goto(entry);
+          } catch {
+            continue;
+          }
           continue;
         }
       }
