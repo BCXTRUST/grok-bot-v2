@@ -116,6 +116,11 @@ export interface BrowserSession {
   /** Resolves true once the selector matches, false when the timeout elapses first. */
   waitFor(selector: string, options: { timeoutMs: number }): Promise<boolean>;
   screenshotPng(): Promise<Uint8Array>;
+  /**
+   * Screenshot the page, then click a visible accept control, including one inside a frame
+   * that page text does not include. Returns false when no accept control is visible.
+   */
+  clickConsent?(): Promise<boolean>;
   /** Ids of the extensions the browser loaded, read from their service workers. */
   loadedExtensions?(): Promise<string[]>;
   /** Id and manifest version of each loaded extension, when the browser can read them. */

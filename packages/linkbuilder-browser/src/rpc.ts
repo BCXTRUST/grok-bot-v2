@@ -64,6 +64,7 @@ export const BrowserRpcRequestSchema = z.discriminatedUnion("method", [
     })
     .strict(),
   z.object({ method: z.literal("screenshotPng") }).strict(),
+  z.object({ method: z.literal("clickConsent") }).strict(),
   z.object({ method: z.literal("loadedExtensions") }).strict(),
   z.object({ method: z.literal("extensionVersions") }).strict(),
   z.object({ method: z.literal("close") }).strict(),
@@ -161,6 +162,8 @@ export class BrowserRpcServer {
         return session.waitFor(request.selector, { timeoutMs: request.timeoutMs });
       case "screenshotPng":
         return binary(await session.screenshotPng());
+      case "clickConsent":
+        return session.clickConsent ? session.clickConsent() : false;
       case "loadedExtensions":
         return session.loadedExtensions ? session.loadedExtensions() : [];
       case "extensionVersions":
@@ -332,6 +335,10 @@ export class RpcBrowserSession implements BrowserSession {
 
   screenshotPng(): Promise<Uint8Array> {
     return this.bytes({ method: "screenshotPng" });
+  }
+
+  async clickConsent(): Promise<boolean> {
+    return z.boolean().parse(await this.call({ method: "clickConsent" }));
   }
 
   async loadedExtensions(): Promise<string[]> {

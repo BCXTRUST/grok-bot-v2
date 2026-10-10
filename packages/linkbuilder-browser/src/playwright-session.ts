@@ -682,6 +682,78 @@ export class PlaywrightBrowserSession implements BrowserSession {
     }
   }
 
+  /**
+   * The consent control can sit in a frame that page text never includes. Look at the
+   * screenshot, then click the visible accept control in whichever frame shows it.
+   */
+  async clickConsent(): Promise<boolean> {
+    await this.screenshotPng().catch(() => undefined);
+    const accept =
+      /^(?:akzeptieren(?: und weiter)?|alle akzeptieren|alle cookies akzeptieren|cookies akzeptieren|zustimmen|einverstanden|ich stimme zu|accept(?: all| and continue)?|agree(?: and continue)?)$/i;
+    const reject =
+      /werbefrei|ablehnen|einstellungen|contentpass|3[,.]99|reject|settings|manage|nur notwendige|necessary only/i;
+    for (const frame of this.page.frames()) {
+      const clicked = await frame
+        .evaluate(
+          ({ acceptSource, rejectSource }) => {
+            interface NodeLike {
+              innerText?: string;
+              shadowRoot?: ParentLike | null;
+              getAttribute: (name: string) => string | null;
+              hasAttribute: (name: string) => boolean;
+              getClientRects: () => { length: number };
+              click: () => void;
+              ownerDocument: {
+                defaultView: { getComputedStyle: (el: NodeLike) => { display: string; visibility: string } } | null;
+              };
+            }
+            interface ParentLike {
+              querySelectorAll: (selector: string) => Iterable<NodeLike>;
+            }
+            const acceptRe = new RegExp(acceptSource, "i");
+            const rejectRe = new RegExp(rejectSource, "i");
+            const doc = (globalThis as unknown as { document: ParentLike }).document;
+            const seen = new Set<NodeLike>();
+            const controls: Array<{ el: NodeLike; text: string }> = [];
+            const visit = (root: ParentLike) => {
+              for (const el of root.querySelectorAll(
+                "button, a, [role='button'], input[type='button'], input[type='submit']",
+              )) {
+                if (seen.has(el)) continue;
+                seen.add(el);
+                const text = (el.innerText || el.getAttribute("value") || el.getAttribute("aria-label") || "")
+                  .replace(/\s+/g, " ")
+                  .trim();
+                if (!text || text.length > 80 || rejectRe.test(text) || !acceptRe.test(text)) continue;
+                const style = el.ownerDocument.defaultView?.getComputedStyle(el);
+                if (
+                  el.hasAttribute("hidden") ||
+                  style?.display === "none" ||
+                  style?.visibility === "hidden" ||
+                  el.getClientRects().length === 0
+                ) {
+                  continue;
+                }
+                controls.push({ el, text });
+              }
+              for (const el of root.querySelectorAll("*")) {
+                if (el.shadowRoot) visit(el.shadowRoot);
+              }
+            };
+            visit(doc);
+            const chosen = controls.sort((a, b) => b.text.length - a.text.length)[0];
+            if (!chosen) return false;
+            chosen.el.click();
+            return true;
+          },
+          { acceptSource: accept.source, rejectSource: reject.source },
+        )
+        .catch(() => false);
+      if (clicked) return true;
+    }
+    return false;
+  }
+
   async screenshotPng(): Promise<Uint8Array> {
     return new Uint8Array(await this.page.screenshot({ type: "png" }));
   }

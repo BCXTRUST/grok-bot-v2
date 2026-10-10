@@ -721,8 +721,11 @@ export class GenericFormDriver implements BoardDriver {
       if (signature === previous) break;
       previous = signature;
       if (registrationClosed(text)) return "closed";
+      if ((await acceptCookieWall(session)) === "accepted") {
+        previous = "";
+        continue;
+      }
       if ((await this.mapOpenRegistration(session)) === "form") return "form";
-      if ((await acceptCookieWall(session)) === "accepted") continue;
       if (await this.acceptTermsGate(session)) continue;
       if (await clickRegisterControl(session)) continue;
       if (entryIndex < entries.length) {

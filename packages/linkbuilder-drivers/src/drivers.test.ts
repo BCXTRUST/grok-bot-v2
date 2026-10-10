@@ -24,7 +24,7 @@ import {
   runPageHelper,
   solveImageCaptcha,
 } from "./captcha.js";
-import { acceptCookieWall, COOKIE_ACCEPT_SELECTORS } from "./cookie-wall.js";
+import { acceptCookieWall, consentAcceptText, COOKIE_ACCEPT_SELECTORS } from "./cookie-wall.js";
 import { boardDriverFor } from "./index.js";
 import { PhpbbDriver, phpbbPermalink, phpbbTopicUrl } from "./phpbb.js";
 import { type FixtureMail, renderBbcode, startPhpbbFixture } from "./testing/phpbb-fixture.js";
@@ -47,6 +47,23 @@ describe("phpBB driver helpers", () => {
   it("includes the German board cookie accept control", () => {
     expect(COOKIE_ACCEPT_SELECTORS).toContain("a[onclick*='ca_accept']");
     expect(COOKIE_ACCEPT_SELECTORS).toContain("button:has-text('Akzeptieren und weiter')");
+    expect(consentAcceptText("Akzeptieren und weiter")).toBe(true);
+    expect(consentAcceptText("Werbefrei für 3.99€ im Monat")).toBe(false);
+  });
+
+  it("clicks a consent control that page text does not include", async () => {
+    let clicked = false;
+    const session = {
+      async exists() {
+        return false;
+      },
+      async clickConsent() {
+        clicked = true;
+        return true;
+      },
+    } as unknown as BrowserSession;
+    expect(await acceptCookieWall(session)).toBe("accepted");
+    expect(clicked).toBe(true);
   });
 
   it("reads a German activation-key notice as waiting for email", async () => {
