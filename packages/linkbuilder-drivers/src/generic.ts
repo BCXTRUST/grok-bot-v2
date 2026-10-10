@@ -351,10 +351,15 @@ export function planRegistration(
     actions.push(fill(display.field, name));
   }
 
-  const consent = pick(except(open, used), scoreConsent, 2);
-  const consentPark = take(consent, "consent");
-  if (consentPark) return { ok: false, ...consentPark };
-  if (consent.field) actions.push(click(consent.field));
+  const consentFields = except(open, used).filter((field) => scoreConsent(field) >= 2);
+  const requiredConsent = consentFields.filter((field) => field.required);
+  if (consentFields.length > 1 && requiredConsent.length === 0) {
+    return { ok: false, reason: "tie", label: "consent" };
+  }
+  for (const field of requiredConsent.length > 0 ? requiredConsent : consentFields) {
+    used.add(field.selector);
+    actions.push(click(field));
+  }
 
   const newsletter = newsletterOptOut(except(open, used));
   const newsletterPark = take(newsletter, "newsletter");

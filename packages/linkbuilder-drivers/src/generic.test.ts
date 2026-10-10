@@ -120,6 +120,42 @@ describe("generic form driver", () => {
     expect(result).toEqual({ kind: "form_error", messages: [refusal] });
   });
 
+  it("checks every required consent box", () => {
+    const plan = planRegistration(
+      [
+        field({ selector: "#user", name: "username", label: "Benutzername", required: true }),
+        field({ selector: "#email", type: "email", label: "E-Mail", required: true }),
+        field({
+          selector: "#password",
+          type: "password",
+          label: "Passwort",
+          autocomplete: "new-password",
+          required: true,
+        }),
+        field({ selector: "#rules", type: "checkbox", name: "accept_rules", label: "Regeln", required: true }),
+        field({
+          selector: "#terms",
+          type: "checkbox",
+          name: "accept_terms",
+          label: "Bedingungen",
+          required: true,
+        }),
+        field({ selector: "#submit", tag: "button", type: "submit", label: "Registrieren" }),
+      ],
+      registrationProfile({
+        username: "sophie_braun",
+        email: "sophie@example.com",
+        password: "example-password",
+      }),
+    );
+    expect(plan.ok).toBe(true);
+    if (!plan.ok) return;
+    expect(plan.actions.filter((action) => action.kind === "click").map((action) => action.selector)).toEqual([
+      "#rules",
+      "#terms",
+    ]);
+  });
+
   it("treats a repeated email address as the confirmation", () => {
     const plan = planRegistration(
       [
