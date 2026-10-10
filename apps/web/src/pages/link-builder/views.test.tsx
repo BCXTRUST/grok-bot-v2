@@ -456,6 +456,10 @@ describe("link builder screens", () => {
     expect(html).not.toContain("NEW ");
     expect(html).not.toContain("LIVE ");
     expect(html).toContain('aria-label="Computer"');
+    expect(html).toContain('aria-label="Now"');
+    expect(html).toContain("top-4 right-4");
+    expect(html).not.toContain("bottom-4 left-4");
+    expect(html).toContain("1 link left today");
     expect(html).toContain('aria-label="Stage"');
     expect(html).toContain("Register");
     expect(html).toContain("Warmup");

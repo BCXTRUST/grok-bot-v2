@@ -2,15 +2,20 @@ import type { LbOperatorTicketView, LbRunStepView, LbWhyNot } from "@rakazo/cont
 import {
   foundForumLine,
   foundThreadLine,
+  formatNextRun,
   isCannedResearchLine,
   isStaleResearchLine,
+  isWithinWindow,
+  localClock,
   mentionsExampleDomain,
   mentionsFixtureHost,
+  parseClockTime,
   RESEARCH_OPENING,
   researchResultName,
   searchedGoogleLine,
   showHostToCustomer,
   stageFromActivity,
+  type ScheduleWindow,
   type WorkStage,
 } from "@rakazo/linkbuilder-core";
 
@@ -241,6 +246,82 @@ export function overviewFeed(input: {
     items.push({ id: `note:${line}`, label: line, status: "done", at: null });
   }
   return items;
+}
+
+function formatSpan(minutes: number): string {
+  const whole = Math.max(0, Math.round(minutes));
+  if (whole < 1) return "under a minute";
+  if (whole < 60) return `${whole}m`;
+  const hours = Math.floor(whole / 60);
+  const rest = whole % 60;
+  return rest === 0 ? `${hours}h` : `${hours}h ${rest}m`;
+}
+
+/**
+ * How long the open window still runs, and a pace guess from recent steps.
+ * Steps closer than 15s or farther than 45m are pauses, not a pace.
+ */
+export function overviewPace(input: {
+  now: Date;
+  schedule?: ScheduleWindow | null;
+  steps: readonly { createdAt: string }[];
+  liveToday: number;
+  livePerDay: number;
+  newToday: number;
+  newPerDay: number;
+}): string[] {
+  const lines: string[] = [];
+  let windowLeft: number | null = null;
+  if (input.schedule?.window) {
+    const liveMet = input.livePerDay > 0 && input.liveToday >= input.livePerDay;
+    const state = isWithinWindow(input.now, input.schedule, { liveMet });
+    if (!state.active) {
+      lines.push(`Next run ${formatNextRun(input.now, input.schedule)}`);
+    } else {
+      const clock = localClock(input.now, input.schedule.timezone);
+      const end =
+        state.mode === "overtime"
+          ? input.schedule.hardStopHour * 60
+          : parseClockTime(input.schedule.window.end);
+      windowLeft = Math.max(0, end - clock.minutes);
+      lines.push(`${formatSpan(windowLeft)} left today`);
+    }
+  }
+  if (input.schedule?.window && windowLeft === null) return lines;
+  const liveLeft = Math.max(0, input.livePerDay - input.liveToday);
+  const newLeft = Math.max(0, input.newPerDay - input.newToday);
+  const times = input.steps
+    .map((step) => Date.parse(step.createdAt))
+    .filter((at) => Number.isFinite(at))
+    .sort((left, right) => left - right);
+  const gaps: number[] = [];
+  for (let index = 1; index < times.length; index += 1) {
+    const gap = times[index]! - times[index - 1]!;
+    if (gap >= 15_000 && gap <= 45 * 60_000) gaps.push(gap);
+  }
+  const recent = gaps.slice(-8);
+  const units = liveLeft > 0 ? liveLeft : newLeft;
+  const noun =
+    liveLeft > 0
+      ? units === 1
+        ? "link"
+        : "links"
+      : units === 1
+        ? "account"
+        : "accounts";
+  if (units > 0 && recent.length >= 2) {
+    const sorted = [...recent].sort((left, right) => left - right);
+    const median = sorted[Math.floor(sorted.length / 2)] ?? sorted[0]!;
+    const minutes = Math.max(1, Math.round((median * units) / 60_000));
+    if (windowLeft !== null && minutes > windowLeft) {
+      lines.push(`${units} ${noun} still open`);
+    } else {
+      lines.push(`About ${formatSpan(minutes)} for ${units} ${noun}`);
+    }
+  } else if (units > 0) {
+    lines.push(`${units} ${noun} left today`);
+  }
+  return lines;
 }
 
 export function overviewAction(items: OverviewFeedItem[], working: boolean): string {

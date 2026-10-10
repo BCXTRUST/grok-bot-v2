@@ -55,6 +55,7 @@ import {
   overviewFeed,
   overviewFrame,
   overviewHasPlacement,
+  overviewPace,
   overviewPill,
   overviewStage,
   overviewWorking,
@@ -775,9 +776,22 @@ function Dashboard({
     stepKinds: steps.map((step) => step.kind),
     hasPlacement,
   });
+  const focusHost =
+    forums.find((host) =>
+      ["registering", "pending_email", "pending_admin", "warming"].includes(host.status),
+    ) ?? null;
+  const pace = overviewPace({
+    now: new Date(),
+    schedule: project.schedule,
+    steps,
+    liveToday: status?.run?.liveToday ?? 0,
+    livePerDay: status?.livePerDay ?? project.quotas?.livePerDay ?? 0,
+    newToday: status?.run?.newToday ?? 0,
+    newPerDay: status?.newPerDay ?? project.quotas?.newPerDay ?? 0,
+  });
   return (
     <section className="flex min-h-0 flex-1 flex-col gap-4" aria-label="Dashboard">
-      <div className="grid min-h-0 flex-1 grid-rows-[minmax(0,0.9fr)_minmax(0,1.1fr)] gap-4 lg:grid-cols-[minmax(0,1.6fr)_minmax(280px,360px)] lg:grid-rows-1">
+      <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1.55fr)_minmax(240px,380px)] gap-4">
         <ComputerPane
           working={working}
           action={action}
@@ -787,16 +801,29 @@ function Dashboard({
           screenPending={screenPending}
           loadArtifact={loadArtifact}
         />
-        <div
-          ref={taskColumn}
-          data-task-column=""
-          className="rk-scroll flex min-h-0 flex-col gap-3 overflow-y-auto overscroll-contain"
-        >
-          {hosts.some((host) => host.status === "warming") ? (
-            <p aria-label="Warm-up" className="text-[15px] text-[#ECECEE]">
-              {`Warm-up. Next run ${formatNextRun(new Date(), project.schedule)}`}
-            </p>
-          ) : null}
+        <div className="flex min-h-0 flex-col gap-3">
+          <NowPanel
+            working={working}
+            action={action}
+            stage={stage}
+            pace={pace}
+            host={focusHost?.registrableDomain ?? null}
+            notes={statusNotes(status?.whyNot)}
+            error={status?.run?.lastError ?? null}
+            newToday={status?.run?.newToday ?? 0}
+            newPerDay={status?.newPerDay ?? project.quotas?.newPerDay ?? 0}
+            liveToday={status?.run?.liveToday ?? 0}
+            livePerDay={status?.livePerDay ?? project.quotas?.livePerDay ?? 0}
+            warming={hosts.some((host) => host.status === "warming")}
+            nextRun={
+              project.schedule ? formatNextRun(new Date(), project.schedule) : null
+            }
+          />
+          <div
+            ref={taskColumn}
+            data-task-column=""
+            className="rk-scroll flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto overscroll-contain"
+          >
           <input
             aria-label="Filter tasks"
             placeholder="Filter"
@@ -815,8 +842,69 @@ function Dashboard({
             onDecide={onDecideDraft}
           />
           {status?.costs ? <CostNote costs={status.costs} /> : null}
+          </div>
         </div>
       </div>
+    </section>
+  );
+}
+
+function NowPanel({
+  working,
+  action,
+  stage,
+  pace,
+  host,
+  notes,
+  error,
+  newToday,
+  newPerDay,
+  liveToday,
+  livePerDay,
+  warming,
+  nextRun,
+}: {
+  working: boolean;
+  action: string;
+  stage: (typeof WORK_STAGES)[number];
+  pace: string[];
+  host: string | null;
+  notes: string[];
+  error: string | null;
+  newToday: number;
+  newPerDay: number;
+  liveToday: number;
+  livePerDay: number;
+  warming: boolean;
+  nextRun: string | null;
+}) {
+  const headline = action || (working ? "Working" : "Waiting");
+  const facts = [
+    WORK_STAGE_LABELS[stage],
+    host,
+    newPerDay > 0 ? `${OVERVIEW_COUNTS.newToday} ${newToday}/${newPerDay}` : null,
+    livePerDay > 0 ? `${OVERVIEW_COUNTS.liveToday} ${liveToday}/${livePerDay}` : null,
+    warming && nextRun ? `Warm-up. Next run ${nextRun}` : null,
+    ...pace,
+    ...notes,
+    error,
+  ].filter((line): line is string => Boolean(line));
+  return (
+    <section aria-label="Now" aria-live="polite" className="shrink-0">
+      <BuiCard className="flex flex-col gap-3 px-3.5 py-3.5">
+        {working ? (
+          <LoadingState label={headline} />
+        ) : (
+          <p className="text-[15px] font-medium leading-snug text-[#ECECEE]">{headline}</p>
+        )}
+        <ul className="flex flex-col gap-1.5">
+          {facts.map((line) => (
+            <li key={line} className="text-[13px] leading-snug text-[#C8C8CD]">
+              {line}
+            </li>
+          ))}
+        </ul>
+      </BuiCard>
     </section>
   );
 }
@@ -921,9 +1009,16 @@ function ComputerPane({
             className="absolute inset-0 z-[1] h-full w-full bg-[#0c0c0e] object-contain"
           />
         ) : null}
-        {working && frame?.kind === "url" ? (
-          <div className="absolute bottom-4 left-4 z-20">
-            <LoadingState label={label} prominent />
+        {frame && label ? (
+          <div
+            data-live-status="corner"
+            className="pointer-events-none absolute top-4 right-4 z-20 max-w-[min(100%-2rem,24rem)] rounded-full bg-[#0c0c0e]/92 px-3 py-2"
+          >
+            {working ? (
+              <LoadingState label={label} />
+            ) : (
+              <p className="text-[13.5px] font-medium leading-snug text-[#ECECEE]">{label}</p>
+            )}
           </div>
         ) : null}
       </div>
@@ -987,8 +1082,8 @@ function WorkingScreen({
   screenPending?: boolean;
 }) {
   return (
-    <section aria-label={label} className="flex h-full min-h-0 bg-[#0c0c0e] p-4">
-      <BuiCard className="flex w-full flex-col justify-center gap-4 px-10 py-12">
+    <section aria-label={label} className="flex h-full min-h-0 items-start justify-end bg-[#0c0c0e] p-4">
+      <BuiCard className="flex w-fit max-w-md flex-col gap-3 px-4 py-3">
         <p className="text-[13px] text-[#8A8A90]">{WORK_STAGE_LABELS[stage]}</p>
         {working ? (
           <LoadingState label={label} prominent />

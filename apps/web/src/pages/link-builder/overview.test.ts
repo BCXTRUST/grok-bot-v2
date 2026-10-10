@@ -1,10 +1,12 @@
 import type { LbRunStepView, LbWhyNot } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
+import type { ScheduleWindow } from "@rakazo/linkbuilder-core";
 import {
   overviewAction,
   overviewFeed,
   overviewFrame,
   overviewHasPlacement,
+  overviewPace,
   overviewStage,
   overviewWorking,
   whyNotFeedLines,
@@ -359,5 +361,62 @@ describe("overview feed", () => {
         hasPlacement: true,
       }),
     ).toBe("verify");
+  });
+});
+
+const berlin: ScheduleWindow = {
+  timezone: "Europe/Berlin",
+  weekdaysOnly: true,
+  window: { start: "09:00", end: "22:00" },
+  overtimeUntilLiveMet: false,
+  hardStopHour: 24,
+};
+
+describe("overview pace", () => {
+  it("names the time left in the window and a pace from recent steps", () => {
+    const lines = overviewPace({
+      now: new Date("2026-10-05T08:00:00Z"),
+      schedule: berlin,
+      steps: [
+        { createdAt: "2026-10-05T07:00:00.000Z" },
+        { createdAt: "2026-10-05T07:10:00.000Z" },
+        { createdAt: "2026-10-05T07:20:00.000Z" },
+      ],
+      liveToday: 0,
+      livePerDay: 2,
+      newToday: 0,
+      newPerDay: 4,
+    });
+    expect(lines[0]).toBe("12h left today");
+    expect(lines[1]).toBe("About 20m for 2 links");
+  });
+
+  it("keeps a long pace inside the window and names the next run when closed", () => {
+    const open = overviewPace({
+      now: new Date("2026-10-05T17:30:00Z"),
+      schedule: berlin,
+      steps: [
+        { createdAt: "2026-10-05T16:00:00.000Z" },
+        { createdAt: "2026-10-05T16:40:00.000Z" },
+        { createdAt: "2026-10-05T17:20:00.000Z" },
+      ],
+      liveToday: 0,
+      livePerDay: 4,
+      newToday: 1,
+      newPerDay: 2,
+    });
+    expect(open[0]).toBe("2h 30m left today");
+    expect(open[1]).toBe("4 links still open");
+    const closed = overviewPace({
+      now: new Date("2026-10-10T12:00:00Z"),
+      schedule: berlin,
+      steps: [],
+      liveToday: 0,
+      livePerDay: 1,
+      newToday: 0,
+      newPerDay: 2,
+    });
+    expect(closed).toHaveLength(1);
+    expect(closed[0]).toMatch(/^Next run Mon 09:00/);
   });
 });
