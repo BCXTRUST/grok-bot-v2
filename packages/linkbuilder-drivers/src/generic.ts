@@ -77,7 +77,11 @@ function visible(fields: readonly FormFieldInfo[]): FormFieldInfo[] {
 
 function isSubmit(field: FormFieldInfo): boolean {
   if (field.type === "reset" || field.type === "button") return false;
-  return field.type === "submit" || field.tag === "button";
+  if (field.type === "submit") return true;
+  if (field.tag !== "button") return false;
+  return /register|registrier|sign ?up|anmeld|log ?in|reply|antworten|absenden|submit|erstellen/.test(
+    blob(field),
+  );
 }
 
 function pick(
@@ -580,6 +584,36 @@ function registerControlScore(control: ClickableControl, allowBodySubmit: boolea
   return score;
 }
 
+/** Opens the register address shown on the page. A click is not required. */
+async function followRegisterHref(session: BrowserSession): Promise<boolean> {
+  if (!session.clickables) return false;
+  const here = await session.url();
+  const controls = await session.clickables();
+  let bestHref: string | null = null;
+  let bestScore = 0;
+  for (const control of controls) {
+    if (!control.href || !REGISTER_HREF.test(control.href)) continue;
+    const score = registerControlScore(control, true);
+    if (score <= bestScore) continue;
+    bestHref = control.href;
+    bestScore = score;
+  }
+  if (!bestHref) return false;
+  let absolute: string;
+  try {
+    absolute = new URL(bestHref, here).href;
+  } catch {
+    return false;
+  }
+  if (absolute === here) return false;
+  try {
+    await session.goto(absolute);
+  } catch {
+    return false;
+  }
+  return true;
+}
+
 /** Clicks the register link a person would use. Returns false when that link is not on the page. */
 async function clickRegisterControl(session: BrowserSession): Promise<boolean> {
   if (!session.clickables) return false;
@@ -746,6 +780,10 @@ export class GenericFormDriver implements BoardDriver {
       }
       if ((await this.mapOpenRegistration(session)) === "form") return "form";
       if (await this.acceptTermsGate(session)) continue;
+      if (await followRegisterHref(session)) {
+        previous = "";
+        continue;
+      }
       if (await clickRegisterControl(session)) continue;
       if (entryIndex < entries.length) {
         const entry = entries[entryIndex] ?? "";

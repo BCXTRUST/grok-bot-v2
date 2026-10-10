@@ -494,6 +494,19 @@ describe("captcha crop and widgets", () => {
       type: "turnstile",
       siteKey: "xf-turnstile-key",
     });
+    const xenforoCaptcha = new FakeBrowserSession("s", persona, {
+      "https://board.example/xf-h": {
+        elements: {
+          "[data-xf-init='h-captcha']": { attributes: { "data-sitekey": "xf-hcaptcha-key" } },
+        },
+      },
+    });
+    await xenforoCaptcha.goto("https://board.example/xf-h");
+    expect(await detectWidget(xenforoCaptcha)).toEqual({
+      kind: "widget",
+      type: "hcaptcha",
+      siteKey: "xf-hcaptcha-key",
+    });
     await session.goto("https://board.example/frame");
     expect(await detectWidget(session)).toEqual({
       kind: "widget",

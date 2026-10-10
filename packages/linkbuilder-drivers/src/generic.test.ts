@@ -156,6 +156,38 @@ describe("generic form driver", () => {
     ]);
   });
 
+  it("submits Registrierung Absenden when a search button is also on the page", () => {
+    const plan = planRegistration(
+      [
+        field({ selector: "#user", name: "UserName", label: "Benutzername", required: true }),
+        field({ selector: "#email", name: "Email", label: "Email-Adresse", required: true }),
+        field({
+          selector: "#password",
+          name: "Passwort",
+          type: "password",
+          label: "Kennwort",
+          required: true,
+        }),
+        field({ selector: "#menu", tag: "button", label: "" }),
+        field({ selector: "#search", tag: "button", type: "submit", label: "Suche starten" }),
+        field({
+          selector: "#go",
+          tag: "button",
+          type: "submit",
+          label: "Registrierung Absenden",
+        }),
+      ],
+      registrationProfile({
+        username: "sophie_braun",
+        email: "sophie@example.com",
+        password: "example-password",
+      }),
+    );
+    expect(plan.ok).toBe(true);
+    if (!plan.ok) return;
+    expect(plan.submit.selector).toBe("#go");
+  });
+
   it("maps the WinFuture registration fields", () => {
     const plan = planRegistration(
       [
