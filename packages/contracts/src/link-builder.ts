@@ -338,6 +338,8 @@ export const LbScheduleSchema = z
     overtimeUntilLiveMet: z.boolean().default(false),
     /** Local hour (exclusive) at which overtime stops; 24 means midnight. */
     hardStopHour: z.number().int().min(1).max(24).default(24),
+    /** ISO time. While it is still ahead, Start and "continue" keep the run open. */
+    resumeUntil: z.string().datetime({ offset: true }).optional(),
   })
   .refine((schedule) => schedule.hardStopHour * 60 >= clockMinutes(schedule.window.end), {
     message: "hardStopHour must not be before the window end",

@@ -15,6 +15,8 @@ import {
   formatPackagePrice,
   mentionsExampleDomain,
   mentionsFixtureHost,
+  applyRunPhrase,
+  formatNextRun,
   primaryProblemQueryFromProject,
   showHostToCustomer,
   WORK_STAGE_LABELS,
@@ -56,6 +58,7 @@ import {
   overviewPill,
   overviewStage,
   overviewWorking,
+  statusNotes,
   whyNotFeedLines,
 } from "./overview.js";
 
@@ -360,6 +363,7 @@ export function ProjectView({
   onStart,
   onPause,
   onStop,
+  onInstruct,
   onDecideDraft,
   onSave,
   onSuggestPage,
@@ -385,6 +389,7 @@ export function ProjectView({
   onStart: () => void;
   onPause: () => void;
   onStop: () => void;
+  onInstruct?: (phrase: string) => Promise<void>;
   onDecideDraft?: (draftId: string, decision: "approved" | "discarded") => void;
   onSave?: (draft: WizardDraft) => void | Promise<void>;
   onSuggestPage?: (input: {
@@ -400,12 +405,32 @@ export function ProjectView({
   screenPending?: boolean;
 }) {
   const [intent, setIntent] = useState<OverviewIntent>(null);
+  const [phrase, setPhrase] = useState("");
+  const [phraseNote, setPhraseNote] = useState<string | null>(null);
   useEffect(() => {
     if (!intent || busy) return;
     setIntent(null);
   }, [intent, busy]);
   const working = overviewWorking({ activity: status?.activity ?? null, intent });
   const pill = overviewPill({ activityLabel: status?.activityLabel ?? null, intent });
+  function applyPhrase() {
+    if (!onInstruct || !project.quotas) return;
+    const applied = applyRunPhrase({
+      phrase,
+      quotas: project.quotas,
+      schedule: project.schedule,
+      newToday: status?.run?.newToday ?? 0,
+      liveToday: status?.run?.liveToday ?? 0,
+    });
+    if (!applied) {
+      setPhraseNote(null);
+      return;
+    }
+    void onInstruct(phrase).then(() => {
+      setPhrase("");
+      setPhraseNote(`${applied.summary}. Next run ${formatNextRun(new Date(), applied.schedule)}`);
+    });
+  }
   function request(kind: "start" | "pause" | "stop") {
     const next: OverviewIntent =
       kind === "start" ? "working" : kind === "pause" ? "paused" : "stopped";
@@ -467,6 +492,29 @@ export function ProjectView({
           <BuiButton label="Stop" onClick={() => request("stop")} disabled={busy}>
             Stop
           </BuiButton>
+          <form
+            className="flex min-w-[220px] flex-1 items-center gap-2"
+            onSubmit={(event) => {
+              event.preventDefault();
+              applyPhrase();
+            }}
+          >
+            <input
+              aria-label="Change the run"
+              placeholder="continue"
+              value={phrase}
+              onChange={(event) => setPhrase(event.target.value)}
+              className={inputClass}
+            />
+            <BuiButton
+              tone="accent"
+              label="Apply"
+              disabled={busy || !onInstruct}
+              onClick={() => applyPhrase()}
+            >
+              Apply
+            </BuiButton>
+          </form>
         </div>
         {watching ? (
           <div className="flex flex-wrap items-baseline gap-x-6 gap-y-1">
@@ -483,6 +531,11 @@ export function ProjectView({
           </div>
         ) : null}
       </div>
+      {phraseNote ? (
+        <p role="status" className="text-[13px] text-[#ECECEE]">
+          {phraseNote}
+        </p>
+      ) : null}
       {watching ? (
         <Dashboard
           project={project}
@@ -644,6 +697,7 @@ function Dashboard({
     lastEvent: status?.lastEvent ?? null,
     working,
     blockers: whyNotFeedLines(status?.whyNot),
+    notes: statusNotes(status?.whyNot),
     hideExampleCopy,
     hasPlacement,
     forumName: forums[0]?.registrableDomain ?? null,
@@ -697,6 +751,11 @@ function Dashboard({
           data-task-column=""
           className="rk-scroll flex min-h-0 flex-col gap-3 overflow-y-auto overscroll-contain"
         >
+          {hosts.some((host) => host.status === "warming") ? (
+            <p aria-label="Warm-up" className="text-[15px] text-[#ECECEE]">
+              {`Warm-up. Next run ${formatNextRun(new Date(), project.schedule)}`}
+            </p>
+          ) : null}
           <input
             aria-label="Filter tasks"
             placeholder="Filter"

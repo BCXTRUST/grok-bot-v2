@@ -404,6 +404,10 @@ export class PlaywrightBrowserSession implements BrowserSession {
     return found;
   }
 
+  async ariaSnapshot(): Promise<string> {
+    return this.page.locator("body").ariaSnapshot();
+  }
+
   async pageText(): Promise<string> {
     return deadline(this.page.locator("body").innerText({ timeout: 8_000 }));
   }

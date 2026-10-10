@@ -51,7 +51,7 @@ describe("overview feed", () => {
         proxy: "degraded",
         reasons: ["operator_parked", "pending_email", "spam_filtered", "proxy_degraded"],
       }),
-    ).toEqual(["Parked 1", "Spam blocked 1", "Pending email 2", "Proxy degraded"]);
+    ).toEqual(["Parked 1", "Spam blocked 1", "Proxy degraded"]);
   });
 
   it("appends steps in order and marks the latest one working", () => {

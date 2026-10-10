@@ -53,6 +53,7 @@ import {
 } from "@rakazo/contracts";
 import { LB_DEMO_SLUG, Prisma, type PrismaClient, seedLinkBuilderDemo } from "@rakazo/db";
 import {
+  applyRunPhrase,
   assertStartWithinPlan,
   brandNameSources,
   resolvePersonaDisplayName,
@@ -282,6 +283,41 @@ export async function updateLbProject(
 ) {
   const row = await requireProject(deps.prisma, actor, input.projectId);
   const data: Prisma.LbProjectUpdateInput = {};
+  if (input.instruction) {
+    const quotas = readQuotas(row.quotas);
+    const schedule = readSchedule(row.schedule);
+    if (!quotas) throw new ORPCError("BAD_REQUEST", { message: "Project has no quotas" });
+    const today = localDateKey(new Date(), schedule.timezone);
+    const run = await deps.prisma.lbRun.findFirst({
+      where: { projectId: row.id, workspaceId: actor.workspaceId, date: today },
+    });
+    const applied = applyRunPhrase({
+      phrase: input.instruction,
+      quotas,
+      schedule,
+      newToday: run?.newToday ?? 0,
+      liveToday: run?.liveToday ?? 0,
+    });
+    if (!applied) throw new ORPCError("BAD_REQUEST", { message: "Unknown instruction" });
+    data.quotas = json(applied.quotas);
+    data.schedule = json(applied.schedule);
+    if (applied.resume) {
+      const current = readProjectStatus(row.status);
+      if (current === "paused" || current === "stopped" || current === "draft") {
+        data.status = transitionOrBad(current === "draft" ? "draft" : current, "active");
+      }
+    }
+    const updated = await deps.prisma.lbProject.update({ where: { id: row.id }, data });
+    if (applied.resume) {
+      await ensureRunningToday(deps.prisma, actor.workspaceId, row.id, applied.schedule);
+      await deps.prisma.lbRun.updateMany({
+        where: { projectId: row.id, workspaceId: actor.workspaceId, date: today },
+        data: { lastAction: applied.summary },
+      });
+    }
+    await publish(deps, row.id);
+    return toDetail(updated);
+  }
   if (input.name !== undefined) data.name = input.name;
   if (input.slug !== undefined) data.slug = input.slug;
   if (input.brandName !== undefined) data.brandName = input.brandName;

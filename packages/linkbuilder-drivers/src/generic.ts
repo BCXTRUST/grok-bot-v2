@@ -701,6 +701,8 @@ export class GenericFormDriver implements BoardDriver {
     let triedEntry = false;
     let previous = "";
     for (let step = 0; step < 6; step += 1) {
+      if (session.ariaSnapshot) await session.ariaSnapshot().catch(() => "");
+      await session.screenshotPng().catch(() => undefined);
       const here = await session.url();
       const text = await session.pageText();
       const signature = `${here}\n${text.slice(0, 500)}`;

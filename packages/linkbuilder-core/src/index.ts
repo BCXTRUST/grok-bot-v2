@@ -29,6 +29,7 @@ export * from "./project-state.js";
 export * from "./prompts.js";
 export * from "./real-pipeline.js";
 export * from "./redact.js";
+export * from "./run-phrase.js";
 export * from "./run-state.js";
 export * from "./schedule.js";
 export * from "./spam.js";

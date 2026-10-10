@@ -56,7 +56,7 @@ export async function sleepComputerIfIdle(
     scheduleComputerSleep(deps.jobs, computerId);
     return;
   }
-  if (await linkBuilderOwnsDesktop(deps.prisma, computer.workspaceId)) {
+  if (await linkBuilderStepOpen(deps.prisma, computer.workspaceId)) {
     scheduleComputerSleep(deps.jobs, computerId);
     return;
   }
@@ -178,10 +178,13 @@ function loadComputer(prisma: PrismaClient, computerId: string) {
   });
 }
 
-/** An active link builder is driving this workspace desktop. Sleep would close that Chrome. */
-function linkBuilderOwnsDesktop(prisma: PrismaClient, workspaceId: string) {
-  return prisma.lbProject.findFirst({
-    where: { workspaceId, status: "active", archivedAt: null },
+/** A live link-builder step holds the desktop. Between sites the sandbox can sleep. */
+function linkBuilderStepOpen(prisma: PrismaClient, workspaceId: string) {
+  return prisma.lbRun.findFirst({
+    where: {
+      leaseExpiresAt: { gt: new Date() },
+      project: { workspaceId, status: "active", archivedAt: null },
+    },
     select: { id: true },
   });
 }

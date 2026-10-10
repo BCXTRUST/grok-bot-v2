@@ -660,7 +660,7 @@ describe("link builder screens", () => {
     expect(html).toContain("Live links today");
     expect(html).not.toContain("New links today");
     expect(html).toContain("Parked 1");
-    expect(html).toContain("Pending email 2");
+    expect(html).toContain("2 accounts waiting for email.");
     expect(html).toContain("Spam blocked 1");
     expect(html).not.toContain("Why not");
     expect(html).not.toContain("Proxy ok");

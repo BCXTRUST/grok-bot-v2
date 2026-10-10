@@ -123,6 +123,12 @@ export interface LinkBuilderRealDeps {
   revealedSecrets?: string[];
   /** False when the Camoufox executable is not installed. The host then goes dead on a second edge block. */
   camoufoxAvailable?: boolean;
+  /** Pause or destroy the persona desktop when a browser step is finished or stuck. */
+  releaseDesktop?: (
+    projectId: string,
+    context: AdapterContext,
+    mode: "stop" | "kill",
+  ) => Promise<void>;
   probeFetch?: typeof fetch;
   allowPrivateProbe?: boolean;
 }
@@ -152,7 +158,7 @@ const unconfiguredCaptcha: CaptchaSolver = {
 const DEFAULT_LEASE_MS = 5 * 60_000;
 const DEFAULT_VERIFY_DELAY_MS = 60_000;
 const DEFAULT_REVERIFY_MS = 24 * 3_600_000;
-const MAX_CONSECUTIVE_ERRORS = 3;
+const MAX_CONSECUTIVE_ERRORS = 4;
 
 export type TickOutcome = "stepped" | "waited" | "skipped" | "failed";
 
@@ -278,7 +284,10 @@ export class LinkBuilderRealRunner {
       return "failed";
     }
     const plan = this.plan(ctx);
-    if (plan.kind === "done" || plan.kind === "wait") return "waited";
+    if (plan.kind === "done" || plan.kind === "wait") {
+      await this.dropDesktop(ctx, plan.kind, "", false);
+      return "waited";
+    }
     const startedAt = new Date();
     let result: StepResult;
     let error: string | null = null;
@@ -292,6 +301,12 @@ export class LinkBuilderRealRunner {
     const committed = await this.commit(ctx, fence, plan.kind, result, error, startedAt);
     if (!committed) return "skipped";
     await result.afterCommit?.();
+    await this.dropDesktop(
+      ctx,
+      plan.kind,
+      result.kind === "step" ? result.lastAction : "",
+      error !== null && /timed out|timeout|not become ready/i.test(error),
+    );
     await this.deps.realtime
       ?.publish(
         linkBuilderTopic(ctx.project.id),
@@ -641,6 +656,27 @@ export class LinkBuilderRealRunner {
     };
     this.pool.set(ctx.project.id, entry);
     return entry;
+  }
+
+  private async dropDesktop(
+    ctx: StepContext,
+    planKind: string,
+    lastAction: string,
+    stuck: boolean,
+  ): Promise<void> {
+    if (!this.deps.releaseDesktop) return;
+    const idle =
+      stuck ||
+      planKind === "wait" ||
+      planKind === "done" ||
+      planKind === "close" ||
+      planKind === "select_host" ||
+      /skipp|gave up|captcha not supported|waiting for the verification/i.test(lastAction);
+    if (!idle) return;
+    await this.closeSession(ctx.project.id);
+    await this.deps
+      .releaseDesktop(ctx.project.id, ctx.adapter, stuck ? "kill" : "stop")
+      .catch(() => undefined);
   }
 
   private async closeSession(projectId: string): Promise<void> {

@@ -642,6 +642,15 @@ function ProjectRoute({ projectId }: { projectId: string }) {
       onStart={() => act("start")}
       onPause={() => act("pause")}
       onStop={() => act("stop")}
+      onInstruct={async (instruction) => {
+        setBusy(true);
+        try {
+          await rpc.linkBuilder.projects.update({ projectId, instruction });
+          await reload();
+        } finally {
+          setBusy(false);
+        }
+      }}
       onSave={(draft) => save(draft)}
       onSuggestPage={suggestPage}
       onDecideDraft={(draftId, decision) => {

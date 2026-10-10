@@ -109,7 +109,7 @@ import { ensureProxyLease } from "./link-builder-proxy.js";
 /** Bot id recorded on forum logins the link builder stores; logins are workspace-shared. */
 export const LINK_BUILDER_LOGIN_BOT = "link-builder";
 /** Image captcha attempts on one form before the host is parked for the operator. */
-export const MAX_CAPTCHA_ATTEMPTS = 2;
+export const MAX_CAPTCHA_ATTEMPTS = 4;
 export type Tx = Prisma.TransactionClient;
 
 export interface RealWorkerServices {

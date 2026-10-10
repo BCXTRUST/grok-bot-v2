@@ -1,4 +1,5 @@
 export * from "./agentmail-live.js";
+export * from "./resend-mailbox.js";
 export * from "./agentmail-mailbox.js";
 export * from "./artifacts.js";
 export * from "./background-job-handlers.js";

@@ -87,6 +87,8 @@ export const LbProjectPatchSchema = z.object({
   denyHosts: z.array(LbRegistrableDomainSchema).max(500).optional(),
   preferHosts: z.array(LbRegistrableDomainSchema).max(500).optional(),
   warmup: LbWarmupSchema.optional(),
+  /** Short run change: "continue", "do 3 more registrations today", "increase the weekly limit to 10". */
+  instruction: z.string().trim().min(1).max(200).optional(),
   spamRetry: LbSpamRetrySchema.optional(),
   content: LbContentSchema.optional(),
   operator: LbOperatorSettingsSchema.optional(),

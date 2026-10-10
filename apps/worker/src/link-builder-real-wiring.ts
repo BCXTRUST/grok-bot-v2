@@ -83,6 +83,37 @@ export async function resolvePersonaComputer(input: {
   return ref;
 }
 
+/** Pause the persona desktop, or destroy it when a step is stuck. */
+export async function releasePersonaComputer(input: {
+  prisma: PrismaClient;
+  sandbox: SandboxProvider;
+  projectId: string;
+  context: AdapterContext;
+  mode: "stop" | "kill";
+}): Promise<void> {
+  const project = await input.prisma.lbProject.findUnique({
+    where: { id: input.projectId },
+    select: { workspaceId: true },
+  });
+  if (!project) return;
+  const computers = await input.prisma.computer.findMany({
+    where: { workspaceId: project.workspaceId },
+    orderBy: { updatedAt: "desc" },
+  });
+  const computer = choosePersonaComputer(computers);
+  if (!computer?.providerRef || computer.state === "stopped") return;
+  const ref = toComputerRef(computer);
+  if (input.mode === "kill") await input.sandbox.destroy(ref, input.context);
+  else await input.sandbox.stop(ref, input.context);
+  await input.prisma.computer.update({
+    where: { id: computer.id },
+    data: {
+      state: input.mode === "kill" ? "stopped" : "suspended",
+      ...(input.mode === "kill" ? { providerRef: null } : {}),
+    },
+  });
+}
+
 /** Recorded fixtures, or DataForSEO when `LINK_BUILDER_SEARCH=dataforseo` and a `lb_search` secret exists. */
 export function searchProviderFromEnv(input: {
   env: NodeJS.ProcessEnv;

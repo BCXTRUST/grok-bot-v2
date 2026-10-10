@@ -8,6 +8,7 @@ import {
   captchaSolverForProject,
   proxyProviderFromEnv,
   proxyResolverFor,
+  releasePersonaComputer,
   searchProviderFromEnv,
 } from "./link-builder-real-wiring.js";
 import { dnsHostnameResolver } from "./webhook-dns.js";
@@ -18,6 +19,7 @@ import {
   AgentMailEmulator,
   AgentMailMailbox,
   agentMailLiveClient,
+  ResendMailbox,
   createBackgroundJobHandlers,
   createConnectorStack,
   createJobReconciler,
@@ -182,12 +184,23 @@ async function main() {
             redact,
             env: process.env,
           }),
-        mailbox: process.env.AGENTMAIL_API_KEY
-          ? new AgentMailMailbox(agentMailLiveClient(process.env.AGENTMAIL_API_KEY), prisma)
-          : new AgentMailEmulator(),
+        mailbox:
+          process.env.RESEND_API_KEY && process.env.RESEND_INBOUND_DOMAIN
+            ? new ResendMailbox({ domain: process.env.RESEND_INBOUND_DOMAIN, prisma })
+            : process.env.AGENTMAIL_API_KEY
+              ? new AgentMailMailbox(agentMailLiveClient(process.env.AGENTMAIL_API_KEY), prisma)
+              : new AgentMailEmulator(),
         notifications: new ExpoPushProvider(dataDir),
         resolveHostname: dnsHostnameResolver,
         workerId: `worker-${process.pid}`,
+        releaseDesktop: (projectId, context, mode) =>
+          releasePersonaComputer({
+            prisma,
+            sandbox,
+            projectId,
+            context,
+            mode,
+          }),
         search: searchProviderFromEnv({ env: process.env, prisma, secrets }),
         textModel: process.env.OPENROUTER_API_KEY
           ? new OpenRouterTextModel({

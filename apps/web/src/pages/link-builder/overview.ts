@@ -84,20 +84,44 @@ export function overviewPill(input: {
   return input.activityLabel;
 }
 
-/** Non-zero blockers only. An all-zero report, including "proxy ok", stays off the screen. */
+/** Skips and holds that are part of a healthy run. Not failures. */
+export function statusNotes(whyNot: LbWhyNot | null | undefined): string[] {
+  if (!whyNot) return [];
+  const lines: string[] = [];
+  if (whyNot.unsupportedCaptcha > 0) {
+    lines.push(
+      whyNot.unsupportedCaptcha === 1
+        ? "Skipped 1 site. Captcha cannot be solved."
+        : `Skipped ${whyNot.unsupportedCaptcha} sites. Captcha cannot be solved.`,
+    );
+  }
+  if (whyNot.pendingEmail > 0) {
+    lines.push(
+      whyNot.pendingEmail === 1
+        ? "1 account waiting for email."
+        : `${whyNot.pendingEmail} accounts waiting for email.`,
+    );
+  }
+  if (whyNot.pendingAdmin > 0) {
+    lines.push(
+      whyNot.pendingAdmin === 1
+        ? "1 account waiting for an admin. Expected."
+        : `${whyNot.pendingAdmin} accounts waiting for an admin. Expected.`,
+    );
+  }
+  return lines;
+}
+
+/** Non-zero blockers only. Warm-up, skips, and mail holds stay off this list. */
 export function whyNotFeedLines(whyNot: LbWhyNot | null | undefined): string[] {
   if (!whyNot) return [];
   const lines: string[] = [];
   if (whyNot.parked > 0) lines.push(`Parked ${whyNot.parked}`);
   if (whyNot.spamBlocked > 0) lines.push(`Spam blocked ${whyNot.spamBlocked}`);
-  if (whyNot.unsupportedCaptcha > 0) lines.push(`Unsupported captcha ${whyNot.unsupportedCaptcha}`);
-  if (whyNot.pendingEmail > 0) lines.push(`Pending email ${whyNot.pendingEmail}`);
-  if (whyNot.pendingAdmin > 0) lines.push(`Pending admin ${whyNot.pendingAdmin}`);
   if (whyNot.modelErrors > 0) lines.push(`Model errors ${whyNot.modelErrors}`);
   if (whyNot.modelRefusals > 0) lines.push(`Model refusals ${whyNot.modelRefusals}`);
   if (whyNot.proxy === "degraded") lines.push("Proxy degraded");
   if (whyNot.reasons.includes("captcha_balance_low")) lines.push("Captcha balance is low");
-  if (whyNot.reasons.includes("warmup_pending")) lines.push("Warm-up still running");
   if (whyNot.reasons.includes("week_cap_reached")) lines.push("Live links this week are full");
   if (whyNot.reasons.includes("new_quota_reached")) lines.push("New links today are full");
   return lines;
@@ -108,6 +132,8 @@ export function overviewFeed(input: {
   lastEvent: string | null;
   working: boolean;
   blockers: string[];
+  /** Expected holds: a skip, mail, or an admin review. */
+  notes?: string[];
   /** Customer projects drop leftover `*.example` lines. The Nordlicht demo keeps its own. */
   hideExampleCopy?: boolean;
   /** Verify runs only after a link is placed. Without one, those lines stay off the feed. */
@@ -209,6 +235,9 @@ export function overviewFeed(input: {
   }
   for (const line of input.blockers) {
     items.push({ id: `blocker:${line}`, label: line, status: "blocked", at: null });
+  }
+  for (const line of input.notes ?? []) {
+    items.push({ id: `note:${line}`, label: line, status: "done", at: null });
   }
   return items;
 }
