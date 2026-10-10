@@ -64,6 +64,6 @@ describe("run phrases", () => {
 
   it("names the next window in the project timezone", () => {
     const saturday = new Date("2026-10-10T11:00:00.000Z");
-    expect(formatNextRun(saturday, schedule)).toBe("Mon 09:00");
+    expect(formatNextRun(saturday, schedule)).toBe("Mon 09:00 Europe/Berlin");
   });
 });

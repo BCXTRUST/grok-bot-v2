@@ -549,14 +549,25 @@ export class LinkBuilderRealRunner {
       take: MAX_CONSECUTIVE_ERRORS - 1,
       select: { error: true, hostId: true },
     });
+    const postFailures = host
+      ? await this.deps.prisma.lbRunStep.count({
+          where: {
+            hostId: host.id,
+            kind: { in: ["warmup_post", "post"] },
+            error: { not: null },
+          },
+        })
+      : 0;
+    const repeated =
+      recent.length === MAX_CONSECUTIVE_ERRORS - 1 &&
+      recent.every((step) => step.error && step.hostId === host?.id);
     const giveUp =
       host !== null &&
       !isHostTerminal(host.status as LbHostStatus) &&
-      recent.length === MAX_CONSECUTIVE_ERRORS - 1 &&
-      recent.every((step) => step.error && step.hostId === host.id);
+      (repeated || postFailures + 1 >= MAX_CONSECUTIVE_ERRORS);
     return {
       kind: "step",
-      lastAction: giveUp ? "Gave up on this board" : "Step failed, retrying",
+      lastAction: giveUp ? "Skipped this site" : "Step failed, retrying",
       hostId: host?.id ?? null,
       outcome: { error: message },
       apply: giveUp
