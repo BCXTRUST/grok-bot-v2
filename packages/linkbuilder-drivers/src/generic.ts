@@ -698,9 +698,14 @@ export class GenericFormDriver implements BoardDriver {
     await ensureOnSite(session, homepageUrl);
     // Same shape as the computer agent: look at this page, take one step, look again.
     // The words and the path differ on every board, so there is no fixed click sequence.
-    let triedEntry = false;
+    const entries = [
+      new URL("/register", homepageUrl).href,
+      new URL("/core/register/", homepageUrl).href,
+      new URL("/ucp.php?mode=register", homepageUrl).href,
+    ];
+    let entryIndex = 0;
     let previous = "";
-    for (let step = 0; step < 6; step += 1) {
+    for (let step = 0; step < 8; step += 1) {
       if (session.ariaSnapshot) await session.ariaSnapshot().catch(() => "");
       await session.screenshotPng().catch(() => undefined);
       const here = await session.url();
@@ -713,9 +718,9 @@ export class GenericFormDriver implements BoardDriver {
       if ((await acceptCookieWall(session)) === "accepted") continue;
       if (await this.acceptTermsGate(session)) continue;
       if (await clickRegisterControl(session)) continue;
-      if (!triedEntry) {
-        triedEntry = true;
-        const entry = this.registerUrl(homepageUrl);
+      if (entryIndex < entries.length) {
+        const entry = entries[entryIndex] ?? "";
+        entryIndex += 1;
         if (here !== entry) {
           await session.goto(entry);
           continue;
@@ -813,6 +818,9 @@ export class GenericFormDriver implements BoardDriver {
   }
 
   async activationResult(session: BrowserSession): Promise<ActivationResult> {
+    const messages = (await this.pageMessages(session)).join("\n");
+    const classified = classifyRegistration(messages, false);
+    if (classified.kind === "pending_admin") return "pending_admin";
     if (await this.isLoggedIn(session)) return "active";
     const fields = await fieldsIn(session, "form");
     const login = fields ? mapLogin(fields) : null;

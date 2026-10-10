@@ -79,6 +79,12 @@ describe("registration notices", () => {
       ).kind,
     ).toBe("pending_admin");
     expect(
+      classifyRegistration(
+        "Dein Benutzerkonto wartet derzeit auf eine Bestätigung durch einen Administrator. Je nach Anwesenheit der Moderatoren kann die Konto-Freischaltung einige Minuten dauern.",
+        false,
+      ).kind,
+    ).toBe("pending_admin");
+    expect(
       adminActivationNotice(
         "Dein Benutzerkonto wurde erstellt. Es muss jedoch erst durch einen Administrator freigeschaltet werden.",
       ),
