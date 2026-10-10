@@ -615,13 +615,13 @@ export class PlaywrightBrowserSession implements BrowserSession {
             ? el.textContent || el.getAttribute("value") || ""
             : "";
         const row = el.closest("li, dd, .field, .formRow, .form-row");
-        const rowText = (row?.textContent || "").replace(/\s+/g, " ").trim().slice(0, 180);
+        const rowLabel = (row?.textContent || "").replace(/\s+/g, " ").trim().slice(0, 180);
         const label = (
           labelFor?.textContent ||
           parent?.textContent ||
           el.getAttribute("aria-label") ||
           own ||
-          rowText ||
+          rowLabel ||
           ""
         )
           .replace(/\s+/g, " ")
