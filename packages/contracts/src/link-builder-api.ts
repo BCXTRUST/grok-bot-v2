@@ -121,6 +121,8 @@ const LbRunCountersSchema = z.object({
   uniqueHosts: z.number().int(),
   lastAction: z.string().nullable(),
   lastError: z.string().nullable(),
+  /** Page open on the team computer. The dashboard prefers this while the desktop is open. */
+  currentUrl: z.string().nullable().optional(),
 });
 
 export const LbProjectDetailSchema = z.object({

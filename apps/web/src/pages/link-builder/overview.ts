@@ -324,7 +324,39 @@ export function overviewPace(input: {
   return lines;
 }
 
-export function overviewAction(items: OverviewFeedItem[], working: boolean): string {
+/** Site and page open on the team computer: consent, registration, or reply. */
+export function livePageLabel(url: string | null | undefined): string | null {
+  if (!url) return null;
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
+  if (parsed.pathname.includes("/novnc/")) return null;
+  const host = parsed.hostname.replace(/^www\./, "");
+  if (!host) return null;
+  const path =
+    `${decodeURIComponent(parsed.pathname)} ${decodeURIComponent(parsed.search)}`.toLowerCase();
+  const kind = pageKind(path);
+  return kind ? `Opening ${host} ${kind}` : `Opening ${host}`;
+}
+
+function pageKind(path: string): "consent" | "registration" | "reply" | null {
+  if (/consent|cookie|datenschutz/.test(path)) return "consent";
+  if (/regist|sign-?up|signup/.test(path)) return "registration";
+  if (/reply|antwort|comment|thread|\/post(?:\/|$)|\/forum(?:\/|$)/.test(path)) return "reply";
+  return null;
+}
+
+export function overviewAction(
+  items: OverviewFeedItem[],
+  working: boolean,
+  liveUrl?: string | null,
+): string {
+  const live = livePageLabel(liveUrl);
+  if (live) return live;
   if (working) {
     const current = [...items].reverse().find((item) => item.status === "working");
     return current?.label || "Working";

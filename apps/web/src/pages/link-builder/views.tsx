@@ -768,8 +768,12 @@ function Dashboard({
     if (!node || taskQuery.trim()) return;
     node.scrollTop = node.scrollHeight;
   }, [feedTail, taskQuery]);
-  const action = overviewAction(items, working);
   const frame = overviewFrame({ steps, tickets, screenUrl });
+  const action = overviewAction(
+    items,
+    working,
+    frame?.kind === "url" ? (status?.run?.currentUrl ?? null) : null,
+  );
   const stage = overviewStage({
     runStatus: working ? "running" : (status?.run?.status ?? null),
     lastAction: status?.run?.lastAction ?? status?.lastEvent ?? action ?? null,

@@ -485,6 +485,39 @@ describe("link builder screens", () => {
     expect(html.indexOf('aria-label="Computer"')).toBeLessThan(html.indexOf("12 tokens"));
   });
 
+  it("describes the open desktop page instead of a finished reply", () => {
+    const posted = step(0, "place", []);
+    posted.lastAction = "Posted the reply";
+    const base = statusView();
+    const status = statusView({
+      activity: "running",
+      activityLabel: "running",
+      lastEvent: "Posted the reply",
+      run: {
+        ...base.run!,
+        lastAction: "Posted the reply",
+        currentUrl: "https://www.nickles.de/consent.html",
+      },
+    });
+    const stream = "https://app.autoseo.run/novnc/remote/view/9.abc/vnc.html";
+    const html = renderOverview(status, [posted], [], stream);
+    const corner = html.indexOf('data-live-status="corner"');
+    const now = html.indexOf('aria-label="Now"');
+    const filter = html.indexOf('aria-label="Filter tasks"');
+    const chip = html.slice(corner, now);
+    const panel = html.slice(now, filter);
+    expect(corner).toBeGreaterThan(-1);
+    expect(chip).toContain("Opening nickles.de consent");
+    expect(chip).toContain("top-4 right-4");
+    expect(chip).not.toContain("Posted the reply");
+    expect(chip).not.toContain("bottom-4 left-4");
+    expect(panel).toContain("Opening nickles.de consent");
+    expect(panel).not.toContain("Posted the reply");
+    const closed = renderOverview(status, [posted]);
+    expect(closed).toContain("Posted the reply");
+    expect(closed).not.toContain("Opening nickles.de consent");
+  });
+
   it("shows the stage rail and the current action when no screen exists", () => {
     const reading = step(0, "research", []);
     reading.lastAction = "Opened Google search";
@@ -805,6 +838,7 @@ function renderOverview(
   status: LbProjectStatusView,
   steps: LbRunStepView[],
   drafts: LbDraftView[] = [],
+  screenUrl?: string | null,
 ) {
   return renderToStaticMarkup(
     <ProjectView
@@ -823,6 +857,7 @@ function renderOverview(
       onStop={noop}
       loadArtifact={loadArtifact}
       busy={false}
+      screenUrl={screenUrl}
     />,
   );
 }

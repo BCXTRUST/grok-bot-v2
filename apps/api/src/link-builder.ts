@@ -1699,6 +1699,7 @@ function runCounters(run: {
   uniqueHosts: number;
   lastAction: string | null;
   lastError: string | null;
+  currentUrl?: string | null;
 }) {
   return {
     id: run.id,
@@ -1710,6 +1711,7 @@ function runCounters(run: {
     uniqueHosts: run.uniqueHosts,
     lastAction: run.lastAction,
     lastError: run.lastError,
+    currentUrl: run.currentUrl ?? null,
   };
 }
 
