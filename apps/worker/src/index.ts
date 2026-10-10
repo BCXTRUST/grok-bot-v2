@@ -184,12 +184,35 @@ async function main() {
             redact,
             env: process.env,
           }),
-        mailbox:
-          process.env.RESEND_API_KEY && process.env.RESEND_INBOUND_DOMAIN
-            ? new ResendMailbox({ domain: process.env.RESEND_INBOUND_DOMAIN, prisma })
-            : process.env.AGENTMAIL_API_KEY
-              ? new AgentMailMailbox(agentMailLiveClient(process.env.AGENTMAIL_API_KEY), prisma)
-              : new AgentMailEmulator(),
+        mailbox: {
+          describe: () => ({
+            id: process.env.RESEND_INBOUND_DOMAIN ? "resend" : "agentmail",
+            contractVersion: "1",
+            adapterVersion: "0.1.0",
+            capabilities: { inbound: "webhook" as const },
+          }),
+          ensureInbox: (projectId, context) => {
+            const domain = process.env.RESEND_INBOUND_DOMAIN?.trim();
+            const key = process.env.RESEND_API_KEY?.trim();
+            if (domain && key) return new ResendMailbox({ domain, apiKey: key, prisma }).ensureInbox(projectId, context);
+            if (process.env.AGENTMAIL_API_KEY) {
+              return new AgentMailMailbox(agentMailLiveClient(process.env.AGENTMAIL_API_KEY), prisma).ensureInbox(projectId, context);
+            }
+            return new AgentMailEmulator().ensureInbox(projectId, context);
+          },
+          listMessages: (inboxId, options, context) => {
+            const domain = process.env.RESEND_INBOUND_DOMAIN?.trim().toLowerCase();
+            const key = process.env.RESEND_API_KEY?.trim();
+            const host = inboxId.split("@")[1]?.toLowerCase();
+            if (domain && key && host === domain) {
+              return new ResendMailbox({ domain, apiKey: key, prisma }).listMessages(inboxId, options);
+            }
+            if (process.env.AGENTMAIL_API_KEY) {
+              return new AgentMailMailbox(agentMailLiveClient(process.env.AGENTMAIL_API_KEY), prisma).listMessages(inboxId, options, context);
+            }
+            return new AgentMailEmulator().listMessages(inboxId, options, context);
+          },
+        },
         notifications: new ExpoPushProvider(dataDir),
         resolveHostname: dnsHostnameResolver,
         workerId: `worker-${process.pid}`,

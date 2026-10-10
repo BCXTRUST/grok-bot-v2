@@ -17,7 +17,9 @@ export class ResendMailbox implements MailboxProvider {
   constructor(
     private readonly options: {
       domain: string;
+      apiKey: string;
       prisma: PrismaClient;
+      fetch?: typeof fetch;
     },
   ) {}
 
@@ -37,14 +39,12 @@ export class ResendMailbox implements MailboxProvider {
   }
 
   async listMessages(inboxId: string, options: { since?: Date }): Promise<InboundMail[]> {
+    const since = options.since?.getTime();
     const rows = await this.options.prisma.lbInboundMail.findMany({
-      where: {
-        inboxId,
-        ...(options.since ? { receivedAt: { gte: options.since } } : {}),
-      },
+      where: { inboxId },
       orderBy: { receivedAt: "asc" },
     });
-    return rows.map((row) => ({
+    const stored: InboundMail[] = rows.map((row) => ({
       inboxId: row.inboxId,
       from: row.fromAddress,
       subject: row.subject,
@@ -52,6 +52,48 @@ export class ResendMailbox implements MailboxProvider {
       ...(row.htmlBody ? { htmlBody: row.htmlBody } : {}),
       receivedAt: row.receivedAt.toISOString(),
     }));
+    const remote = await this.pullInbox(inboxId);
+    return [...stored, ...remote]
+      .filter((mail) => since === undefined || Date.parse(mail.receivedAt) >= since)
+      .sort((a, b) => Date.parse(a.receivedAt) - Date.parse(b.receivedAt));
+  }
+
+  /** Reads the receiving API directly. An empty webhook list still delivers mail. */
+  private async pullInbox(inboxId: string): Promise<InboundMail[]> {
+    const fetchImpl = this.options.fetch ?? fetch;
+    const headers = {
+      Authorization: `Bearer ${this.options.apiKey}`,
+      Accept: "application/json",
+      "User-Agent": "autoSEO-mail",
+    };
+    const listed = await fetchImpl("https://api.resend.com/emails/receiving", { headers });
+    if (!listed.ok) return [];
+    const body = (await listed.json()) as { data?: Array<{ id?: string; to?: string[] }> };
+    const ids = (body.data ?? [])
+      .filter((row) => (row.to ?? []).some((address) => address.toLowerCase() === inboxId.toLowerCase()))
+      .map((row) => row.id)
+      .filter((id): id is string => Boolean(id));
+    const mails: InboundMail[] = [];
+    for (const id of ids) {
+      const response = await fetchImpl(`https://api.resend.com/emails/receiving/${id}`, { headers });
+      if (!response.ok) continue;
+      const message = (await response.json()) as {
+        from?: string;
+        subject?: string;
+        text?: string;
+        html?: string;
+        created_at?: string;
+      };
+      mails.push({
+        inboxId,
+        from: message.from ?? "unknown",
+        subject: message.subject ?? "",
+        textBody: message.text ?? "",
+        ...(message.html ? { htmlBody: message.html } : {}),
+        receivedAt: message.created_at ?? new Date().toISOString(),
+      });
+    }
+    return mails;
   }
 }
 
