@@ -98,7 +98,11 @@ function pick(
     } else if (value === high) count += 1;
   }
   if (!top) return { field: null, tie: false };
-  if (count > 1) return { field: null, tie: true };
+  if (count > 1) {
+    const required = fields.filter((field) => score(field) === high && field.required);
+    if (required.length === 1) return { field: required[0] ?? null, tie: false };
+    return { field: null, tie: true };
+  }
   return { field: top, tie: false };
 }
 

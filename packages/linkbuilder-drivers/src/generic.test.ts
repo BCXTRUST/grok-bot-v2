@@ -120,6 +120,52 @@ describe("generic form driver", () => {
     expect(result).toEqual({ kind: "form_error", messages: [refusal] });
   });
 
+  it("picks the required email when a second email field is optional", () => {
+    const plan = planRegistration(
+      [
+        field({
+          selector: "#user",
+          name: "username",
+          label: "Benutzername",
+          required: true,
+        }),
+        field({
+          selector: "#email-decoy",
+          name: "email",
+          type: "email",
+          label: "E-Mail",
+          autocomplete: "email",
+        }),
+        field({
+          selector: "#email",
+          name: "email_address",
+          type: "email",
+          label: "E-Mail",
+          autocomplete: "email",
+          required: true,
+        }),
+        field({
+          selector: "#password",
+          type: "password",
+          label: "Passwort",
+          autocomplete: "new-password",
+          required: true,
+        }),
+        field({ selector: "#submit", tag: "button", type: "submit", label: "Registrieren" }),
+      ],
+      registrationProfile({
+        username: "sophie_braun",
+        email: "sophie@example.com",
+        password: "example-password",
+      }),
+    );
+    expect(plan.ok).toBe(true);
+    if (!plan.ok) return;
+    expect(plan.actions.find((action) => action.selector === "#email")).toMatchObject({
+      value: "sophie@example.com",
+    });
+  });
+
   it("maps a XenForo register form and ignores the username decoy", () => {
     const plan = planRegistration(
       [
