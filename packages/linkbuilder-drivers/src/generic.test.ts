@@ -156,6 +156,40 @@ describe("generic form driver", () => {
     ]);
   });
 
+  it("maps the diabetes-forum register form", () => {
+    const plan = planRegistration(
+      [
+        field({ selector: "#Name", name: "Name", label: "Benutzername *", required: true }),
+        field({ selector: "#DisplayName", name: "DisplayName", label: "Anzeigename *", required: true }),
+        field({ selector: "#Email", name: "Email", label: "Deine Email-Adresse *", required: true }),
+        field({ selector: "#Passwort", name: "Passwort", type: "password", label: "Kennwort *", required: true }),
+        field({
+          selector: "#Passwort2",
+          name: "Passwort2",
+          type: "password",
+          label: "Kennwortwiederholung *",
+          required: true,
+        }),
+        field({ selector: "#verify", name: "verify", label: "Überprüfungscode *", required: true }),
+        field({
+          selector: "#agb",
+          name: "agb",
+          type: "checkbox",
+          label: "Nutzungsbedingungen *",
+          required: true,
+        }),
+        field({ selector: "#go", tag: "button", type: "submit", label: "Registrierung Absenden" }),
+      ],
+      registrationProfile({
+        username: "sophie_braun",
+        email: "sophie@example.com",
+        password: "example-password",
+      }),
+    );
+    if (!plan.ok) throw new Error(`${plan.reason} ${plan.label ?? ""}`);
+    expect(plan.submit.selector).toBe("#go");
+  });
+
   it("submits Registrierung Absenden when a search button is also on the page", () => {
     const plan = planRegistration(
       [

@@ -138,7 +138,7 @@ function scoreUsername(field: FormFieldInfo): number {
 
 function scoreDisplayName(field: FormFieldInfo): number {
   if (!textControl(field)) return 0;
-  return /full name|real name|display name|your name|vor-? und nachname|vollst[aä]ndiger name/.test(
+  return /full name|real name|display name|your name|anzeigename|vor-? und nachname|vollst[aä]ndiger name/.test(
     blob(field),
   )
     ? 4
@@ -163,7 +163,7 @@ function scoreEmailConfirm(field: FormFieldInfo): number {
 
 function scorePassword(field: FormFieldInfo, kind: "register" | "login"): number {
   if (field.type !== "password") return 0;
-  if (/confirm|repeat|again|match|password2|password-confirm|bestätig|wiederholen|_check\b/.test(blob(field)))
+  if (/confirm|repeat|again|match|password2|password-confirm|bestätig|wiederhol|_check\b/.test(blob(field)))
     return 0;
   let score = 0;
   if (kind === "register" && field.autocomplete === "new-password") score += 4;
@@ -174,7 +174,7 @@ function scorePassword(field: FormFieldInfo, kind: "register" | "login"): number
 
 function scoreConfirm(field: FormFieldInfo): number {
   if (field.type !== "password") return 0;
-  return /confirm|repeat|again|match|password2|password-confirm|bestätig|wiederholen|_check\b/.test(
+  return /confirm|repeat|again|match|password2|password-confirm|bestätig|wiederhol|_check\b/.test(
     blob(field),
   )
     ? 4
@@ -240,13 +240,18 @@ function scoreChoice(field: FormFieldInfo, kind: "language" | "timezone" | "gend
 function isCaptchaField(field: FormFieldInfo): boolean {
   const name = (field.name ?? "").toLowerCase();
   if (
-    /confirm_code|qa_answer|captcha_answer|g-recaptcha-response|h-captcha-response|cf-turnstile-response/.test(
+    /confirm_code|qa_answer|captcha_answer|^verify$|g-recaptcha-response|h-captcha-response|cf-turnstile-response/.test(
       name,
     )
   ) {
     return true;
   }
-  if (/confirmation code|bestätigungscode|sicherheitscode/.test(blob(field)) && textControl(field))
+  if (
+    /confirmation code|bestätigungscode|sicherheitscode|überprüfungscode|ueberpruefungscode/.test(
+      blob(field),
+    ) &&
+    textControl(field)
+  )
     return true;
   return looksLikeKnowledgeQuestion(field.label) && scoreSecurity(field) === 0;
 }
