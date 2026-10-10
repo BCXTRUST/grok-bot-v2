@@ -292,7 +292,12 @@ export class LinkBuilderRealRunner {
     let result: StepResult;
     let error: string | null = null;
     try {
-      result = await REAL_STEP_HANDLERS[plan.kind](ctx);
+      result = await Promise.race([
+        REAL_STEP_HANDLERS[plan.kind](ctx),
+        new Promise<StepResult>((_, reject) => {
+          setTimeout(() => reject(new Error("Browser action timed out")), 3 * 60_000);
+        }),
+      ]);
     } catch (caught) {
       error = redactSecrets(caught instanceof Error ? caught.message : "Step failed", ctx.secrets);
       result = await this.failure(ctx, error);
@@ -305,7 +310,7 @@ export class LinkBuilderRealRunner {
       ctx,
       plan.kind,
       result.kind === "step" ? result.lastAction : "",
-      error !== null && /timed out|timeout|not become ready/i.test(error),
+      error !== null && /timed out|timeout|not become ready|not running anymore/i.test(error),
     );
     await this.deps.realtime
       ?.publish(
