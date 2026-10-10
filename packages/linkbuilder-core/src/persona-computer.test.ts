@@ -18,10 +18,10 @@ describe("choosePersonaComputer", () => {
     expect(chosen).toMatchObject({ scope: "dedicated", providerRef: "desk" });
   });
 
-  it("returns null when nothing is running", () => {
+  it("keeps a destroyed team machine so a new desktop can be created", () => {
     expect(
       choosePersonaComputer([{ scope: "team", state: "stopped", providerRef: null }]),
-    ).toBeNull();
+    ).toMatchObject({ scope: "team", state: "stopped" });
   });
 
   it("keeps a suspended machine so the caller can wake it", () => {
