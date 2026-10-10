@@ -446,7 +446,7 @@ export function registrationProfile(
 
 function scoreCaptchaAnswer(field: FormFieldInfo): number {
   if (!textControl(field)) return 0;
-  if (/^(confirm_code|captcha_answer)$/.test((field.name ?? "").toLowerCase())) return 4;
+  if (/^(confirm_code|captcha_answer|verify)$/.test((field.name ?? "").toLowerCase())) return 4;
   if (/confirmation code|bestätigungscode|sicherheitscode/.test(blob(field))) return 3;
   return 0;
 }
@@ -660,7 +660,13 @@ async function followAnchor(
 }
 
 async function detectImageCaptcha(session: BrowserSession): Promise<CaptchaChallenge | null> {
-  const images = ["img[src*='mode=confirm']", "img.captcha-image", "img[alt*='Confirmation code']"];
+  const images = [
+    "img[src*='mode=confirm']",
+    "img.captcha-image",
+    ".captchaContainer img",
+    "img[src*='GetCaptcha']",
+    "img[alt*='Confirmation code']",
+  ];
   let imageSelector: string | null = null;
   for (const selector of images) {
     if (await session.exists(selector)) {
