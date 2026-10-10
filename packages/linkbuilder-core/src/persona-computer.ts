@@ -14,7 +14,7 @@ export function choosePersonaComputer<T extends PersonaComputerRef>(rows: readon
   const withRef = rows.filter((row) => Boolean(row.providerRef));
   const awake = withRef.filter((row) => row.state === "running" || row.state === "booting");
   const asleep = withRef.filter((row) => row.state === "suspended" || row.state === "stopped");
-  const bare = rows.filter((row) => !row.providerRef && row.scope === "team");
+  const bare = rows.filter((row) => !row.providerRef);
   const pick = (list: readonly T[]) => list.find((row) => row.scope === "team") ?? list[0] ?? null;
   return pick(awake) ?? pick(asleep) ?? pick(bare);
 }

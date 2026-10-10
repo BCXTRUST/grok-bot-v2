@@ -310,7 +310,7 @@ export class LinkBuilderRealRunner {
       ctx,
       plan.kind,
       result.kind === "step" ? result.lastAction : "",
-      error !== null && /timed out|timeout|not become ready|not running anymore/i.test(error),
+      error !== null && /timed out|timeout|not running anymore/i.test(error),
     );
     await this.deps.realtime
       ?.publish(
@@ -561,8 +561,10 @@ export class LinkBuilderRealRunner {
     const repeated =
       recent.length === MAX_CONSECUTIVE_ERRORS - 1 &&
       recent.every((step) => step.error && step.hostId === host?.id);
+    const infra = /no computer|did not become ready|runner not running/i.test(message);
     const giveUp =
       host !== null &&
+      !infra &&
       !isHostTerminal(host.status as LbHostStatus) &&
       (repeated || postFailures + 1 >= MAX_CONSECUTIVE_ERRORS);
     return {
