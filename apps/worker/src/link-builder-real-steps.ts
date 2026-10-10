@@ -58,12 +58,16 @@ import {
   isExampleRegistrableDomain,
   isFixtureHostDomain,
   isHardEdgeBlock,
+  isHostTerminal,
   isWarmupMet,
   marketForHost,
   PAGE_HELPER_EXTENSION_ID,
   PAGE_HELPER_VERSION,
   type PlanCaps,
   pacedDelayMs,
+  shouldSkipDesktopPage,
+  skippedHostLine,
+  stepCountsTowardPageGiveUp,
   proxyStickyKey,
   type RealStepKind,
   type RunCounters,
@@ -383,28 +387,58 @@ function skipUnsolvedCaptcha(host: HostRow, extra: Prisma.LbHostUpdateManyMutati
     });
 }
 
-function park(
+async function pageGiveUpCount(ctx: StepContext, hostId: string): Promise<number> {
+  const steps = await ctx.services.prisma.lbRunStep.findMany({
+    where: { hostId },
+    select: { outcome: true },
+  });
+  return steps.filter((step) => stepCountsTowardPageGiveUp(step.outcome)).length;
+}
+
+/**
+ * The desktop is view-only, so a parked ticket cannot be solved by the user.
+ * An unsolvable captcha is skipped immediately. Any other page is skipped after
+ * the normal retry budget. The feed line is an ordinary skip.
+ */
+async function desktopSkipPlan(
   ctx: StepContext,
   host: HostRow,
   reason: LbOperatorTicketReason,
-  options: { note?: string; screenUrl?: string | null } = {},
-) {
-  return async (tx: Tx) => {
-    await moveHost(tx, host, "parked", { statusReason: reason });
-    await tx.lbOperatorTicket.create({
-      data: {
-        workspaceId: ctx.project.workspaceId,
-        projectId: ctx.project.id,
-        hostId: host.id,
-        runId: ctx.run.id,
-        reason,
-        screenUrl: options.screenUrl ?? null,
-        note: options.note ?? null,
-        status: "open",
-        expiresAt: new Date(ctx.now.getTime() + ctx.project.ticketTtlHours * 3_600_000),
-      },
-    });
+): Promise<{ lastAction: string; apply?: (tx: Tx) => Promise<void> }> {
+  const failures = await pageGiveUpCount(ctx, host.id);
+  if (!shouldSkipDesktopPage({ reason, failures })) {
+    return { lastAction: "The page did not finish, trying again" };
+  }
+  return {
+    lastAction: skippedHostLine(host.registrableDomain),
+    apply: (tx) => giveUpHost(tx, ctx, host, reason),
   };
+}
+
+async function giveUpHost(
+  tx: Tx,
+  ctx: StepContext,
+  host: HostRow,
+  reason: LbOperatorTicketReason,
+): Promise<void> {
+  await tx.lbOperatorTicket.updateMany({
+    where: { hostId: host.id, status: "open" },
+    data: { status: "skipped", resolvedAt: ctx.now },
+  });
+  const status = host.status as LbHostStatus;
+  if (isHostTerminal(status)) return;
+  if (status === "parked_operator") {
+    await moveHost(tx, host, "operator_skipped", { statusReason: reason });
+    return;
+  }
+  if (
+    reason === "captcha_unsolved" &&
+    ["discovered", "probed", "qualified", "registering", "warming", "ready"].includes(status)
+  ) {
+    await moveHost(tx, host, "unsupported_captcha", { statusReason: reason });
+    return;
+  }
+  await moveHost(tx, host, "failed", { statusReason: reason });
 }
 
 function hostOrder(status: string): number {
@@ -770,15 +804,13 @@ async function helperConnected(ctx: StepContext): Promise<StepResult> {
     const seen = observed.version;
     const artifactIds = await screenshot(ctx, entry, "helper");
     entry.registerFormReady = false;
+    const plan = await desktopSkipPlan(ctx, host, "unknown_page_state");
     return {
       kind: "step",
-      lastAction: "Page Helper version does not match",
       hostId: host.id,
       artifactIds,
       outcome: { helperVersion: seen, expected: PAGE_HELPER_VERSION },
-      apply: park(ctx, host, "unknown_page_state", {
-        note: `Page Helper version is ${seen}; expected ${PAGE_HELPER_VERSION}`,
-      }),
+      ...plan,
     };
   }
   entry.helperConnected = true;
@@ -921,13 +953,13 @@ async function loadPassword(ctx: StepContext, siteLoginId: string): Promise<stri
 }
 
 /** Result of a registration submit, mapped to exactly one host transition. */
-function registrationOutcome(
+async function registrationOutcome(
   ctx: StepContext,
   host: HostRow,
   entry: PoolEntry,
   result: RegistrationResult,
   artifactIds: string[],
-): Extract<StepResult, { kind: "step" }> {
+): Promise<Extract<StepResult, { kind: "step" }>> {
   const base = { kind: "step" as const, hostId: host.id, artifactIds };
   const settled = () => {
     entry.registerFormReady = false;
@@ -969,14 +1001,15 @@ function registrationOutcome(
           }),
         afterCommit: settled,
       };
-    case "unknown":
+    case "unknown": {
+      const plan = await desktopSkipPlan(ctx, host, "unknown_page_state");
       return {
         ...base,
-        lastAction: "Parked for the operator",
+        ...plan,
         outcome: { registration: result.kind, messages: redactAll(ctx, result.messages) },
-        apply: park(ctx, host, "unknown_page_state"),
         afterCommit: settled,
       };
+    }
     case "captcha_rejected":
       throw new StepFailure("captcha_rejected is handled by the captcha step");
   }
@@ -1083,13 +1116,13 @@ async function genericRegistrationJourney(
   return genericJourneyStep(ctx, host, credentials.accountId, journey, artifactIds);
 }
 
-function genericJourneyStep(
+async function genericJourneyStep(
   ctx: StepContext,
   host: HostRow,
   accountId: string,
   journey: GenericJourneyResult,
   artifactIds: string[],
-): Extract<StepResult, { kind: "step" }> {
+): Promise<Extract<StepResult, { kind: "step" }>> {
   const starting = host.status === "qualified";
   const submitted = journey.registration.length > 0;
   const waitingForMail =
@@ -1213,19 +1246,14 @@ function genericJourneyStep(
         : undefined,
     });
   }
-  const note = [reason, journey.parkLabel].filter(Boolean).join(": ");
   const ticket =
     reason === "tie" || reason === "unknown_required" || reason === "unmapped"
       ? "unmapped_form"
       : "unknown_page_state";
+  const plan = await desktopSkipPlan(ctx, host, ticket);
   return withSolve({
     ...base,
-    lastAction: "Parked for the operator",
-    apply: async (tx) => {
-      if (host.status === "qualified" && submitted)
-        await advanceHost(tx, host, "registration_started");
-      await park(ctx, host, ticket, { note: redactText(ctx, note).slice(0, 500) })(tx);
-    },
+    ...plan,
   });
 }
 
@@ -1254,7 +1282,7 @@ async function register(ctx: StepContext): Promise<StepResult> {
       if (current.kind === "captcha_rejected") entry.registerFormReady = false;
       else {
         const artifactIds = await screenshot(ctx, entry, "resumed");
-        const result = registrationOutcome(ctx, host, entry, current, artifactIds);
+        const result = await registrationOutcome(ctx, host, entry, current, artifactIds);
         return { ...result, outcome: { ...result.outcome, resumed: true } };
       }
     }
@@ -1282,12 +1310,12 @@ async function register(ctx: StepContext): Promise<StepResult> {
         apply: (tx) => moveHost(tx, host, "failed", { statusReason: "registration_closed" }),
       };
     }
+    const plan = await desktopSkipPlan(ctx, host, "unknown_page_state");
     return {
       kind: "step",
-      lastAction: "Parked for the operator",
       hostId: host.id,
       artifactIds,
-      apply: park(ctx, host, "unknown_page_state"),
+      ...plan,
     };
   }
   await driver.fillRegistration(entry.session, credentials);
@@ -1872,16 +1900,19 @@ async function finishRegistration(
       credits,
     );
   }
-  return withEvent(registrationOutcome(ctx, host, entry, result, artifactIds), event, credits);
+  return withEvent(await registrationOutcome(ctx, host, entry, result, artifactIds), event, credits);
 }
 
-function unmappedForm(ctx: StepContext, host: HostRow): Extract<StepResult, { kind: "step" }> {
+async function unmappedForm(
+  ctx: StepContext,
+  host: HostRow,
+): Promise<Extract<StepResult, { kind: "step" }>> {
+  const plan = await desktopSkipPlan(ctx, host, "unmapped_form");
   return {
     kind: "step",
-    lastAction: "Parked for the operator",
     hostId: host.id,
     outcome: { reason: "unmapped_form" },
-    apply: park(ctx, host, "unmapped_form"),
+    ...plan,
   };
 }
 
@@ -1965,13 +1996,13 @@ async function emailVerify(ctx: StepContext): Promise<StepResult> {
   const artifactIds = await screenshot(ctx, entry, "activated");
   const verifiedAt = ctx.now;
   if (activation === "unknown") {
+    const plan = await desktopSkipPlan(ctx, host, "unknown_page_state");
     return {
       kind: "step",
-      lastAction: "Parked for the operator",
       hostId: host.id,
       artifactIds,
       outcome: { activation },
-      apply: park(ctx, host, "unknown_page_state"),
+      ...plan,
     };
   }
   return {
@@ -2066,11 +2097,11 @@ async function publish(ctx: StepContext, warmup: boolean): Promise<StepResult> {
   const account = ctx.account;
   if (!account) throw new StepFailure("Host has no account");
   if (!account.siteLoginId) {
+    const plan = await desktopSkipPlan(ctx, host, "missing_password");
     return {
       kind: "step",
-      lastAction: "Parked for the operator",
       hostId: host.id,
-      apply: park(ctx, host, "missing_password"),
+      ...plan,
     };
   }
   const password = await loadPassword(ctx, account.siteLoginId);
@@ -2085,13 +2116,13 @@ async function publish(ctx: StepContext, warmup: boolean): Promise<StepResult> {
     throw error;
   }
   if (!loggedIn) {
+    const plan = await desktopSkipPlan(ctx, host, "unknown_page_state");
     return {
       kind: "step",
-      lastAction: "Parked for the operator",
       hostId: host.id,
       artifactIds: await screenshot(ctx, entry, "login"),
       outcome: { login: false },
-      apply: park(ctx, host, "unknown_page_state", { note: "Login failed" }),
+      ...plan,
     };
   }
   if (!entry.profileSet) {
@@ -2518,13 +2549,13 @@ async function publish(ctx: StepContext, warmup: boolean): Promise<StepResult> {
     };
   }
   if (reply.kind === "unknown") {
+    const plan = await desktopSkipPlan(ctx, host, "unknown_page_state");
     return {
       kind: "step",
-      lastAction: "Parked for the operator",
       hostId: host.id,
       artifactIds,
       outcome: { thread: thread.url, messages: redactAll(ctx, reply.messages) },
-      apply: park(ctx, host, "unknown_page_state", { note: "Reply result unclear" }),
+      ...plan,
     };
   }
   const postedAt = ctx.now;

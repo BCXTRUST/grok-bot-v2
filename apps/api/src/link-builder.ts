@@ -67,6 +67,7 @@ import {
   isWithinWindow,
   linkBuilderTopic,
   localDateKey,
+  operatorHelpFor,
   mayCreateLinkBuilderProject,
   mentionsExampleDomain,
   mentionsFixtureHost,
@@ -124,6 +125,64 @@ function shownToCustomer(
   return showHostToCustomer(domain, slug);
 }
 
+/**
+ * Closes tickets a person cannot finish from the UI. A host still parked for one of
+ * those tickets is skipped. A view-only desktop is not an action.
+ */
+async function retireUnusableTickets(prisma: PrismaClient, workspaceId: string): Promise<void> {
+  const open = await prisma.lbOperatorTicket.findMany({
+    where: { workspaceId, status: "open" },
+    include: {
+      host: { select: { status: true, parkedFrom: true, registrableDomain: true } },
+    },
+  });
+  for (const ticket of open) {
+    if (
+      operatorHelpFor({
+        id: ticket.id,
+        status: ticket.status,
+        reason: ticket.reason,
+        domain: ticket.host.registrableDomain,
+        hostStatus: ticket.host.status,
+      })
+    ) {
+      continue;
+    }
+    await prisma.$transaction(async (tx) => {
+      const closed = await tx.lbOperatorTicket.updateMany({
+        where: { id: ticket.id, status: "open" },
+        data: { status: "skipped", resolvedAt: new Date() },
+      });
+      if (closed.count !== 1 || ticket.host.status !== "parked_operator") return;
+      const parkedFrom = LbParkableHostStatusSchema.safeParse(ticket.host.parkedFrom).data ?? null;
+      const next = transitionHost({ status: "parked_operator", parkedFrom }, "operator_skipped");
+      await tx.lbHost.updateMany({
+        where: { id: ticket.hostId, status: "parked_operator" },
+        data: {
+          status: next.status,
+          parkedFrom: next.parkedFrom,
+          statusReason: ticket.reason,
+        },
+      });
+    });
+  }
+}
+
+function helpForTicket(ticket: {
+  id: string;
+  status: string;
+  reason: string;
+  host?: { status: string; registrableDomain: string } | null;
+}): ReturnType<typeof operatorHelpFor> {
+  return operatorHelpFor({
+    id: ticket.id,
+    status: ticket.status,
+    reason: ticket.reason,
+    domain: ticket.host?.registrableDomain ?? "",
+    hostStatus: ticket.host?.status ?? "",
+  });
+}
+
 /** Fixture boards are not this customer's links. The Nordlicht demo keeps its own counts. */
 function customerCounters(
   slug: string,
@@ -161,6 +220,7 @@ export async function suggestLbPage(input: {
 }
 
 export async function listLbProjects(deps: RouterDeps, actor: Actor) {
+  await retireUnusableTickets(deps.prisma, actor.workspaceId);
   const projects = await deps.prisma.lbProject.findMany({
     where: { workspaceId: actor.workspaceId, archivedAt: null },
     orderBy: { updatedAt: "desc" },
@@ -172,7 +232,13 @@ export async function listLbProjects(deps: RouterDeps, actor: Actor) {
     }),
     deps.prisma.lbOperatorTicket.findMany({
       where: { workspaceId: actor.workspaceId, projectId: { in: ids }, status: "open" },
-      select: { projectId: true, reason: true, host: { select: { registrableDomain: true } } },
+      select: {
+        id: true,
+        projectId: true,
+        status: true,
+        reason: true,
+        host: { select: { status: true, registrableDomain: true } },
+      },
     }),
     deps.prisma.lbAlert.findMany({
       where: { workspaceId: actor.workspaceId, projectId: { in: ids } },
@@ -191,14 +257,16 @@ export async function listLbProjects(deps: RouterDeps, actor: Actor) {
     const todayRun = projectRuns.find((run) => run.date === today) ?? null;
     const latest = [...projectRuns].sort((a, b) => b.date.localeCompare(a.date))[0] ?? null;
     const quotas = readQuotas(project.quotas);
-    const openTickets = tickets.filter(
-      (ticket) => ticket.projectId === project.id && shownToCustomer(ticket, project.slug),
-    ).length;
+    const help =
+      tickets
+        .filter((ticket) => ticket.projectId === project.id && shownToCustomer(ticket, project.slug))
+        .map((ticket) => helpForTicket(ticket))
+        .find((item) => item !== null) ?? null;
     const runStatus = todayRun ? readRunStatus(todayRun.status) : null;
     const activity = projectActivity({
       projectStatus: readProjectStatus(project.status),
       runStatus,
-      openTickets,
+      openTickets: 0,
       schedule: scheduleState(
         schedule,
         now,
@@ -229,7 +297,8 @@ export async function listLbProjects(deps: RouterDeps, actor: Actor) {
           alerts.find((alert) => alert.projectId === project.id) ?? null,
         ),
       ),
-      operatorQueue: openTickets,
+      operatorQueue: 0,
+      operatorHelp: help,
     };
   });
 }
@@ -491,6 +560,7 @@ export async function stopLbProject(deps: RouterDeps, actor: Actor, projectId: s
 
 export async function statusLbProject(deps: RouterDeps, actor: Actor, projectId: string) {
   const row = await requireProject(deps.prisma, actor, projectId);
+  await retireUnusableTickets(deps.prisma, actor.workspaceId);
   const schedule = readSchedule(row.schedule);
   const quotas = readQuotas(row.quotas);
   const now = new Date();
@@ -499,7 +569,12 @@ export async function statusLbProject(deps: RouterDeps, actor: Actor, projectId:
     deps.prisma.lbRun.findMany({ where: { workspaceId: actor.workspaceId, projectId: row.id } }),
     deps.prisma.lbOperatorTicket.findMany({
       where: { workspaceId: actor.workspaceId, projectId: row.id, status: "open" },
-      select: { reason: true, host: { select: { registrableDomain: true } } },
+      select: {
+        id: true,
+        status: true,
+        reason: true,
+        host: { select: { status: true, registrableDomain: true } },
+      },
     }),
     deps.prisma.lbHost.findMany({
       where: { workspaceId: actor.workspaceId, projectId: row.id },
@@ -511,7 +586,11 @@ export async function statusLbProject(deps: RouterDeps, actor: Actor, projectId:
     }),
     costWindow(deps.prisma, actor.workspaceId, row.id, schedule.timezone),
   ]);
-  const openTickets = openTicketRows.filter((ticket) => shownToCustomer(ticket, row.slug)).length;
+  const help =
+    openTicketRows
+      .filter((ticket) => shownToCustomer(ticket, row.slug))
+      .map((ticket) => helpForTicket(ticket))
+      .find((item) => item !== null) ?? null;
   const todayRun = runs.find((run) => run.date === today) ?? null;
   const runStatus = todayRun ? readRunStatus(todayRun.status) : null;
   const faced = customerCounters(row.slug, todayRun, hosts);
@@ -530,7 +609,7 @@ export async function statusLbProject(deps: RouterDeps, actor: Actor, projectId:
   const activity = projectActivity({
     projectStatus: readProjectStatus(row.status),
     runStatus,
-    openTickets,
+    openTickets: 0,
     schedule: scheduleView,
   });
   const storedWhy = todayRun ? LbWhyNotSchema.safeParse(todayRun.whyNot) : null;
@@ -565,7 +644,8 @@ export async function statusLbProject(deps: RouterDeps, actor: Actor, projectId:
     }),
     credits: { balance: credits, payment: "stub" as const },
     whyNot,
-    operatorQueue: openTickets,
+    operatorQueue: 0,
+    operatorHelp: help,
     scheduleActive: scheduleView.active,
     scheduleReason: scheduleView.reason,
     newPerDay: quotas?.newPerDay ?? 0,
@@ -914,6 +994,9 @@ export async function listLbTickets(
   input: { projectId: string; status?: string },
 ) {
   await requireProject(deps.prisma, actor, input.projectId);
+  if (!input.status || input.status === "open") {
+    await retireUnusableTickets(deps.prisma, actor.workspaceId);
+  }
   const rows = await deps.prisma.lbOperatorTicket.findMany({
     where: {
       workspaceId: actor.workspaceId,

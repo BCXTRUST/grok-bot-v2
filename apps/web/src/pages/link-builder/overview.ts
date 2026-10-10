@@ -81,6 +81,7 @@ export function overviewPill(input: {
   if (input.intent === "working") return "running";
   if (input.intent === "paused") return "paused";
   if (input.intent === "stopped") return "stopped";
+  if (input.activityLabel && /^needs operator\b/i.test(input.activityLabel)) return null;
   return input.activityLabel;
 }
 

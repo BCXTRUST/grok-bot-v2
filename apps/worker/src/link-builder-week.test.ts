@@ -357,7 +357,7 @@ describe("link builder week", () => {
     expect(mondayClosed.status).toBe("succeeded");
     expect(mondayClosed.whyNot).toMatchObject({
       supply: { qualified: 0, ready: 0 },
-      parked: 1,
+      parked: 0,
       spamBlocked: 0,
       proxy: "ok",
       captchaBalance: 5000,
@@ -369,7 +369,7 @@ describe("link builder week", () => {
     expect(still).toHaveLength(2);
     await at("2026-10-06T08:00:00.000Z");
     const ticket = await db.prisma.lbOperatorTicket.findFirstOrThrow({ where: { projectId } });
-    expect(ticket.status).toBe("expired");
+    expect(ticket.status).toBe("skipped");
     const parkedHost = await db.prisma.lbHost.findFirstOrThrow({
       where: { projectId, registrableDomain: "parked.example" },
     });

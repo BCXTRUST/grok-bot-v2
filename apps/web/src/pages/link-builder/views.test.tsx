@@ -14,6 +14,7 @@ import { emptyDraft, emptyPage, PAGE_BOX_LIMIT } from "./model.js";
 import { LinkBuilderPreview } from "./preview.js";
 import {
   CreditPackagesView,
+  DashboardView,
   OperatorView,
   ProjectView,
   WizardView,
@@ -61,13 +62,53 @@ describe("link builder screens", () => {
     expect(runs).not.toContain('role="tablist"');
   });
 
-  it("shows NEW and LIVE rings and an operator pill", () => {
+  it("shows NEW and LIVE rings and hides a view-only operator count", () => {
     const html = renderToStaticMarkup(<LinkBuilderPreview screen="dashboard" />);
     expect(html).toContain("New accounts per day");
     expect(html).toContain("Live links per day");
     expect(html).toContain("Live links per week");
-    expect(html).toContain("needs operator ×1");
-    expect(html).toContain("Parked fragen.nordlicht.example");
+    expect(html).not.toContain("needs operator");
+    expect(html).toContain("running");
+  });
+
+  it("names the site and runs the action when the user can help without the desktop", () => {
+    const html = renderToStaticMarkup(
+      <DashboardView
+        cards={[
+          {
+            id: "demo",
+            name: "Nordlicht",
+            slug: "nordlicht-wellness",
+            status: "active",
+            brandName: "Nordlicht",
+            activity: "running",
+            activityLabel: "needs operator ×4",
+            newToday: 0,
+            liveToday: 0,
+            liveWeek: 0,
+            newPerDay: 2,
+            livePerDay: 2,
+            liveWeekCap: 8,
+            runStatus: "running",
+            lastEvent: null,
+            operatorQueue: 0,
+            operatorHelp: {
+              ticketId: "ticket-1",
+              domain: "board.example",
+              label: "Skip board.example",
+              action: "skip",
+            },
+          },
+        ]}
+        loading={false}
+        onOpen={noop}
+        onNew={noop}
+        onHelp={noop}
+      />,
+    );
+    expect(html).toContain("Skip board.example");
+    expect(html).toContain('aria-label="Skip board.example"');
+    expect(html).not.toContain("needs operator");
   });
 
   it("puts the responsibility sentence under Start building and does not render a checkbox", () => {

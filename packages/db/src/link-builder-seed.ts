@@ -247,18 +247,6 @@ export async function seedLinkBuilderDemo(
       },
     ],
   });
-  await prisma.lbOperatorTicket.create({
-    data: {
-      workspaceId,
-      projectId: project.id,
-      hostId: hosts.parked,
-      runId: run.id,
-      reason: "captcha_unsolved",
-      status: "open",
-      expiresAt: new Date(now.getTime() + 48 * 60 * 60 * 1000),
-    },
-  });
-
   return { projectId: project.id, created: true };
 }
 

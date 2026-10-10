@@ -176,6 +176,16 @@ export const LbProjectCardSchema = z.object({
   runStatus: LbRunStatusSchema.nullable(),
   lastEvent: z.string().nullable(),
   operatorQueue: z.number().int(),
+  /** One UI action that works without the desktop. Absent when the user cannot help. */
+  operatorHelp: z
+    .object({
+      ticketId: Id,
+      domain: z.string(),
+      label: z.string(),
+      action: z.enum(["skip", "continue"]),
+    })
+    .nullable()
+    .optional(),
 });
 export type LbProjectCard = z.infer<typeof LbProjectCardSchema>;
 
@@ -187,6 +197,15 @@ export const LbProjectStatusViewSchema = z.object({
   run: LbRunCountersSchema.nullable(),
   whyNot: LbWhyNotSchema.nullable(),
   operatorQueue: z.number().int(),
+  operatorHelp: z
+    .object({
+      ticketId: Id,
+      domain: z.string(),
+      label: z.string(),
+      action: z.enum(["skip", "continue"]),
+    })
+    .nullable()
+    .optional(),
   scheduleActive: z.boolean(),
   scheduleReason: z.string(),
   newPerDay: z.number().int(),

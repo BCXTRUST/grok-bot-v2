@@ -28,6 +28,7 @@ import {
   isRunTerminal,
   linkBuilderTopic,
   localDateKey,
+  operatorHelpFor,
   type PlanCaps,
   pauseDedupeKey,
   recordCountedLive,
@@ -121,7 +122,47 @@ export async function runDueWork(deps: DueWorkDeps): Promise<void> {
   });
 }
 
+/** Closes tickets the user cannot act on. A parked host is skipped. */
+async function retireUnusableTickets(deps: DueWorkDeps): Promise<void> {
+  const open = await deps.prisma.lbOperatorTicket.findMany({
+    where: { status: "open" },
+    include: { host: true },
+  });
+  for (const ticket of open) {
+    if (
+      operatorHelpFor({
+        id: ticket.id,
+        status: ticket.status,
+        reason: ticket.reason,
+        domain: ticket.host.registrableDomain,
+        hostStatus: ticket.host.status,
+      })
+    ) {
+      continue;
+    }
+    await deps.prisma.$transaction(async (tx) => {
+      const closed = await tx.lbOperatorTicket.updateMany({
+        where: { id: ticket.id, status: "open" },
+        data: { status: "skipped", resolvedAt: deps.now },
+      });
+      if (closed.count !== 1 || ticket.host.status !== "parked_operator") return;
+      const parkedFrom = LbParkableHostStatusSchema.safeParse(ticket.host.parkedFrom).data ?? null;
+      const next = transitionHost({ status: "parked_operator", parkedFrom }, "operator_skipped");
+      await tx.lbHost.updateMany({
+        where: { id: ticket.hostId, status: "parked_operator" },
+        data: {
+          status: next.status,
+          parkedFrom: next.parkedFrom,
+          statusReason: ticket.reason,
+        },
+      });
+    });
+    await publish(deps, ticket.projectId);
+  }
+}
+
 async function expireTickets(deps: DueWorkDeps): Promise<void> {
+  await retireUnusableTickets(deps);
   const open = await deps.prisma.lbOperatorTicket.findMany({
     where: { status: "open" },
     include: { host: true, project: true },
@@ -491,15 +532,23 @@ async function announceOpenTickets(
 ): Promise<void> {
   const tickets = await deps.prisma.lbOperatorTicket.findMany({
     where: { status: "open" },
-    select: { id: true, projectId: true, workspaceId: true, hostId: true },
+    include: { host: { select: { registrableDomain: true, status: true } } },
   });
   for (const ticket of tickets) {
+    const help = operatorHelpFor({
+      id: ticket.id,
+      status: ticket.status,
+      reason: ticket.reason,
+      domain: ticket.host.registrableDomain,
+      hostStatus: ticket.host.status,
+    });
+    if (!help) continue;
     await alerts.emit({
       kind: "captcha.needs_operator",
       workspaceId: ticket.workspaceId,
       projectId: ticket.projectId,
       dedupeKey: `captcha.needs_operator:${ticket.id}`,
-      message: "Captcha needs an operator",
+      message: help.label,
       payload: { ticketId: ticket.id, hostId: ticket.hostId },
     });
   }

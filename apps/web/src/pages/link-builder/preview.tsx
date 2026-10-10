@@ -17,8 +17,8 @@ const card: LbProjectCard = {
   slug: "nordlicht-wellness",
   status: "active",
   brandName: "Nordlicht",
-  activity: "needs_operator",
-  activityLabel: "needs operator ×1",
+  activity: "running",
+  activityLabel: "running",
   newToday: 1,
   liveToday: 1,
   liveWeek: 1,
@@ -26,8 +26,8 @@ const card: LbProjectCard = {
   livePerDay: 2,
   liveWeekCap: 8,
   runStatus: "partial",
-  lastEvent: "Parked fragen.nordlicht.example for an operator",
-  operatorQueue: 1,
+  lastEvent: "Working on fragen.nordlicht.example",
+  operatorQueue: 0,
 };
 
 const ticket: LbOperatorTicketView = {

@@ -11,7 +11,7 @@ import type {
   LbRunStepView,
   LbThreadView,
 } from "@rakazo/contracts";
-import { isFixtureHostDomain } from "@rakazo/linkbuilder-core";
+import { DESKTOP_ONLY_TICKET_REASONS, isFixtureHostDomain } from "@rakazo/linkbuilder-core";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { LoadingState } from "../../components/beautiful-ui/primitives";
@@ -113,8 +113,27 @@ function DashboardRoute() {
           card.status === "draft" ? `/link-builder/new/${card.id}` : `/link-builder/${card.id}`,
         )
       }
+      onHelp={(card) => {
+        const help = card.operatorHelp;
+        if (!help) return;
+        void runOperatorHelp(card.id, help).then(() =>
+          rpc.linkBuilder.projects
+            .list()
+            .then(setCards)
+            .catch(() => undefined),
+        );
+      }}
     />
   );
+}
+
+function runOperatorHelp(
+  projectId: string,
+  help: { ticketId: string; action: "skip" | "continue" },
+) {
+  return help.action === "skip"
+    ? rpc.linkBuilder.operator.skip({ projectId, ticketId: help.ticketId })
+    : rpc.linkBuilder.operator.continue({ projectId, ticketId: help.ticketId });
 }
 
 async function suggestPage(input: { url: string; allowedDomains: string[] }) {
@@ -666,6 +685,14 @@ function ProjectRoute({ projectId }: { projectId: string }) {
       screenUrl={screenUrl}
       screenError={screenError}
       screenPending={screenPending}
+      onHelp={() => {
+        const help = status?.operatorHelp;
+        if (!help) return;
+        setBusy(true);
+        void runOperatorHelp(projectId, help)
+          .then(() => reload())
+          .finally(() => setBusy(false));
+      }}
     />
   );
 }
@@ -687,9 +714,11 @@ function OperatorRoute({ projectId, ticketId }: { projectId: string; ticketId: s
         .then((tickets) => {
           if (cancelled) return;
           const found = tickets.find((item) => item.id === ticketId) ?? null;
-          const captcha =
-            found?.reason === "captcha_unsolved" || isFixtureHostDomain(found?.domain ?? "");
-          if (!found || captcha) {
+          const desktopOnly =
+            found !== null &&
+            (DESKTOP_ONLY_TICKET_REASONS as readonly string[]).includes(found.reason);
+          const captcha = desktopOnly || isFixtureHostDomain(found?.domain ?? "");
+          if (!found || found.status !== "open" || captcha) {
             navigate(`/link-builder/${projectId}`, { replace: true });
             return;
           }

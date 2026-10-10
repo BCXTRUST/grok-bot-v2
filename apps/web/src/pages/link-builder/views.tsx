@@ -80,11 +80,13 @@ export function DashboardView({
   loading,
   onOpen,
   onNew,
+  onHelp,
 }: {
   cards: LbProjectCard[];
   loading: boolean;
   onOpen: (card: LbProjectCard) => void;
   onNew: () => void;
+  onHelp?: (card: LbProjectCard) => void;
 }) {
   return (
     <main className="mx-auto flex w-full max-w-5xl flex-col gap-4 px-4 py-8">
@@ -96,39 +98,64 @@ export function DashboardView({
       </header>
       {loading ? <LoadingState label="Loading projects" /> : null}
       <div className="grid gap-3 md:grid-cols-2">
-        {cards.map((card) => (
-          <BuiCard key={card.id} className="p-4">
-            <button
-              type="button"
-              className="flex w-full flex-col gap-3 text-left"
-              aria-label={`Open ${card.name}`}
-              onClick={() => onOpen(card)}
-            >
+        {cards.map((card) => {
+          const help = card.operatorHelp ?? null;
+          const activity = customerActivityLabel(card.activityLabel);
+          return (
+            <BuiCard key={card.id} className="flex flex-col gap-3 p-4">
               <div className="flex items-start justify-between gap-3">
-                <div>
+                <button
+                  type="button"
+                  className="min-w-0 flex-1 text-left"
+                  aria-label={`Open ${card.name}`}
+                  onClick={() => onOpen(card)}
+                >
                   <div className="text-[16px] text-[#ECECEE]">{card.name}</div>
                   <div className="text-[12.5px] text-[#85858A]">{card.brandName}</div>
+                </button>
+                {help && onHelp ? (
+                  <button
+                    type="button"
+                    className="rounded-full bg-[#232327] px-2 py-1 text-left text-[12px] text-[#ECECEE]"
+                    aria-label={help.label}
+                    onClick={() => onHelp(card)}
+                  >
+                    {help.label}
+                  </button>
+                ) : activity ? (
+                  <Pill label={activity} />
+                ) : null}
+              </div>
+              <button
+                type="button"
+                className="flex flex-col gap-3 text-left"
+                aria-label={`Open ${card.name}`}
+                onClick={() => onOpen(card)}
+              >
+                <div className="flex flex-wrap items-center gap-4">
+                  <Ring label={QUOTA_LABELS.newPerDay} value={card.newToday} max={card.newPerDay} />
+                  <Ring
+                    label={QUOTA_LABELS.livePerDay}
+                    value={card.liveToday}
+                    max={card.livePerDay}
+                  />
+                  <WeekBar value={card.liveWeek} max={card.liveWeekCap} />
                 </div>
-                <Pill label={card.activityLabel} />
-              </div>
-              <div className="flex flex-wrap items-center gap-4">
-                <Ring label={QUOTA_LABELS.newPerDay} value={card.newToday} max={card.newPerDay} />
-                <Ring
-                  label={QUOTA_LABELS.livePerDay}
-                  value={card.liveToday}
-                  max={card.livePerDay}
-                />
-                <WeekBar value={card.liveWeek} max={card.liveWeekCap} />
-              </div>
-              <div className="truncate text-[12.5px] text-[#A6A6AD]">
-                {card.lastEvent ?? "No events yet"}
-              </div>
-            </button>
-          </BuiCard>
-        ))}
+                <div className="truncate text-[12.5px] text-[#A6A6AD]">
+                  {card.lastEvent ?? "No events yet"}
+                </div>
+              </button>
+            </BuiCard>
+          );
+        })}
       </div>
     </main>
   );
+}
+
+function customerActivityLabel(label: string): string | null {
+  if (/^needs operator\b/i.test(label)) return null;
+  return label;
 }
 
 export function CreditPackagesView({
@@ -374,6 +401,7 @@ export function ProjectView({
   screenUrl,
   screenError,
   screenPending,
+  onHelp,
 }: {
   project: LbProjectDetail;
   status: LbProjectStatusView | null;
@@ -403,6 +431,7 @@ export function ProjectView({
   screenUrl?: string | null;
   screenError?: string | null;
   screenPending?: boolean;
+  onHelp?: () => void;
 }) {
   const [intent, setIntent] = useState<OverviewIntent>(null);
   const [phrase, setPhrase] = useState("");
@@ -412,7 +441,8 @@ export function ProjectView({
     setIntent(null);
   }, [intent, busy]);
   const working = overviewWorking({ activity: status?.activity ?? null, intent });
-  const pill = overviewPill({ activityLabel: status?.activityLabel ?? null, intent });
+  const help = status?.operatorHelp ?? null;
+  const pill = help ? null : overviewPill({ activityLabel: status?.activityLabel ?? null, intent });
   function applyPhrase() {
     if (!onInstruct || !project.quotas) return;
     const applied = applyRunPhrase({
@@ -461,7 +491,18 @@ export function ProjectView({
           </button>
         )}
         <div className="flex flex-wrap items-start gap-3">
-          {pill ? <Pill label={pill} /> : null}
+          {help && onHelp ? (
+            <button
+              type="button"
+              className="rounded-full bg-[#232327] px-2 py-1 text-[12px] text-[#ECECEE]"
+              aria-label={help.label}
+              onClick={onHelp}
+            >
+              {help.label}
+            </button>
+          ) : pill ? (
+            <Pill label={pill} />
+          ) : null}
           <button
             type="button"
             aria-label="Settings"
