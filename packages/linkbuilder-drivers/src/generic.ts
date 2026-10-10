@@ -142,7 +142,7 @@ function scoreDisplayName(field: FormFieldInfo): number {
 }
 
 function scoreEmail(field: FormFieldInfo): number {
-  if (/confirm|repeat|again|verify|erneut/.test(blob(field))) return 0;
+  if (/confirm|repeat|again|verify|erneut|wiederholen/.test(blob(field))) return 0;
   let score = 0;
   if (field.type === "email") score += 4;
   if (field.autocomplete === "email") score += 4;
@@ -151,7 +151,7 @@ function scoreEmail(field: FormFieldInfo): number {
 }
 
 function scoreEmailConfirm(field: FormFieldInfo): number {
-  if (!/confirm|repeat|again|verify|erneut/.test(blob(field))) return 0;
+  if (!/confirm|repeat|again|verify|erneut|wiederholen/.test(blob(field))) return 0;
   if (field.type === "email" || field.autocomplete === "email" || /e-?mail/.test(blob(field)))
     return 4;
   return 0;

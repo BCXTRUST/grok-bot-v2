@@ -120,6 +120,40 @@ describe("generic form driver", () => {
     expect(result).toEqual({ kind: "form_error", messages: [refusal] });
   });
 
+  it("treats a repeated email address as the confirmation", () => {
+    const plan = planRegistration(
+      [
+        field({ selector: "#user", name: "username", label: "Benutzername", required: true }),
+        field({
+          selector: "#email",
+          type: "email",
+          label: "E-Mail",
+          required: true,
+        }),
+        field({
+          selector: "#email2",
+          type: "email",
+          label: "E-Mail Adresse wiederholen",
+          required: true,
+        }),
+        field({
+          selector: "#password",
+          type: "password",
+          label: "Passwort",
+          autocomplete: "new-password",
+          required: true,
+        }),
+        field({ selector: "#submit", tag: "button", type: "submit", label: "Registrieren" }),
+      ],
+      registrationProfile({
+        username: "sophie_braun",
+        email: "sophie@example.com",
+        password: "example-password",
+      }),
+    );
+    expect(plan.ok).toBe(true);
+  });
+
   it("picks the required email when a second email field is optional", () => {
     const plan = planRegistration(
       [
