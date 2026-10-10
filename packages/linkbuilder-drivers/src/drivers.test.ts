@@ -46,6 +46,7 @@ const target = "https://www.vereinsplaner.example/mitglieder?utm_source=forum";
 describe("phpBB driver helpers", () => {
   it("includes the German board cookie accept control", () => {
     expect(COOKIE_ACCEPT_SELECTORS).toContain("a[onclick*='ca_accept']");
+    expect(COOKIE_ACCEPT_SELECTORS).toContain("button:has-text('Akzeptieren und weiter')");
   });
 
   it("reads a German activation-key notice as waiting for email", async () => {

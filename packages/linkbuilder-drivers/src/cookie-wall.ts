@@ -20,6 +20,7 @@ export const COOKIE_ACCEPT_SELECTORS = [
   "a[onclick*='ca_accept']",
   "a:has-text('Ich stimme zu')",
   "button:has-text('Ich stimme zu')",
+  "button:has-text('Akzeptieren und weiter')",
 ] as const;
 
 export type CookieWallResult = "accepted" | "none";
