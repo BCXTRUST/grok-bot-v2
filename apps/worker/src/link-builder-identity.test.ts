@@ -225,7 +225,7 @@ describe("link builder identity", () => {
     expect(projectRow.status).toBe("active");
   });
 
-  it("refuses a second registration on the same host the same day", async () => {
+  it("refuses a fifth registration on the same host the same day", async () => {
     const project = await startedProject("Cap");
     const host = await db.prisma.lbHost.create({
       data: {
@@ -242,16 +242,16 @@ describe("link builder identity", () => {
       },
     });
     const run = await db.prisma.lbRun.findFirstOrThrow({ where: { projectId: project.id } });
-    await db.prisma.lbRunStep.create({
-      data: {
+    await db.prisma.lbRunStep.createMany({
+      data: [0, 1, 2, 3].map((stepIndex) => ({
         workspaceId: actor.workspaceId,
         runId: run.id,
-        stepIndex: 0,
+        stepIndex,
         kind: "register",
         hostId: host.id,
         outcome: { username: "mira" },
         createdAt: clock,
-      },
+      })),
     });
     const real = runner(browsersFor(""), new FakeProxyProvider([]));
     await real.tick();
