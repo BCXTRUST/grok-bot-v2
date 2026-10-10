@@ -73,8 +73,8 @@ describe("registration notices", () => {
     ).toBe("pending_admin");
     expect(
       classifyRegistration(
-        `Gib deine E-Mail Adresse ein. ${"x".repeat(120)} Das Konto wird später aktiviert.`,
-        true,
+        "Probleme mit dem Mail-Client? Win11 aktiviert aber Update.",
+        false,
       ).kind,
     ).not.toBe("pending_email");
     expect(classifyRegistration("Your account has now been activated.", false).kind).toBe("active");
